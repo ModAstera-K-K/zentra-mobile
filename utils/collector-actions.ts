@@ -61,10 +61,10 @@ export function getCollectorQuickAction(collector: CollectorState): CollectorQui
     case 'healthConnect':
       return {
         helperText: Platform.OS === 'android'
-          ? `Open ${getHealthPlatformName()} and grant Zentra access there, then return and retry the import.`
+          ? `Request ${getHealthPlatformName()} permissions for Zentra. After Zentra is connected, you can manage access from ${getHealthPlatformName()}.`
           : `Grant ${getHealthPlatformName()} permissions and retry the import from inside Zentra.`,
         label: Platform.OS === 'android'
-          ? `Open ${getHealthPlatformName()}`
+          ? `Connect ${getHealthPlatformName()}`
           : `Connect ${getHealthPlatformName()}`,
         type: 'connect_health',
       };

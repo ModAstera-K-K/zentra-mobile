@@ -36,10 +36,22 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="zentra"/>
       </intent-filter>
-      <!-- Required by Health Connect SDK to launch the permissions rationale UI -->
+      <!-- Required by Health Connect to list Zentra in its app permissions screen -->
       <intent-filter>
         <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
       </intent-filter>
     </activity>
+
+    <!-- Android 14+ (API 34): Health Connect uses VIEW_PERMISSION_USAGE to discover apps -->
+    <activity-alias
+      android:name=".ViewPermissionUsageActivity"
+      android:targetActivity=".MainActivity"
+      android:exported="true"
+      android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+        <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+      </intent-filter>
+    </activity-alias>
   </application>
 </manifest>

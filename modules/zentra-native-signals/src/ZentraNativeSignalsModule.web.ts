@@ -41,6 +41,10 @@ class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEv
     return [];
   }
 
+  async openHealthConnectPermissionRequestAsync(): Promise<boolean> {
+    return false;
+  }
+
   async openHealthConnectSettingsAsync(): Promise<boolean> {
     return false;
   }

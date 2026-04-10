@@ -26,6 +26,11 @@ import {
 
 type CollectorStateMap = Record<CollectorKey, CollectorState>;
 
+interface CollectorStatusOverrides {
+  hasLatestSleepEstimate?: boolean;
+  permissionStatusByCollector?: Partial<Record<CollectorKey, PermissionStatus>>;
+}
+
 function mapPermissionStatus(status: string): PermissionStatus {
   if (status === 'granted') {
     return 'granted';
@@ -223,12 +228,14 @@ export function buildCollectorStatuses(
   collectors: CollectorStateMap,
   signals: SignalStoreState,
   diagnostics: CollectorDiagnosticRecord[],
+  overrides: CollectorStatusOverrides = {},
 ): CollectorState[] {
   const diagnosticsByCollector = diagnostics.reduce<Record<string, CollectorDiagnosticRecord>>((result, diagnostic) => {
     result[diagnostic.collectorKey] = diagnostic;
     return result;
   }, {});
   const items: CollectorState[] = [];
+  const permissionStatusByCollector = overrides.permissionStatusByCollector ?? {};
 
   items.push(buildCollectorClone(collectors.steps, {
     permissionStatus: collectors.steps.enabled ? signals.stepPermissionStatus : 'not_requested',
@@ -282,13 +289,18 @@ export function buildCollectorStatuses(
 
   items.push(buildCollectorClone(collectors.activity, {
     permissionStatus: collectors.activity.enabled
-      ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.activity, 'not_requested')
+      ? (permissionStatusByCollector.activity
+        ?? deriveDiagnosticPermissionStatus(diagnosticsByCollector.activity, 'not_requested'))
       : 'not_requested',
     health: collectors.activity.enabled
-      ? (diagnosticsByCollector.activity?.status === 'success' ? 'healthy' : 'degraded')
+      ? (diagnosticsByCollector.activity?.status === 'success'
+        ? 'healthy'
+        : (permissionStatusByCollector.activity === 'granted' ? 'idle' : 'degraded'))
       : 'idle',
     lastRunLabel: collectors.activity.enabled
-      ? (diagnosticsByCollector.activity
+      ? (permissionStatusByCollector.activity === 'granted' && diagnosticsByCollector.activity?.status !== 'success'
+        ? 'Waiting for activity updates'
+        : diagnosticsByCollector.activity
         ? `${diagnosticsByCollector.activity.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.activity.recordedAt)}`
         : 'Waiting for activity updates')
       : 'Off',
@@ -312,13 +324,18 @@ export function buildCollectorStatuses(
 
   items.push(buildCollectorClone(collectors.healthConnect, {
     permissionStatus: collectors.healthConnect.enabled
-      ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.healthConnect, 'not_requested')
+      ? (permissionStatusByCollector.healthConnect
+        ?? deriveDiagnosticPermissionStatus(diagnosticsByCollector.healthConnect, 'not_requested'))
       : 'not_requested',
     health: collectors.healthConnect.enabled
-      ? (diagnosticsByCollector.healthConnect?.status === 'success' ? 'healthy' : 'degraded')
+      ? (diagnosticsByCollector.healthConnect?.status === 'success'
+        ? 'healthy'
+        : (permissionStatusByCollector.healthConnect === 'granted' ? 'idle' : 'degraded'))
       : 'idle',
     lastRunLabel: collectors.healthConnect.enabled
-      ? (diagnosticsByCollector.healthConnect
+      ? (permissionStatusByCollector.healthConnect === 'granted' && diagnosticsByCollector.healthConnect?.status !== 'success'
+        ? `Waiting for ${getHealthPlatformName()} sync`
+        : diagnosticsByCollector.healthConnect
         ? `${diagnosticsByCollector.healthConnect.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.healthConnect.recordedAt)}`
         : `Waiting for ${getHealthPlatformName()} sync`)
       : 'Off',
@@ -329,11 +346,15 @@ export function buildCollectorStatuses(
       ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.sleep, 'derived')
       : 'not_requested',
     health: collectors.sleep.enabled
-      ? (diagnosticsByCollector.sleep?.status === 'success' ? 'healthy' : 'degraded')
+      ? (diagnosticsByCollector.sleep?.status === 'success' || overrides.hasLatestSleepEstimate
+        ? 'healthy'
+        : 'idle')
       : 'idle',
     lastRunLabel: collectors.sleep.enabled
-      ? (diagnosticsByCollector.sleep
+      ? (diagnosticsByCollector.sleep?.status === 'success' || overrides.hasLatestSleepEstimate
+        ? (diagnosticsByCollector.sleep
         ? `${diagnosticsByCollector.sleep.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.sleep.recordedAt)}`
+        : 'Sleep estimate available')
         : 'Waiting for sleep inference')
       : 'Off',
   }));

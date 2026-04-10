@@ -45,6 +45,7 @@ import {
   getHealthConnectAvailabilityAsync,
   getRequiredHealthConnectPermissions,
   hasRequiredHealthConnectPermissions,
+  openHealthConnectPermissionRequestAsync,
   openHealthConnectSettingsAsync,
   openUsageAccessSettingsAsync,
   requestActivityRecognitionPermissionAsync,
@@ -84,6 +85,7 @@ export default function SettingsScreen() {
     (state) => state.clearRepositoryData,
   );
   const diagnostics = useRepositoryStore((state) => state.diagnostics);
+  const latestSleepEvent = useRepositoryStore((state) => state.latestSleepEvent);
   const diagnosticsHistory = useRepositoryStore(
     (state) => state.diagnosticsHistory,
   );
@@ -156,35 +158,23 @@ export default function SettingsScreen() {
   ]);
 
   const collectorStatuses = React.useMemo(
-    () =>
-      buildCollectorStatuses(collectors, signals, diagnostics).map(
-        (collector) => {
-          if (collector.key === "activity") {
-            return {
-              ...collector,
-              permissionStatus: collectors.activity.enabled
-                ? activityPermissionStatus
-                : "not_requested",
-            };
-          }
-
-          if (collector.key === "healthConnect") {
-            return {
-              ...collector,
-              permissionStatus: collectors.healthConnect.enabled
-                ? healthConnectPermissionStatus
-                : "not_requested",
-            };
-          }
-
-          return collector;
-        },
-      ),
+    () => buildCollectorStatuses(collectors, signals, diagnostics, {
+      hasLatestSleepEstimate: Boolean(latestSleepEvent),
+      permissionStatusByCollector: {
+        activity: collectors.activity.enabled
+          ? activityPermissionStatus
+          : "not_requested",
+        healthConnect: collectors.healthConnect.enabled
+          ? healthConnectPermissionStatus
+          : "not_requested",
+      },
+    }),
     [
       activityPermissionStatus,
       collectors,
       diagnostics,
       healthConnectPermissionStatus,
+      latestSleepEvent,
       signals,
     ],
   );
@@ -276,14 +266,24 @@ export default function SettingsScreen() {
         }
         case "connect_health": {
           if (Platform.OS === "android") {
-            const opened = await openHealthConnectSettingsAsync();
+            const opened = await openHealthConnectPermissionRequestAsync();
+
+            if (opened) {
+              Alert.alert(
+                `${healthPlatformName} opened`,
+                `Grant Zentra access in ${healthPlatformName}, then return to the app and tap Retry collectors. Once Zentra has been connected, it should also appear under App permissions in ${healthPlatformName}.`,
+              );
+              return;
+            }
+
+            const settingsOpened = await openHealthConnectSettingsAsync();
             Alert.alert(
-              opened
+              settingsOpened
                 ? `${healthPlatformName} opened`
                 : `Unable to open ${healthPlatformName}`,
-              opened
-                ? `Grant Zentra access in ${healthPlatformName}, then return to the app and tap Retry collectors. Required permissions: ${getRequiredHealthConnectPermissions().length}.`
-                : `Android did not open ${healthPlatformName}. Open it manually, grant Zentra access, then return to Zentra and tap Retry collectors.`,
+              settingsOpened
+                ? `Open the Zentra permission flow in ${healthPlatformName}, grant access, then return to the app and tap Retry collectors.`
+                : `Android did not open ${healthPlatformName}. Confirm that Health Connect is installed and updated, then try again.`,
             );
             return;
           }
@@ -292,6 +292,7 @@ export default function SettingsScreen() {
             await requestHealthConnectPermissionsAsync();
           await refreshNativePermissionStatuses();
           await retryCollectors();
+
           Alert.alert(
             hasRequiredHealthConnectPermissions(grantedPermissions)
               ? `${healthPlatformName} connected`

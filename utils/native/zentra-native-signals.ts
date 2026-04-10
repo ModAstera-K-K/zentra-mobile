@@ -52,6 +52,7 @@ interface NativeSignalsModule {
   stopActivityRecognitionUpdatesAsync: () => Promise<void>;
   getHealthConnectAvailabilityAsync: () => Promise<HealthConnectAvailability>;
   getGrantedHealthConnectPermissionsAsync: () => Promise<string[]>;
+  openHealthConnectPermissionRequestAsync: () => Promise<boolean>;
   openHealthConnectSettingsAsync: () => Promise<boolean>;
   requestHealthConnectPermissionsAsync: () => Promise<string[]>;
   getUsageAccessPermissionStatusAsync: () => Promise<UsageAccessPermissionStatus>;
@@ -205,6 +206,15 @@ export async function openHealthConnectSettingsAsync(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function openHealthConnectPermissionRequestAsync(): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (module && typeof module.openHealthConnectPermissionRequestAsync === 'function') {
+    return module.openHealthConnectPermissionRequestAsync();
+  }
+
+  return false;
 }
 
 export async function requestHealthConnectPermissionsAsync(): Promise<string[]> {

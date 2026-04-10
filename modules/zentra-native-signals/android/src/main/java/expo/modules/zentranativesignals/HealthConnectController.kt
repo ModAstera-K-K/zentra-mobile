@@ -2,6 +2,7 @@ package expo.modules.zentranativesignals
 
 import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
@@ -35,6 +36,23 @@ internal class HealthConnectController(private val context: android.content.Cont
     return try {
       val intent = Intent(HEALTH_CONNECT_SETTINGS_ACTION).apply {
         setPackage(PROVIDER_PACKAGE_NAME)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(intent)
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  fun openPermissionRequest(): Boolean {
+    if (getAvailability() != "available") {
+      return false
+    }
+
+    return try {
+      val delegate = PermissionController.createRequestPermissionResultContract()
+      val intent = delegate.createIntent(context, requiredPermissions().toSet()).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
       context.startActivity(intent)

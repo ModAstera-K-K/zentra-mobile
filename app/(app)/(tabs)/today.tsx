@@ -18,12 +18,15 @@ import {
   buildLiveDashboardMetrics,
   buildLiveSleepEstimate,
 } from '@/utils/device-signals';
+import { buildLiveActivityHours } from '@/utils/live-activity-strip';
+import { getActivityRecognitionPermissionStatusAsync } from '@/utils/native/zentra-native-signals';
 import {
   buildActivityHours,
   buildDashboardMetrics,
   buildSleepEstimate,
   createDemoCollectors,
 } from '@/utils/mock-data';
+import type { PermissionStatus } from '@/types/zentra';
 import { useShallow } from 'zustand/react/shallow';
 
 export default function TodayScreen() {
@@ -35,6 +38,7 @@ export default function TodayScreen() {
     isHydrated: state.isHydrated,
     todaySnapshot: state.todaySnapshot,
     todayAggregate: state.todayAggregate,
+    todayEvents: state.todayEvents,
     latestSleepEvent: state.latestSleepEvent,
     diagnostics: state.diagnostics,
   })));
@@ -60,16 +64,34 @@ export default function TodayScreen() {
   })));
   const demoCollectors = createDemoCollectors(collectors);
   const isDemoMode = dataMode === 'demo';
+  const [activityPermissionStatus, setActivityPermissionStatus] = React.useState<PermissionStatus>('not_requested');
+
+  React.useEffect(() => {
+    if (isDemoMode || !collectors.activity.enabled) {
+      setActivityPermissionStatus('not_requested');
+      return;
+    }
+
+    void getActivityRecognitionPermissionStatusAsync().then(setActivityPermissionStatus);
+  }, [collectors.activity.enabled, isDemoMode]);
+
   const metrics = isDemoMode
     ? buildDashboardMetrics(demoCollectors, true)
     : buildLiveDashboardMetrics(collectors, signals, repository.todaySnapshot, repository.todayAggregate);
-  const activityHours = isDemoMode ? buildActivityHours(demoCollectors, true) : [];
+  const activityHours = isDemoMode
+    ? buildActivityHours(demoCollectors, true)
+    : buildLiveActivityHours(repository.todayEvents);
   const sleepEstimate = isDemoMode
     ? buildSleepEstimate(demoCollectors, true)
     : buildLiveSleepEstimate(repository.latestSleepEvent);
   const visibleCollectors = isDemoMode
     ? Object.values(demoCollectors).filter((collector) => collector.enabled)
-    : buildCollectorStatuses(collectors, signals, repository.diagnostics).filter((collector) => collector.enabled);
+    : buildCollectorStatuses(collectors, signals, repository.diagnostics, {
+      hasLatestSleepEstimate: Boolean(repository.latestSleepEvent),
+      permissionStatusByCollector: {
+        activity: collectors.activity.enabled ? activityPermissionStatus : 'not_requested',
+      },
+    }).filter((collector) => collector.enabled);
   const hasCollectors = Object.values(collectors).some((collector) => collector.enabled);
 
   return (

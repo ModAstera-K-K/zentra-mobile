@@ -10,6 +10,7 @@ import {
   clearRepositoryData as clearRepositoryDataFromDb,
   getCollectorDiagnosticsHistory,
   getDailyAggregateForDate,
+  getEventsForRange,
   getLatestCollectorDiagnostics,
   getLatestEventByType,
   getTodayLiveSnapshot,
@@ -33,6 +34,7 @@ interface RepositoryStoreState {
   lastUpdatedAt: string | null;
   todaySnapshot: TodayLiveSnapshot;
   todayAggregate: DailyAggregateRecord | null;
+  todayEvents: ZentraEventRecord[];
   latestSleepEvent: ZentraEventRecord | null;
   diagnostics: CollectorDiagnosticRecord[];
   diagnosticsHistory: CollectorDiagnosticRecord[];
@@ -46,6 +48,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   lastUpdatedAt: null,
   todaySnapshot: EMPTY_TODAY_SNAPSHOT,
   todayAggregate: null,
+  todayEvents: [],
   latestSleepEvent: null,
   diagnostics: [],
   diagnosticsHistory: [],
@@ -56,12 +59,14 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     }
 
     await initializeEventRepository();
-    const [todaySnapshot, diagnostics, diagnosticsHistory, todayAggregate, latestSleepEvent] = await Promise.all([
+    const todayDate = toISODate(new Date());
+    const [todaySnapshot, diagnostics, diagnosticsHistory, todayAggregate, latestSleepEvent, todayEvents] = await Promise.all([
       getTodayLiveSnapshot(),
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
-      getDailyAggregateForDate(toISODate(new Date())),
+      getDailyAggregateForDate(todayDate),
       getLatestEventByType('sleep_inferred'),
+      getEventsForRange(todayDate, todayDate),
     ]);
 
     set({
@@ -69,6 +74,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastUpdatedAt: new Date().toISOString(),
       todaySnapshot,
       todayAggregate,
+      todayEvents,
       latestSleepEvent,
       diagnostics,
       diagnosticsHistory,
@@ -77,12 +83,14 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
   refreshAll: async () => {
     await initializeEventRepository();
-    const [todaySnapshot, diagnostics, diagnosticsHistory, todayAggregate, latestSleepEvent] = await Promise.all([
+    const todayDate = toISODate(new Date());
+    const [todaySnapshot, diagnostics, diagnosticsHistory, todayAggregate, latestSleepEvent, todayEvents] = await Promise.all([
       getTodayLiveSnapshot(),
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
-      getDailyAggregateForDate(toISODate(new Date())),
+      getDailyAggregateForDate(todayDate),
       getLatestEventByType('sleep_inferred'),
+      getEventsForRange(todayDate, todayDate),
     ]);
 
     set({
@@ -90,6 +98,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastUpdatedAt: new Date().toISOString(),
       todaySnapshot,
       todayAggregate,
+      todayEvents,
       latestSleepEvent,
       diagnostics,
       diagnosticsHistory,
@@ -103,6 +112,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastUpdatedAt: new Date().toISOString(),
       todaySnapshot: EMPTY_TODAY_SNAPSHOT,
       todayAggregate: null,
+      todayEvents: [],
       latestSleepEvent: null,
       diagnostics: [],
       diagnosticsHistory: [],

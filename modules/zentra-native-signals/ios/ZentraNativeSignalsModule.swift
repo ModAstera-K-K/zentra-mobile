@@ -53,6 +53,10 @@ public class ZentraNativeSignalsModule: Module {
       self.healthKitController.getGrantedPermissions()
     }
 
+    AsyncFunction("openHealthConnectPermissionRequestAsync") {
+      false
+    }
+
     AsyncFunction("openHealthConnectSettingsAsync") {
       false
     }

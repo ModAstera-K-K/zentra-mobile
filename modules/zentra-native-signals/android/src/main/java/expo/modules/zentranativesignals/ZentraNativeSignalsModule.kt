@@ -110,6 +110,15 @@ class ZentraNativeSignalsModule : Module() {
       getHealthConnectController()?.openSettings() ?: false
     }
 
+    AsyncFunction("openHealthConnectPermissionRequestAsync") {
+      val controller = getHealthConnectController() ?: return@AsyncFunction false
+      if (controller.getAvailability() != "available") {
+        return@AsyncFunction false
+      }
+
+      controller.openPermissionRequest()
+    }
+
     AsyncFunction("requestHealthConnectPermissionsAsync") { promise: Promise ->
       val controller = getHealthConnectController()
       if (controller == null || controller.getAvailability() != "available") {

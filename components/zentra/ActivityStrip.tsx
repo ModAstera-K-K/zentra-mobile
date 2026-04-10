@@ -29,7 +29,7 @@ export function ActivityStrip({ hours }: ActivityStripProps) {
   if (!hours.length) {
     return (
       <EmptyState
-        body="Activity bands will render once activity recognition is enabled."
+        body="Activity bands will render once movement, screen-state, or location history is captured."
         title="No movement strip yet"
       />
     );

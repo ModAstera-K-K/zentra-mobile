@@ -59,14 +59,17 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   item: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderBottomWidth: 1,
     flexDirection: 'row',
+    gap: Spacing.sm,
     justifyContent: 'space-between',
     paddingBottom: Spacing.sm,
   },
   itemCopy: {
+    flex: 1,
     gap: 2,
+    minWidth: 0,
   },
   label: {
     fontFamily: Fonts.bodyMedium,
@@ -75,10 +78,13 @@ const styles = StyleSheet.create({
   detail: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
+    lineHeight: 20,
   },
   status: {
+    alignSelf: 'flex-start',
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
+    flexShrink: 0,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
