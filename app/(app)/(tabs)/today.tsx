@@ -3,30 +3,49 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { ActivityStrip } from '@/components/zentra/ActivityStrip';
 import { CompletenessCard } from '@/components/zentra/CompletenessCard';
+import { DetailSheet } from '@/components/zentra/DetailSheet';
 import { EmptyState } from '@/components/zentra/EmptyState';
+import { HeatmapCard } from '@/components/zentra/HeatmapCard';
 import { MetricCard } from '@/components/zentra/MetricCard';
 import { PilotLight } from '@/components/zentra/PilotLight';
-import { ScreenLead } from '@/components/zentra/ScreenLead';
+import { RecentSignalFeed } from '@/components/zentra/RecentSignalFeed';
 import { ScreenShell } from '@/components/zentra/ScreenShell';
+import { SignalSummaryCard } from '@/components/zentra/SignalSummaryCard';
 import { SleepEstimateCard } from '@/components/zentra/SleepEstimateCard';
+import { Card } from '@/components/ui/Card';
 import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppStore, useRepositoryStore, useSignalStore } from '@/stores';
-import { formatScreenDate } from '@/utils/dates';
+import type {
+  TodayDetailPayload,
+  TodayRecentSignalRow,
+  TodaySummaryMetric,
+} from '@/utils/today-visualization';
+import { formatScreenDate, getDateRangeForTrendRange } from '@/utils/dates';
 import {
   buildCollectorStatuses,
   buildLiveDashboardMetrics,
   buildLiveSleepEstimate,
 } from '@/utils/device-signals';
+import { getEventsForRange } from '@/utils/event-repository';
 import { buildLiveActivityHours } from '@/utils/live-activity-strip';
+import { buildLiveHeatmap } from '@/utils/live-trends';
 import { getActivityRecognitionPermissionStatusAsync } from '@/utils/native/zentra-native-signals';
+import {
+  buildRecentSignalDetailPayload,
+  buildRecentSignalRows,
+  buildSignalHealthSummary,
+  buildTodayMetricDetailPayload,
+  buildTodaySecondaryMetrics,
+} from '@/utils/today-visualization';
 import {
   buildActivityHours,
   buildDashboardMetrics,
+  buildHeatmap,
   buildSleepEstimate,
   createDemoCollectors,
 } from '@/utils/mock-data';
-import type { PermissionStatus } from '@/types/zentra';
+import type { HeatmapCell, PermissionStatus } from '@/types/zentra';
 import { useShallow } from 'zustand/react/shallow';
 
 export default function TodayScreen() {
@@ -36,6 +55,7 @@ export default function TodayScreen() {
   const dataMode = useAppStore((state) => state.dataMode);
   const repository = useRepositoryStore(useShallow((state) => ({
     isHydrated: state.isHydrated,
+    lastUpdatedAt: state.lastUpdatedAt,
     todaySnapshot: state.todaySnapshot,
     todayAggregate: state.todayAggregate,
     todayEvents: state.todayEvents,
@@ -65,6 +85,8 @@ export default function TodayScreen() {
   const demoCollectors = createDemoCollectors(collectors);
   const isDemoMode = dataMode === 'demo';
   const [activityPermissionStatus, setActivityPermissionStatus] = React.useState<PermissionStatus>('not_requested');
+  const [selectedDetail, setSelectedDetail] = React.useState<TodayDetailPayload | null>(null);
+  const [overviewHeatmap, setOverviewHeatmap] = React.useState<HeatmapCell[]>([]);
 
   React.useEffect(() => {
     if (isDemoMode || !collectors.activity.enabled) {
@@ -74,6 +96,29 @@ export default function TodayScreen() {
 
     void getActivityRecognitionPermissionStatusAsync().then(setActivityPermissionStatus);
   }, [collectors.activity.enabled, isDemoMode]);
+
+  React.useEffect(() => {
+    if (isDemoMode || !repository.isHydrated) {
+      return;
+    }
+
+    let isCancelled = false;
+    const range = getDateRangeForTrendRange('7d');
+
+    async function loadOverviewHeatmap(): Promise<void> {
+      const events = await getEventsForRange(range.start, range.end);
+
+      if (!isCancelled) {
+        setOverviewHeatmap(buildLiveHeatmap(events));
+      }
+    }
+
+    void loadOverviewHeatmap();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isDemoMode, repository.isHydrated, repository.lastUpdatedAt]);
 
   const metrics = isDemoMode
     ? buildDashboardMetrics(demoCollectors, true)
@@ -93,35 +138,64 @@ export default function TodayScreen() {
       },
     }).filter((collector) => collector.enabled);
   const hasCollectors = Object.values(collectors).some((collector) => collector.enabled);
+  const secondaryMetrics: TodaySummaryMetric[] = isDemoMode
+    ? []
+    : buildTodaySecondaryMetrics(repository.todayAggregate, repository.todaySnapshot, repository.todayEvents);
+  const recentSignals: TodayRecentSignalRow[] = isDemoMode ? [] : buildRecentSignalRows(repository.todayEvents);
+  const signalHealthSummary = isDemoMode
+    ? null
+    : buildSignalHealthSummary(repository.todayAggregate, visibleCollectors, repository.todayEvents);
+  const overviewCells = isDemoMode ? buildHeatmap('7d', demoCollectors, true) : overviewHeatmap;
+
+  function handleSelectMetric(metric: (typeof metrics)[number]): void {
+    setSelectedDetail(buildTodayMetricDetailPayload(metric, {
+      todayAggregate: repository.todayAggregate,
+      todayEvents: repository.todayEvents,
+      todaySnapshot: repository.todaySnapshot,
+    }));
+  }
+
+  function handleSelectSecondaryMetric(metric: (typeof secondaryMetrics)[number]): void {
+    setSelectedDetail(buildTodayMetricDetailPayload(metric, {
+      todayAggregate: repository.todayAggregate,
+      todayEvents: repository.todayEvents,
+      todaySnapshot: repository.todaySnapshot,
+    }));
+  }
+
+  const introTitle = isDemoMode
+    ? 'Welcome'
+    : hasCollectors
+      ? 'Welcome back'
+      : 'Welcome';
+  const introBody = isDemoMode
+    ? 'Demo data is ready.'
+    : hasCollectors
+      ? 'Today is ready to inspect.'
+      : 'Enable a collector to begin.';
 
   return (
     <ScreenShell subtitle={formatScreenDate(new Date())} title="Today">
-      <ScreenLead
-        body={isDemoMode
-          ? 'Demo mode renders the same shell and sample signals across iPhone and Android for walkthroughs.'
-          : hasCollectors
-            ? 'Available signals surface in one shared layout. Unsupported capabilities stay labeled instead of disappearing.'
-            : 'The interface stays ready before permissions are granted. Enable a collector in Settings to start the local record.'}
-        eyebrow="Collection state"
-        footer={(
-          <View style={styles.leadFooter}>
-            <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
-              {isDemoMode ? 'Demo mode' : 'Live mode'}
-            </Text>
-            <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
-              {hasCollectors
-                ? `${visibleCollectors.length} collector${visibleCollectors.length === 1 ? '' : 's'} enabled`
-                : 'No collectors enabled'}
-            </Text>
+      <View style={styles.introWrap}>
+        <Card elevated style={styles.introCard}>
+          <View style={styles.introHeader}>
+            <View style={styles.introCopy}>
+              <Text style={[styles.introTitle, { color: palette.foreground }]}>{introTitle}</Text>
+              <Text style={[styles.introBody, { color: palette.textSecondary }]}>{introBody}</Text>
+            </View>
+            <View style={styles.introStatus}>
+              <PilotLight size={12} />
+              <Text style={[styles.introMeta, { color: palette.textSecondary }]}>
+                {isDemoMode
+                  ? 'Demo'
+                  : hasCollectors
+                    ? `${visibleCollectors.length} on`
+                    : 'Idle'}
+              </Text>
+            </View>
           </View>
-        )}
-        title={isDemoMode
-          ? 'Sample signals are filling the instrument.'
-          : hasCollectors
-            ? 'Live readings stay local and aligned across both platforms.'
-            : 'The shell is ready before collection begins.'}
-        trailing={<PilotLight size={14} />}
-      />
+        </Card>
+      </View>
 
       {(!repository.isHydrated && !isDemoMode) || !hasCollectors ? (
         <EmptyState
@@ -130,13 +204,24 @@ export default function TodayScreen() {
         />
       ) : (
         <>
+          <View style={styles.sectionBlock}>
+            <HeatmapCard cells={overviewCells} />
+          </View>
           <View style={styles.metricGrid}>
             {metrics.map((metric) => (
               <View key={metric.key} style={styles.metricCell}>
-                <MetricCard metric={metric} />
+                <MetricCard metric={metric} onPress={() => handleSelectMetric(metric)} />
               </View>
             ))}
           </View>
+          {secondaryMetrics.length ? (
+            <View style={styles.sectionBlock}>
+              <SignalSummaryCard
+                metrics={secondaryMetrics}
+                onSelectMetric={handleSelectSecondaryMetric}
+              />
+            </View>
+          ) : null}
           <View style={styles.sectionBlock}>
             <ActivityStrip hours={activityHours} />
           </View>
@@ -144,25 +229,59 @@ export default function TodayScreen() {
             <SleepEstimateCard sleepEstimate={sleepEstimate} />
           </View>
           <View style={styles.sectionBlock}>
-            <CompletenessCard collectors={visibleCollectors} />
+            <RecentSignalFeed
+              onSelectRow={(row) => setSelectedDetail(buildRecentSignalDetailPayload(row.event, repository.todayEvents))}
+              rows={recentSignals}
+            />
+          </View>
+          <View style={styles.sectionBlock}>
+            <CompletenessCard collectors={visibleCollectors} summary={signalHealthSummary ?? undefined} />
           </View>
         </>
       )}
+      <DetailSheet onClose={() => setSelectedDetail(null)} payload={selectedDetail} />
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  leadFooter: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
+  introBody: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    lineHeight: 20,
   },
-  leadMeta: {
+  introCard: {
+    minHeight: 92,
+    paddingVertical: Spacing.lg,
+  },
+  introCopy: {
+    flex: 1,
+    gap: Spacing.xs,
+    minWidth: 0,
+  },
+  introHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.md,
+    justifyContent: 'space-between',
+  },
+  introMeta: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
+    letterSpacing: 1.1,
     textTransform: 'uppercase',
+  },
+  introStatus: {
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  introTitle: {
+    fontFamily: Fonts.display,
+    fontSize: FontSizes.lg,
+    lineHeight: 24,
+  },
+  introWrap: {
+    marginBottom: Spacing.lg,
   },
   metricGrid: {
     flexDirection: 'row',

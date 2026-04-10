@@ -27,7 +27,7 @@ export function ScreenShell({
   const isAndroid = Platform.OS === 'android';
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: palette.background }]}>
       <ScrollView
         contentContainerStyle={[
           styles.content,

@@ -8,6 +8,7 @@ import type { DashboardMetric } from '@/types/zentra';
 
 interface MetricCardProps {
   metric: DashboardMetric;
+  onPress?: () => void;
 }
 
 function getToneColor(metric: DashboardMetric, palette: AppPalette): string {
@@ -23,13 +24,13 @@ function getToneColor(metric: DashboardMetric, palette: AppPalette): string {
   }
 }
 
-export function MetricCard({ metric }: MetricCardProps) {
+export function MetricCard({ metric, onPress }: MetricCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const accent = getToneColor(metric, palette);
 
   return (
-    <Card style={styles.card}>
+    <Card onPress={onPress} style={styles.card}>
       <View style={styles.header}>
         <Text style={[styles.label, { color: palette.textSecondary }]}>{metric.label}</Text>
         <View style={[styles.accent, { backgroundColor: accent }]} />

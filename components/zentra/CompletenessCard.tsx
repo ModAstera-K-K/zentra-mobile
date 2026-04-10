@@ -8,6 +8,11 @@ import type { CollectorState } from '@/types/zentra';
 
 interface CompletenessCardProps {
   collectors: CollectorState[];
+  summary?: {
+    coverageLabel: string;
+    detail: string;
+    valueLabel: string;
+  };
 }
 
 function getHealthColor(health: CollectorState['health'], palette: AppPalette): string {
@@ -21,15 +26,22 @@ function getHealthColor(health: CollectorState['health'], palette: AppPalette): 
   }
 }
 
-export function CompletenessCard({ collectors }: CompletenessCardProps) {
+export function CompletenessCard({ collectors, summary }: CompletenessCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 
   return (
     <Card>
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-        Data completeness
+        Signal health
       </Text>
+      {summary ? (
+        <View style={[styles.summaryCard, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+          <Text style={[styles.summaryValue, { color: palette.primary }]}>{summary.valueLabel}</Text>
+          <Text style={[styles.summaryCoverage, { color: palette.foreground }]}>{summary.coverageLabel}</Text>
+          <Text style={[styles.summaryDetail, { color: palette.textSecondary }]}>{summary.detail}</Text>
+        </View>
+      ) : null}
       <View style={styles.column}>
         {collectors.map((collector) => (
           <View key={collector.key} style={[styles.item, { borderBottomColor: palette.border }]}>
@@ -87,5 +99,25 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
+  },
+  summaryCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+  },
+  summaryCoverage: {
+    fontFamily: Fonts.bodyMedium,
+    fontSize: FontSizes.base,
+  },
+  summaryDetail: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    lineHeight: 20,
+  },
+  summaryValue: {
+    fontFamily: Fonts.monoMedium,
+    fontSize: FontSizes.xl,
   },
 });
