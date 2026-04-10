@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Zentra",
+    "slug": "zentra",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "zentra",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.modastera.zentra",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": true,
+      "blockedPermissions": [
+        "android.permission.INTERNET"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Zentra to access your location while the app is open to estimate mobility radius."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow Zentra to access motion data for live step readings."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
