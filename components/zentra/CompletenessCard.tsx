@@ -1,10 +1,16 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React from "react";
+import { StyleSheet, Text, View } from "react-native";
 
-import { Card } from '@/components/ui/Card';
-import { Colors, Fonts, FontSizes, Spacing, type AppPalette } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { CollectorState } from '@/types/zentra';
+import { Card } from "@/components/ui/Card";
+import {
+  Colors,
+  Fonts,
+  FontSizes,
+  Spacing,
+  type AppPalette,
+} from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import type { CollectorState } from "@/types/zentra";
 
 interface CompletenessCardProps {
   collectors: CollectorState[];
@@ -15,18 +21,35 @@ interface CompletenessCardProps {
   };
 }
 
-function getHealthColor(health: CollectorState['health'], palette: AppPalette): string {
+function getHealthColor(
+  health: CollectorState["health"],
+  palette: AppPalette,
+): string {
   switch (health) {
-    case 'healthy':
+    case "healthy":
       return palette.signalPhysical;
-    case 'degraded':
+    case "degraded":
       return palette.primary;
     default:
       return palette.mutedForeground;
   }
 }
 
-export function CompletenessCard({ collectors, summary }: CompletenessCardProps) {
+function formatHealthLabel(health: CollectorState["health"]): string {
+  switch (health) {
+    case "healthy":
+      return "flowing";
+    case "degraded":
+      return "disrupted";
+    default:
+      return health;
+  }
+}
+
+export function CompletenessCard({
+  collectors,
+  summary,
+}: CompletenessCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 
@@ -36,21 +59,46 @@ export function CompletenessCard({ collectors, summary }: CompletenessCardProps)
         Signal health
       </Text>
       {summary ? (
-        <View style={[styles.summaryCard, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
-          <Text style={[styles.summaryValue, { color: palette.primary }]}>{summary.valueLabel}</Text>
-          <Text style={[styles.summaryCoverage, { color: palette.foreground }]}>{summary.coverageLabel}</Text>
-          <Text style={[styles.summaryDetail, { color: palette.textSecondary }]}>{summary.detail}</Text>
+        <View
+          style={[
+            styles.summaryCard,
+            { backgroundColor: palette.elevated, borderColor: palette.border },
+          ]}
+        >
+          <Text style={[styles.summaryValue, { color: palette.primary }]}>
+            {summary.valueLabel}
+          </Text>
+          <Text style={[styles.summaryCoverage, { color: palette.foreground }]}>
+            {summary.coverageLabel}
+          </Text>
+          <Text
+            style={[styles.summaryDetail, { color: palette.textSecondary }]}
+          >
+            {summary.detail}
+          </Text>
         </View>
       ) : null}
       <View style={styles.column}>
         {collectors.map((collector) => (
-          <View key={collector.key} style={[styles.item, { borderBottomColor: palette.border }]}>
+          <View
+            key={collector.key}
+            style={[styles.item, { borderBottomColor: palette.border }]}
+          >
             <View style={styles.itemCopy}>
-              <Text style={[styles.label, { color: palette.foreground }]}>{collector.label}</Text>
-              <Text style={[styles.detail, { color: palette.textSecondary }]}>{collector.lastRunLabel}</Text>
+              <Text style={[styles.label, { color: palette.foreground }]}>
+                {collector.label}
+              </Text>
+              <Text style={[styles.detail, { color: palette.textSecondary }]}>
+                {collector.lastRunLabel}
+              </Text>
             </View>
-            <Text style={[styles.status, { color: getHealthColor(collector.health, palette) }]}>
-              {collector.health}
+            <Text
+              style={[
+                styles.status,
+                { color: getHealthColor(collector.health, palette) },
+              ]}
+            >
+              {formatHealthLabel(collector.health)}
             </Text>
           </View>
         ))}
@@ -65,17 +113,17 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     letterSpacing: 1.3,
     marginBottom: Spacing.md,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   column: {
     gap: Spacing.sm,
   },
   item: {
-    alignItems: 'flex-start',
+    alignItems: "flex-start",
     borderBottomWidth: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.sm,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     paddingBottom: Spacing.sm,
   },
   itemCopy: {
@@ -93,12 +141,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   status: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     flexShrink: 0,
     letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   summaryCard: {
     borderRadius: 18,

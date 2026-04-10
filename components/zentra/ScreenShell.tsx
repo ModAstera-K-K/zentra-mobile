@@ -1,11 +1,11 @@
 import React from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import { PilotLight } from '@/components/zentra/PilotLight';
 import { Button } from '@/components/ui/Button';
+import { getBrandLogo } from '@/constants/branding';
 import { Colors, Fonts, FontSizes, Layout, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -40,11 +40,8 @@ export function ScreenShell({
       >
         <View style={styles.chromeRow}>
           <View style={styles.brandRow}>
-            <PilotLight size={10} />
-            <View style={styles.brandCopy}>
-              <Text style={[styles.brandLabel, { color: palette.foreground }]}>Zentra</Text>
-              <Text style={[styles.brandMeta, { color: palette.mutedForeground }]}>Local observatory</Text>
-            </View>
+            <Image source={getBrandLogo(colorScheme)} style={styles.brandLogo} />
+            <Text style={[styles.brandLabel, { color: palette.foreground }]}>Zentra</Text>
           </View>
 
           <View style={styles.headerCopy}>
@@ -88,18 +85,14 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  brandCopy: {
-    gap: 2,
-  },
   brandLabel: {
     fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.base,
   },
-  brandMeta: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+  brandLogo: {
+    height: 26,
+    resizeMode: 'contain',
+    width: 26,
   },
   headerCopy: {
     gap: Spacing.xs,

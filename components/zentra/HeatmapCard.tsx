@@ -1,11 +1,11 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React from "react";
+import { StyleSheet, Text, View } from "react-native";
 
-import { Card } from '@/components/ui/Card';
-import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { HeatmapCell } from '@/types/zentra';
-import { EmptyState } from '@/components/zentra/EmptyState';
+import { Card } from "@/components/ui/Card";
+import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import type { HeatmapCell } from "@/types/zentra";
+import { EmptyState } from "@/components/zentra/EmptyState";
 
 interface HeatmapCardProps {
   cells: HeatmapCell[];
@@ -25,8 +25,8 @@ export function HeatmapCard({ cells }: HeatmapCardProps) {
   if (!cells.length) {
     return (
       <EmptyState
-        body="The heatmap appears after activity data has been recorded across multiple days."
-        title="No activity heatmap yet"
+        body="Keep the Activity collector on for a few days. Your pattern will start to take shape."
+        title="Pattern still forming"
       />
     );
   }
@@ -36,12 +36,14 @@ export function HeatmapCard({ cells }: HeatmapCardProps) {
   return (
     <Card>
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-        Activity heatmap
+        Your activity pattern
       </Text>
       <View style={styles.grid}>
         {Object.entries(grouped).map(([dayLabel, dayCells]) => (
           <View key={dayLabel} style={styles.row}>
-            <Text style={[styles.dayLabel, { color: palette.mutedForeground }]}>{dayLabel}</Text>
+            <Text style={[styles.dayLabel, { color: palette.mutedForeground }]}>
+              {dayLabel}
+            </Text>
             <View style={styles.cellRow}>
               {dayCells.map((cell) => (
                 <View
@@ -49,9 +51,10 @@ export function HeatmapCard({ cells }: HeatmapCardProps) {
                   style={[
                     styles.cell,
                     {
-                      backgroundColor: colorScheme === 'light'
-                        ? `rgba(47, 74, 58, ${0.12 + cell.value / 140})`
-                        : `rgba(69, 123, 117, ${0.14 + cell.value / 140})`,
+                      backgroundColor:
+                        colorScheme === "light"
+                          ? `rgba(47, 74, 58, ${0.12 + cell.value / 140})`
+                          : `rgba(69, 123, 117, ${0.14 + cell.value / 140})`,
                       borderColor: palette.border,
                     },
                   ]}
@@ -71,14 +74,14 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     letterSpacing: 1.2,
     marginBottom: Spacing.lg,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   grid: {
     gap: Spacing.sm,
   },
   row: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: Spacing.sm,
   },
   dayLabel: {
@@ -88,8 +91,8 @@ const styles = StyleSheet.create({
   },
   cellRow: {
     flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'nowrap',
+    flexDirection: "row",
+    flexWrap: "nowrap",
     gap: Spacing.xs,
   },
   cell: {
@@ -99,4 +102,3 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
-

@@ -2,10 +2,12 @@ import type {
   CollectorDiagnosticRecord,
   CollectorState,
   PermissionStatus,
-} from '@/types/zentra';
+} from "@/types/zentra";
 
 function isUnsupportedMessage(message: string): boolean {
-  return /unsupported in this build|requires native|custom native|expo prototype/i.test(message);
+  return /unsupported in this build|requires native|custom native|expo prototype/i.test(
+    message,
+  );
 }
 
 function isDeniedMessage(message: string): boolean {
@@ -13,7 +15,9 @@ function isDeniedMessage(message: string): boolean {
 }
 
 function isNotGrantedMessage(message: string): boolean {
-  return /not granted|permission is required|required for|usage access|install or update health connect/i.test(message);
+  return /not granted|permission is required|required for|usage access|install or update health connect/i.test(
+    message,
+  );
 }
 
 function isPermissionMessage(message: string): boolean {
@@ -28,40 +32,44 @@ export function deriveDiagnosticPermissionStatus(
     return fallback;
   }
 
-  if (diagnostic.status === 'success') {
-    return 'granted';
+  if (diagnostic.status === "success") {
+    return "granted";
   }
 
-  const message = diagnostic.message ?? '';
+  const message = diagnostic.message ?? "";
 
   if (isUnsupportedMessage(message)) {
-    return 'unsupported';
+    return "unsupported";
   }
 
   if (isDeniedMessage(message)) {
-    return 'blocked';
+    return "blocked";
   }
 
   if (isNotGrantedMessage(message)) {
-    return 'not_requested';
+    return "not_requested";
   }
 
   return fallback;
 }
 
-export function formatCollectorPermissionStatusLabel(collector: CollectorState): string {
+export function formatCollectorPermissionStatusLabel(
+  collector: CollectorState,
+): string {
   switch (collector.permissionStatus) {
-    case 'granted':
-      return 'Granted';
-    case 'derived':
-      return 'Derived locally';
-    case 'not_requested':
-      return 'Not granted';
-    case 'unsupported':
-      return 'Unsupported in this build';
-    case 'blocked':
-      return isPermissionMessage(collector.lastRunLabel) ? 'Permission denied' : 'Unavailable on this device';
+    case "granted":
+      return "Allowed";
+    case "derived":
+      return "Derived locally";
+    case "not_requested":
+      return "Not allowed yet";
+    case "unsupported":
+      return "Unsupported in this build";
+    case "blocked":
+      return isPermissionMessage(collector.lastRunLabel)
+        ? "Access denied"
+        : "Unavailable on this device";
     default:
-      return 'Unknown';
+      return "Unknown";
   }
 }

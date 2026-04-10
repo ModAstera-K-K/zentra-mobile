@@ -1,19 +1,26 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React from "react";
+import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { PilotLight } from '@/components/zentra/PilotLight';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { BorderRadius, Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAppStore } from '@/stores';
+import { PilotLight } from "@/components/zentra/PilotLight";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { getBrandLogo } from "@/constants/branding";
+import {
+  BorderRadius,
+  Colors,
+  Fonts,
+  FontSizes,
+  Spacing,
+} from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useAppStore } from "@/stores";
 
 const VALUE_POINTS = [
-  'Stored on your device',
-  'No external tracking',
-  'Full export control',
+  "Stored on your device",
+  "No external tracking",
+  "Full export control",
 ];
 
 export default function WelcomeScreen() {
@@ -23,11 +30,13 @@ export default function WelcomeScreen() {
 
   async function handleEnter(): Promise<void> {
     await completeOnboarding();
-    router.replace('/(app)/(tabs)/today');
+    router.replace("/(app)/(tabs)/today");
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: palette.background }]}
+    >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -35,17 +44,19 @@ export default function WelcomeScreen() {
         <View style={styles.container}>
           <View style={styles.heroHeader}>
             <PilotLight size={12} />
-            <Text style={[styles.meta, { color: palette.textSecondary }]}>Daylight observatory</Text>
+            <Text style={[styles.meta, { color: palette.textSecondary }]}>
+              Daylight observatory
+            </Text>
           </View>
 
           <View style={styles.copyBlock}>
-            <Text style={[styles.brand, { color: palette.foreground }]}>Zentra</Text>
+            <Image source={getBrandLogo(colorScheme)} style={styles.logo} />
             <Text style={[styles.headline, { color: palette.foreground }]}>
               Your life, clearly seen. Your data, fully yours.
             </Text>
             <Text style={[styles.body, { color: palette.textSecondary }]}>
-              Zentra brings together the quiet signals of your day, movement, rest, focus,
-              and digital habits, into one calm, private space.
+              Zentra brings together the quiet signals of your day, movement,
+              rest, focus, and digital habits, into one calm, private space.
             </Text>
             <Text style={[styles.body, { color: palette.textSecondary }]}>
               No noise. No hidden systems watching you. Just clarity.
@@ -53,32 +64,44 @@ export default function WelcomeScreen() {
           </View>
 
           <Card elevated style={styles.statementCard}>
-            <Text style={[styles.statementTitle, { color: palette.foreground }]}>
+            <Text
+              style={[styles.statementTitle, { color: palette.foreground }]}
+            >
               A calmer way to understand your life
             </Text>
             <Text style={[styles.body, { color: palette.textSecondary }]}>
               Most tools collect your data. Zentra gives it back to you.
             </Text>
             <Text style={[styles.body, { color: palette.textSecondary }]}>
-              It is a quiet, intentional space, somewhere between a journal and an instrument,
-              where your daily life becomes something you can reflect on, not just measure.
+              It is a quiet, intentional space, somewhere between a journal and
+              an instrument, where your daily life becomes something you can
+              reflect on, not just measure.
             </Text>
           </Card>
 
           <Card style={styles.valueCard}>
-            <Text style={[styles.meta, { color: palette.textSecondary }]}>Built on a simple principle</Text>
+            <Text style={[styles.meta, { color: palette.textSecondary }]}>
+              Built on a simple principle
+            </Text>
             {VALUE_POINTS.map((point) => (
-              <View key={point} style={[styles.valueRow, { borderBottomColor: palette.border }]}>
+              <View
+                key={point}
+                style={[styles.valueRow, { borderBottomColor: palette.border }]}
+              >
                 <PilotLight size={8} />
-                <Text style={[styles.valueText, { color: palette.foreground }]}>{point}</Text>
+                <Text style={[styles.valueText, { color: palette.foreground }]}>
+                  {point}
+                </Text>
               </View>
             ))}
           </Card>
 
           <View style={styles.footer}>
             <Button onPress={() => void handleEnter()}>Enter Zentra</Button>
-            <Text style={[styles.footerText, { color: palette.mutedForeground }]}>
-              Experience your data privately, clearly, and on your terms.
+            <Text
+              style={[styles.footerText, { color: palette.mutedForeground }]}
+            >
+              Your data. Your device. Your call.
             </Text>
           </View>
         </View>
@@ -96,27 +119,27 @@ const styles = StyleSheet.create({
   },
   container: {
     gap: Spacing.xl,
-    minHeight: '100%',
+    minHeight: "100%",
     padding: Spacing.lg,
   },
   heroHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: Spacing.sm,
   },
   meta: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.6,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   copyBlock: {
     gap: Spacing.md,
   },
-  brand: {
-    fontFamily: Fonts.display,
-    fontSize: 48,
-    lineHeight: 52,
+  logo: {
+    height: 84,
+    resizeMode: "contain",
+    width: 84,
   },
   headline: {
     fontFamily: Fonts.display,
@@ -140,9 +163,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   valueRow: {
-    alignItems: 'center',
+    alignItems: "center",
     borderBottomWidth: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.sm,
     paddingBottom: Spacing.md,
   },
@@ -160,6 +183,6 @@ const styles = StyleSheet.create({
   footerText: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
-    textAlign: 'center',
+    textAlign: "center",
   },
 });

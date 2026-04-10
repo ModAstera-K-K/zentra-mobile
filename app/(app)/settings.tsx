@@ -85,7 +85,9 @@ export default function SettingsScreen() {
     (state) => state.clearRepositoryData,
   );
   const diagnostics = useRepositoryStore((state) => state.diagnostics);
-  const latestSleepEvent = useRepositoryStore((state) => state.latestSleepEvent);
+  const latestSleepEvent = useRepositoryStore(
+    (state) => state.latestSleepEvent,
+  );
   const diagnosticsHistory = useRepositoryStore(
     (state) => state.diagnosticsHistory,
   );
@@ -158,17 +160,18 @@ export default function SettingsScreen() {
   ]);
 
   const collectorStatuses = React.useMemo(
-    () => buildCollectorStatuses(collectors, signals, diagnostics, {
-      hasLatestSleepEstimate: Boolean(latestSleepEvent),
-      permissionStatusByCollector: {
-        activity: collectors.activity.enabled
-          ? activityPermissionStatus
-          : "not_requested",
-        healthConnect: collectors.healthConnect.enabled
-          ? healthConnectPermissionStatus
-          : "not_requested",
-      },
-    }),
+    () =>
+      buildCollectorStatuses(collectors, signals, diagnostics, {
+        hasLatestSleepEstimate: Boolean(latestSleepEvent),
+        permissionStatusByCollector: {
+          activity: collectors.activity.enabled
+            ? activityPermissionStatus
+            : "not_requested",
+          healthConnect: collectors.healthConnect.enabled
+            ? healthConnectPermissionStatus
+            : "not_requested",
+        },
+      }),
     [
       activityPermissionStatus,
       collectors,
@@ -181,8 +184,8 @@ export default function SettingsScreen() {
 
   function confirmDelete(): void {
     Alert.alert(
-      "Delete all local data?",
-      "This clears captured local readings and export metadata stored on this device.",
+      "Wipe everything?",
+      "This removes all your captured signals and export history from this device. It can't be undone.",
       [
         { style: "cancel", text: "Cancel" },
         {
@@ -207,8 +210,8 @@ export default function SettingsScreen() {
 
     if (nextPreference === "30d") {
       Alert.alert(
-        "Keep raw location history longer?",
-        "Extended retention stores raw coordinates for up to 30 days. Enable this only if you explicitly want longer raw location history on this device.",
+        "Store location longer?",
+        "This keeps raw location coordinates for up to 30 days. Only turn it on if you genuinely want the longer history on this device.",
         [
           { style: "cancel", text: "Cancel" },
           {
@@ -251,7 +254,7 @@ export default function SettingsScreen() {
           await Linking.openSettings();
           Alert.alert(
             "App settings opened",
-            `Allow the needed permission in ${platformName} settings, then return to Zentra and tap Retry collectors.`,
+            `Allow the needed permission in ${platformName} settings, then return to Zentra and tap Retry signals.`,
           );
           return;
         case "open_usage_access": {
@@ -259,7 +262,7 @@ export default function SettingsScreen() {
           Alert.alert(
             opened ? "Usage Access opened" : "Unable to open Usage Access",
             opened
-              ? "Allow Zentra in Android Usage Access, then return to the app and tap Retry collectors."
+              ? "Allow Zentra in Android Usage Access, then return to the app and tap Retry signals."
               : "Android did not open the Usage Access screen. Open it manually from Special app access > Usage access.",
           );
           return;
@@ -271,7 +274,7 @@ export default function SettingsScreen() {
             if (opened) {
               Alert.alert(
                 `${healthPlatformName} opened`,
-                `Grant Zentra access in ${healthPlatformName}, then return to the app and tap Retry collectors. Once Zentra has been connected, it should also appear under App permissions in ${healthPlatformName}.`,
+                `Grant Zentra access in ${healthPlatformName}, then come back and tap Retry signals. You'll be able to manage it from ${healthPlatformName} afterwards.`,
               );
               return;
             }
@@ -282,8 +285,8 @@ export default function SettingsScreen() {
                 ? `${healthPlatformName} opened`
                 : `Unable to open ${healthPlatformName}`,
               settingsOpened
-                ? `Open the Zentra permission flow in ${healthPlatformName}, grant access, then return to the app and tap Retry collectors.`
-                : `Android did not open ${healthPlatformName}. Confirm that Health Connect is installed and updated, then try again.`,
+                ? `Open the Zentra permission flow in ${healthPlatformName}, allow access, then come back and tap Retry signals.`
+                : `Zentra couldn't open ${healthPlatformName}. Make sure it's installed and up to date, then try again.`,
             );
             return;
           }
@@ -299,7 +302,7 @@ export default function SettingsScreen() {
               : `${healthPlatformName} still needs permissions`,
             hasRequiredHealthConnectPermissions(grantedPermissions)
               ? `${healthPlatformName} access was granted. Zentra will retry the import now.`
-              : `Grant all requested ${healthPlatformName} permissions, then return to Zentra and tap Retry collectors. Required permissions: ${getRequiredHealthConnectPermissions().length}.`,
+              : `Grant all requested ${healthPlatformName} permissions, then return to Zentra and tap Retry signals. Required permissions: ${getRequiredHealthConnectPermissions().length}.`,
           );
           return;
         }
@@ -319,7 +322,7 @@ export default function SettingsScreen() {
   return (
     <ScreenShell
       settingsEnabled={false}
-      subtitle="Controls and diagnostics"
+      subtitle="Your preferences and controls"
       title="Settings"
     >
       <Button
@@ -343,7 +346,7 @@ export default function SettingsScreen() {
             </Text>
           </View>
         }
-        title="One shared shell, platform-aware capabilities."
+        title="One Zentra. Tuned to your device."
       />
 
       <Card style={styles.section}>
@@ -364,7 +367,7 @@ export default function SettingsScreen() {
 
       <Card style={styles.section}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-          Data source
+          Where data comes from
         </Text>
         <View style={styles.themeRow}>
           {DATA_MODE_OPTIONS.map((option) => (
@@ -378,8 +381,8 @@ export default function SettingsScreen() {
         </View>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           {dataMode === "demo"
-            ? "Demo mode shows illustrative dashboard, trends, and export data for presentations."
-            : "Live mode reads supported on-device signals and leaves unsupported surfaces empty."}
+            ? "Sample signals fill every screen — great for exploring before you commit to live data."
+            : "Reads your real device signals. Anything unsupported on your phone just stays quiet."}
         </Text>
       </Card>
 
@@ -404,7 +407,7 @@ export default function SettingsScreen() {
 
       <Card style={styles.section}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-          Collectors
+          Your signals
         </Text>
         <View style={styles.column}>
           {collectorStatuses.map((collector) => (
@@ -460,7 +463,7 @@ export default function SettingsScreen() {
             Delete all data
           </Button>
           <Button onPress={() => void retryCollectors()} variant="outline">
-            Retry collectors
+            Retry signals
           </Button>
         </View>
       </Card>
@@ -491,8 +494,8 @@ export default function SettingsScreen() {
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Repository diagnostics{" "}
           {diagnostics.length
-            ? `${diagnostics.length} collector(s) with stored status`
-            : "No stored collector activity yet"}
+            ? `Signal history — ${diagnostics.length} with stored activity`
+            : "Signal history — nothing recorded yet"}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           {getLiveSignalsSummary()}
