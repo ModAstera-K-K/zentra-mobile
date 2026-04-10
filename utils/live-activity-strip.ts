@@ -88,10 +88,10 @@ function getBucketTotal(bucket: ActivityBucket): number {
 
 function toIntensity(total: number, maxTotal: number): number {
   if (maxTotal <= 0 || total <= 0) {
-    return 8;
+    return 0;
   }
 
-  return Math.max(8, Math.min(98, Math.round((total / maxTotal) * 98)));
+  return Math.max(6, Math.min(98, Math.round((total / maxTotal) * 98)));
 }
 
 export function buildLiveActivityHours(events: ZentraEventRecord[]): ActivityHour[] {
@@ -119,6 +119,9 @@ export function buildLiveActivityHours(events: ZentraEventRecord[]): ActivityHou
   });
 
   const maxTotal = Math.max(...buckets.map(getBucketTotal));
+  const maxMovement = Math.max(...buckets.map((bucket) => bucket.movementScore), 0);
+  const maxScreen = Math.max(...buckets.map((bucket) => bucket.screenScore), 0);
+  const maxRest = Math.max(...buckets.map((bucket) => bucket.restScore), 0);
 
   if (maxTotal <= 0) {
     return [];
@@ -132,6 +135,9 @@ export function buildLiveActivityHours(events: ZentraEventRecord[]): ActivityHou
       label: bucket.label,
       intensity: toIntensity(total, maxTotal),
       kind: getBucketKind(bucket),
+      movementIntensity: toIntensity(bucket.movementScore, maxMovement),
+      restIntensity: toIntensity(bucket.restScore, maxRest),
+      screenIntensity: toIntensity(bucket.screenScore, maxScreen),
     };
   });
 }

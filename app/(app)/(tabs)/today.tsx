@@ -214,6 +214,9 @@ export default function TodayScreen() {
               </View>
             ))}
           </View>
+          <View style={styles.sectionBlock}>
+            <ActivityStrip hours={activityHours} />
+          </View>
           {secondaryMetrics.length ? (
             <View style={styles.sectionBlock}>
               <SignalSummaryCard
@@ -222,9 +225,6 @@ export default function TodayScreen() {
               />
             </View>
           ) : null}
-          <View style={styles.sectionBlock}>
-            <ActivityStrip hours={activityHours} />
-          </View>
           <View style={styles.sectionBlock}>
             <SleepEstimateCard sleepEstimate={sleepEstimate} />
           </View>

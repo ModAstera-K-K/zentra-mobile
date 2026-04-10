@@ -228,10 +228,13 @@ export function buildActivityHours(
   }
 
   return HOURS.map((hour, index) => ({
+    movementIntensity: buildWaveValue(index, 12, 96, 1),
     hour,
-    label: `${hour}:00`,
     intensity: buildWaveValue(index, 8, 98, 1),
     kind: buildActivityKind(index),
+    label: `${hour}:00`,
+    restIntensity: buildWaveValue(index, index < 3 || index > 9 ? 28 : 6, index < 3 || index > 9 ? 92 : 32, 3),
+    screenIntensity: buildWaveValue(index, index >= 5 && index <= 7 ? 24 : 6, index >= 5 && index <= 7 ? 88 : 28, 5),
   }));
 }
 

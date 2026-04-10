@@ -65,6 +65,9 @@ export interface ActivityHour {
   label: string;
   intensity: number;
   kind: 'rest' | 'movement' | 'screen';
+  movementIntensity: number;
+  restIntensity: number;
+  screenIntensity: number;
 }
 
 export interface SleepEstimate {
