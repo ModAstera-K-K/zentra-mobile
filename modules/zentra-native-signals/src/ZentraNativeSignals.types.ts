@@ -15,6 +15,18 @@ export type ActivityTransitionEventPayload = {
   timestamp: string;
 };
 
+export type UsageEventPayload = {
+  eventType:
+    | 'activity_resumed'
+    | 'activity_paused'
+    | 'screen_interactive'
+    | 'screen_non_interactive'
+    | 'keyguard_hidden';
+  packageName?: string | null;
+  className?: string | null;
+  timestamp: string;
+};
+
 export type ZentraNativeSignalsViewProps = {
   url: string;
   onLoad: (event: { nativeEvent: OnLoadEventPayload }) => void;

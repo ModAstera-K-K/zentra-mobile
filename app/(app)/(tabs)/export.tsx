@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { EmptyState } from '@/components/zentra/EmptyState';
 import { ScreenShell } from '@/components/zentra/ScreenShell';
@@ -10,7 +10,7 @@ import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppStore, useRepositoryStore } from '@/stores';
 import type { ExportFormat, ExportPreset } from '@/types/zentra';
-import { getExportRangeForPreset, formatDateRangeLabel } from '@/utils/dates';
+import { getExportRangeForPreset, formatDateRangeLabel, isValidISODate } from '@/utils/dates';
 import { getDailyAggregatesForRange, getGroupedEventsForRange } from '@/utils/event-repository';
 import { buildExportEvents, createDemoCollectors } from '@/utils/mock-data';
 import { buildAndShareExportBundle, estimateExportBundleBytes } from '@/utils/export';
@@ -35,7 +35,8 @@ export default function ExportScreen() {
   const [selectedTypes, setSelectedTypes] = React.useState<string[]>([]);
   const [liveEvents, setLiveEvents] = React.useState<Record<string, import('@/types/zentra').ZentraEventRecord[]>>({});
   const [liveAggregates, setLiveAggregates] = React.useState<import('@/types/zentra').DailyAggregateRecord[]>([]);
-  const range = getExportRangeForPreset(preset);
+  const [customRange, setCustomRange] = React.useState(() => getExportRangeForPreset('custom'));
+  const range = preset === 'custom' ? customRange : getExportRangeForPreset(preset);
   const demoCollectors = createDemoCollectors(collectors);
   const allEvents = dataMode === 'demo'
     ? buildExportEvents(demoCollectors, true)
@@ -44,9 +45,10 @@ export default function ExportScreen() {
     ? Object.keys(allEvents)
     : Object.keys(liveEvents);
   const availableTypesKey = availableTypes.join('|');
+  const hasValidRange = isValidISODate(range.start) && isValidISODate(range.end) && range.start <= range.end;
 
   React.useEffect(() => {
-    if (dataMode === 'demo' || !repositoryState.isHydrated) {
+    if (dataMode === 'demo' || !repositoryState.isHydrated || !hasValidRange) {
       return;
     }
 
@@ -71,7 +73,7 @@ export default function ExportScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [dataMode, range.end, range.start, repositoryState.isHydrated, repositoryState.lastUpdatedAt]);
+  }, [dataMode, hasValidRange, range.end, range.start, repositoryState.isHydrated, repositoryState.lastUpdatedAt]);
 
   React.useEffect(() => {
     setSelectedTypes(availableTypesKey ? availableTypesKey.split('|') : []);
@@ -88,6 +90,10 @@ export default function ExportScreen() {
   async function handleExport(): Promise<void> {
     if (!selectedTypes.length) {
       Alert.alert('Select data types', 'Choose at least one data type to export.');
+      return;
+    }
+    if (!hasValidRange) {
+      Alert.alert('Invalid date range', 'Enter a valid start and end date in YYYY-MM-DD format.');
       return;
     }
 
@@ -134,6 +140,29 @@ export default function ExportScreen() {
             <Text style={[styles.helper, { color: palette.mutedForeground }]}>
               {formatDateRangeLabel(range.start, range.end)}
             </Text>
+            {preset === 'custom' ? (
+              <View style={styles.customRangeRow}>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={(value) => setCustomRange((current) => ({ ...current, start: value }))}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={palette.mutedForeground}
+                  style={[styles.dateInput, { borderColor: palette.border, color: palette.foreground }]}
+                  value={customRange.start}
+                />
+                <Text style={[styles.helper, { color: palette.mutedForeground }]}>to</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={(value) => setCustomRange((current) => ({ ...current, end: value }))}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={palette.mutedForeground}
+                  style={[styles.dateInput, { borderColor: palette.border, color: palette.foreground }]}
+                  value={customRange.end}
+                />
+              </View>
+            ) : null}
           </Card>
 
           <Card style={styles.section}>
@@ -163,6 +192,7 @@ export default function ExportScreen() {
             <Text style={[styles.summaryValue, { color: palette.primary }]}>
               {formatBytes(estimateExportBundleBytes(
                 format,
+                range,
                 Object.fromEntries(
                   Object.entries(allEvents).filter(([key]) => selectedTypes.includes(key)),
                 ),
@@ -203,6 +233,20 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
+  },
+  customRangeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  dateInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.sm,
+    minHeight: 44,
+    paddingHorizontal: Spacing.md,
   },
   summaryLabel: {
     fontFamily: Fonts.mono,

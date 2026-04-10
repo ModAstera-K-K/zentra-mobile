@@ -64,6 +64,18 @@ class ZentraNativeSignalsModule : Module() {
       getHealthConnectController()?.getAvailability() ?: "unsupported"
     }
 
+    AsyncFunction("getUsageAccessPermissionStatusAsync") {
+      getUsageStatsController()?.getPermissionStatus() ?: "unsupported"
+    }
+
+    AsyncFunction("openUsageAccessSettingsAsync") {
+      getUsageStatsController()?.openUsageAccessSettings() ?: false
+    }
+
+    AsyncFunction("readUsageEventsAsync") { startIso: String, endIso: String ->
+      getUsageStatsController()?.readUsageEvents(startIso, endIso) ?: emptyList<Map<String, Any?>>()
+    }
+
     AsyncFunction("getGrantedHealthConnectPermissionsAsync") Coroutine {
       getHealthConnectController()?.getGrantedPermissions() ?: arrayListOf()
     }
@@ -90,5 +102,10 @@ class ZentraNativeSignalsModule : Module() {
   private fun getHealthConnectController(): HealthConnectController? {
     val context = appContext.reactContext ?: return null
     return HealthConnectController(context)
+  }
+
+  private fun getUsageStatsController(): UsageStatsController? {
+    val context = appContext.reactContext ?: return null
+    return UsageStatsController(context)
   }
 }

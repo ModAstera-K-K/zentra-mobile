@@ -24,6 +24,18 @@ public class ZentraNativeSignalsModule: Module {
       return "unsupported"
     }
 
+    AsyncFunction("getUsageAccessPermissionStatusAsync") {
+      return "unsupported"
+    }
+
+    AsyncFunction("openUsageAccessSettingsAsync") {
+      return false
+    }
+
+    AsyncFunction("readUsageEventsAsync") { (_: String, _: String) in
+      return [[String: Any]]()
+    }
+
     AsyncFunction("getGrantedHealthConnectPermissionsAsync") {
       return [String]()
     }

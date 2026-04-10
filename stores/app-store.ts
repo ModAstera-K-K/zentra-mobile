@@ -12,12 +12,14 @@ interface AppState {
   lastExportedAt: string | null;
   dataMode: DataMode;
   collectors: CollectorStateMap;
+  collectorRetryToken: number;
   bootstrap: () => Promise<void>;
   completeOnboarding: () => Promise<void>;
   setCollectorEnabled: (key: CollectorKey, enabled: boolean) => Promise<void>;
   setDataMode: (mode: DataMode) => Promise<void>;
   clearAllData: () => Promise<void>;
   noteExport: (timestamp: string) => Promise<void>;
+  retryCollectors: () => Promise<void>;
 }
 
 async function persistState(state: AppState): Promise<void> {
@@ -51,6 +53,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastExportedAt: null,
   dataMode: 'live',
   collectors: createInitialCollectors(),
+  collectorRetryToken: 0,
 
   bootstrap: async () => {
     if (get().isHydrated) {
@@ -96,5 +99,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   noteExport: async (timestamp) => {
     set({ lastExportedAt: timestamp });
     await persistState(get());
+  },
+
+  retryCollectors: async () => {
+    set({ collectorRetryToken: get().collectorRetryToken + 1 });
   },
 }));

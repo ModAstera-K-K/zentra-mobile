@@ -22,6 +22,7 @@ import type { CollectorHandle } from '@/utils/collectors/types';
 
 export function useSignalBootstrap(): void {
   const collectors = useAppStore((state) => state.collectors);
+  const collectorRetryToken = useAppStore((state) => state.collectorRetryToken);
   const isHydrated = useSignalStore((state) => state.isHydrated);
   const bootstrap = useSignalStore((state) => state.bootstrap);
   const setStepSupport = useSignalStore((state) => state.setStepSupport);
@@ -111,6 +112,7 @@ export function useSignalBootstrap(): void {
     setStepPermissionStatus,
     setStepSupport,
     refreshRepository,
+    collectorRetryToken,
   ]);
 
   useEffect(() => {
@@ -145,6 +147,7 @@ export function useSignalBootstrap(): void {
     setBatterySnapshot,
     setBatterySupport,
     refreshRepository,
+    collectorRetryToken,
   ]);
 
   useEffect(() => {
@@ -183,6 +186,7 @@ export function useSignalBootstrap(): void {
     setLocationServicesEnabled,
     setLocationSupport,
     refreshRepository,
+    collectorRetryToken,
   ]);
 
   useEffect(() => {
@@ -198,7 +202,7 @@ export function useSignalBootstrap(): void {
     return () => {
       handle?.stop();
     };
-  }, [collectors.activity.enabled, isHydrated, refreshRepository]);
+  }, [collectors.activity.enabled, isHydrated, refreshRepository, collectorRetryToken]);
 
   useEffect(() => {
     if (!isHydrated || !collectors.appUsage.enabled) {
@@ -207,13 +211,13 @@ export function useSignalBootstrap(): void {
 
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startAppUsageCollectorModule(refreshRepository);
+      handle = await startAppUsageCollectorModule({ refreshRepository });
     })();
 
     return () => {
       handle?.stop();
     };
-  }, [collectors.appUsage.enabled, isHydrated, refreshRepository]);
+  }, [collectors.appUsage.enabled, isHydrated, refreshRepository, collectorRetryToken]);
 
   useEffect(() => {
     if (!isHydrated || !collectors.healthConnect.enabled) {
@@ -228,7 +232,7 @@ export function useSignalBootstrap(): void {
     return () => {
       handle?.stop();
     };
-  }, [collectors.healthConnect.enabled, isHydrated, refreshRepository]);
+  }, [collectors.healthConnect.enabled, isHydrated, refreshRepository, collectorRetryToken]);
 
   useEffect(() => {
     if (!isHydrated || !collectors.sleep.enabled) {
@@ -237,13 +241,13 @@ export function useSignalBootstrap(): void {
 
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startSleepCollectorModule(refreshRepository);
+      handle = await startSleepCollectorModule({ refreshRepository });
     })();
 
     return () => {
       handle?.stop();
     };
-  }, [collectors.sleep.enabled, isHydrated, refreshRepository]);
+  }, [collectors.sleep.enabled, isHydrated, refreshRepository, collectorRetryToken]);
 
   useEffect(() => {
     if (!isHydrated || !collectors.ambientLight.enabled) {
@@ -268,5 +272,6 @@ export function useSignalBootstrap(): void {
     refreshRepository,
     setAmbientLightLux,
     setAmbientLightSupport,
+    collectorRetryToken,
   ]);
 }

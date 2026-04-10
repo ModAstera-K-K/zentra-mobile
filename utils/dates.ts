@@ -95,6 +95,15 @@ export function enumerateISODateRange(start: string, end: string): string[] {
   return dates;
 }
 
+export function isValidISODate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = parseISODate(value);
+  return !Number.isNaN(date.getTime()) && toISODate(date) === value;
+}
+
 export function isSunriseThemeLight(date: Date): boolean {
   const hour = date.getHours();
   return hour >= 6 && hour < 18;

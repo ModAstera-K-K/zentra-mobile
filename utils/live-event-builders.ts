@@ -7,6 +7,7 @@ import type {
 import type {
   NativeActivityTransition,
   NativeHealthConnectRecord,
+  NativeUsageEvent,
 } from '@/utils/native/zentra-native-signals';
 
 function createId(prefix: string): string {
@@ -111,6 +112,98 @@ function createHealthConnectEvent(record: NativeHealthConnectRecord): ZentraEven
 
 export function createHealthConnectEvents(records: NativeHealthConnectRecord[]): ZentraEventRecord[] {
   return records.map(createHealthConnectEvent);
+}
+
+function createDeterministicEventId(parts: Array<string | null | undefined>): string {
+  return parts.filter(Boolean).join('-');
+}
+
+function createAppUsageEvent(
+  packageName: string,
+  className: string | null | undefined,
+  startTimestamp: string,
+  endTimestamp: string,
+): ZentraEventRecord {
+  const durationSeconds = Math.max(
+    1,
+    Math.round((new Date(endTimestamp).getTime() - new Date(startTimestamp).getTime()) / 1000),
+  );
+
+  return {
+    ...createBaseEvent('app_usage', 'usage_stats', startTimestamp),
+    id: createDeterministicEventId(['usage', packageName, className ?? 'unknown', startTimestamp, endTimestamp]),
+    timestampEnd: endTimestamp,
+    valueNumeric: durationSeconds,
+    valueText: packageName,
+    unit: 'seconds',
+    metadata: {
+      class_name: className ?? 'unknown',
+    },
+  };
+}
+
+function createScreenStateEvent(state: 'interactive' | 'non_interactive', timestamp: string): ZentraEventRecord {
+  return {
+    ...createBaseEvent('screen_state', 'usage_stats', timestamp),
+    id: createDeterministicEventId(['screen', state, timestamp]),
+    valueText: state,
+    unit: 'state',
+  };
+}
+
+function createUnlockEvent(timestamp: string): ZentraEventRecord {
+  return {
+    ...createBaseEvent('unlock_event', 'usage_stats', timestamp),
+    id: createDeterministicEventId(['unlock', timestamp]),
+    valueNumeric: 1,
+    unit: 'count',
+  };
+}
+
+export function createUsageDerivedEvents(
+  usageEvents: NativeUsageEvent[],
+): { appUsageEvents: ZentraEventRecord[]; deviceStateEvents: ZentraEventRecord[] } {
+  const appUsageEvents: ZentraEventRecord[] = [];
+  const deviceStateEvents: ZentraEventRecord[] = [];
+  const openSessions = new Map<string, NativeUsageEvent>();
+
+  usageEvents
+    .slice()
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+    .forEach((event) => {
+      switch (event.eventType) {
+        case 'activity_resumed': {
+          const key = `${event.packageName ?? 'unknown'}:${event.className ?? 'unknown'}`;
+          openSessions.set(key, event);
+          break;
+        }
+        case 'activity_paused': {
+          const key = `${event.packageName ?? 'unknown'}:${event.className ?? 'unknown'}`;
+          const resumedEvent = openSessions.get(key);
+          if (resumedEvent && event.packageName) {
+            appUsageEvents.push(createAppUsageEvent(
+              event.packageName,
+              event.className,
+              resumedEvent.timestamp,
+              event.timestamp,
+            ));
+            openSessions.delete(key);
+          }
+          break;
+        }
+        case 'screen_interactive':
+          deviceStateEvents.push(createScreenStateEvent('interactive', event.timestamp));
+          break;
+        case 'screen_non_interactive':
+          deviceStateEvents.push(createScreenStateEvent('non_interactive', event.timestamp));
+          break;
+        case 'keyguard_hidden':
+          deviceStateEvents.push(createUnlockEvent(event.timestamp));
+          break;
+      }
+    });
+
+  return { appUsageEvents, deviceStateEvents };
 }
 
 export function buildSeedEventsFromSignals(signals: SignalStoreState): ZentraEventRecord[] {

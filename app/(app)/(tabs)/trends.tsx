@@ -80,7 +80,7 @@ export default function TrendsScreen() {
           return;
         }
 
-        setLiveSeries(buildLiveTrendSeries(aggregates, { start: rangeStart, end: rangeEnd }));
+        setLiveSeries(buildLiveTrendSeries(aggregates, { start: rangeStart, end: rangeEnd }, events));
         setLiveHeatmap(buildLiveHeatmap(events));
       } finally {
         if (!isCancelled) {

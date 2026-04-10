@@ -34,6 +34,8 @@ export default function TodayScreen() {
   const repository = useRepositoryStore(useShallow((state) => ({
     isHydrated: state.isHydrated,
     todaySnapshot: state.todaySnapshot,
+    todayAggregate: state.todayAggregate,
+    latestSleepEvent: state.latestSleepEvent,
     diagnostics: state.diagnostics,
   })));
   const signals = useSignalStore(useShallow((state) => ({
@@ -60,11 +62,11 @@ export default function TodayScreen() {
   const isDemoMode = dataMode === 'demo';
   const metrics = isDemoMode
     ? buildDashboardMetrics(demoCollectors, true)
-    : buildLiveDashboardMetrics(collectors, signals, repository.todaySnapshot);
+    : buildLiveDashboardMetrics(collectors, signals, repository.todaySnapshot, repository.todayAggregate);
   const activityHours = isDemoMode ? buildActivityHours(demoCollectors, true) : [];
   const sleepEstimate = isDemoMode
     ? buildSleepEstimate(demoCollectors, true)
-    : buildLiveSleepEstimate();
+    : buildLiveSleepEstimate(repository.latestSleepEvent);
   const visibleCollectors = isDemoMode
     ? Object.values(demoCollectors).filter((collector) => collector.enabled)
     : buildCollectorStatuses(collectors, signals, repository.diagnostics).filter((collector) => collector.enabled);

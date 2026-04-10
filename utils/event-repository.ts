@@ -478,6 +478,37 @@ export async function getLatestCollectorDiagnostics(): Promise<CollectorDiagnost
   return rows.map(mapDiagnosticRow);
 }
 
+export async function getCollectorDiagnosticsHistory(limit = 50): Promise<CollectorDiagnosticRecord[]> {
+  const database = await getLocalDatabase();
+  const rows = await database.getAllAsync<DiagnosticRow>(
+    `SELECT *
+      FROM collector_diagnostics
+      ORDER BY recorded_at DESC
+      LIMIT ?`,
+    limit,
+  );
+
+  return rows.map(mapDiagnosticRow);
+}
+
+export async function getCollectorDiagnosticHistoryForKey(
+  collectorKey: CollectorKey,
+  limit = 20,
+): Promise<CollectorDiagnosticRecord[]> {
+  const database = await getLocalDatabase();
+  const rows = await database.getAllAsync<DiagnosticRow>(
+    `SELECT *
+      FROM collector_diagnostics
+      WHERE collector_key = ?
+      ORDER BY recorded_at DESC
+      LIMIT ?`,
+    collectorKey,
+    limit,
+  );
+
+  return rows.map(mapDiagnosticRow);
+}
+
 export async function getDailyAggregatesForRange(
   start: string,
   end: string,
@@ -492,6 +523,18 @@ export async function getDailyAggregatesForRange(
   );
 
   return rows.map(mapAggregateRow);
+}
+
+export async function getDailyAggregateForDate(date: string): Promise<DailyAggregateRecord | null> {
+  const database = await getLocalDatabase();
+  const row = await database.getFirstAsync<AggregateRow>(
+    `SELECT * FROM daily_aggregates
+      WHERE date = ?
+      LIMIT 1`,
+    date,
+  );
+
+  return row ? mapAggregateRow(row) : null;
 }
 
 export async function getGroupedEventsForRange(
@@ -538,4 +581,19 @@ export async function getEventsForRange(
 ): Promise<ZentraEventRecord[]> {
   const { startIso, endExclusiveIso } = getRangeBounds(start, end);
   return getEventsBetween(startIso, endExclusiveIso);
+}
+
+export async function getLatestEventByType(
+  dataType: ZentraEventRecord['dataType'],
+): Promise<ZentraEventRecord | null> {
+  const database = await getLocalDatabase();
+  const row = await database.getFirstAsync<EventRow>(
+    `SELECT * FROM events
+      WHERE data_type = ?
+      ORDER BY timestamp_start DESC
+      LIMIT 1`,
+    dataType,
+  );
+
+  return row ? mapEventRow(row) : null;
 }

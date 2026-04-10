@@ -20,6 +20,19 @@ export interface NativeHealthConnectRecord {
 }
 
 export type HealthConnectAvailability = 'available' | 'not_installed' | 'unsupported';
+export type UsageAccessPermissionStatus = PermissionStatus;
+
+export interface NativeUsageEvent {
+  eventType:
+    | 'activity_resumed'
+    | 'activity_paused'
+    | 'screen_interactive'
+    | 'screen_non_interactive'
+    | 'keyguard_hidden';
+  packageName?: string | null;
+  className?: string | null;
+  timestamp: string;
+}
 
 interface NativeSignalsSubscription {
   remove: () => void;
@@ -37,6 +50,9 @@ interface NativeSignalsModule {
   getHealthConnectAvailabilityAsync: () => Promise<HealthConnectAvailability>;
   getGrantedHealthConnectPermissionsAsync: () => Promise<string[]>;
   requestHealthConnectPermissionsAsync: () => Promise<string[]>;
+  getUsageAccessPermissionStatusAsync: () => Promise<UsageAccessPermissionStatus>;
+  openUsageAccessSettingsAsync: () => Promise<boolean>;
+  readUsageEventsAsync: (startIso: string, endIso: string) => Promise<NativeUsageEvent[]>;
   readHealthConnectRecordsAsync: (startIso: string, endIso: string) => Promise<NativeHealthConnectRecord[]>;
 }
 
@@ -121,6 +137,36 @@ export async function getHealthConnectAvailabilityAsync(): Promise<HealthConnect
   }
 
   return module.getHealthConnectAvailabilityAsync();
+}
+
+export async function getUsageAccessPermissionStatusAsync(): Promise<UsageAccessPermissionStatus> {
+  const module = loadNativeSignalsModule();
+  if (!module) {
+    return 'unsupported';
+  }
+
+  return module.getUsageAccessPermissionStatusAsync();
+}
+
+export async function openUsageAccessSettingsAsync(): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (!module) {
+    return false;
+  }
+
+  return module.openUsageAccessSettingsAsync();
+}
+
+export async function readUsageEventsAsync(
+  startIso: string,
+  endIso: string,
+): Promise<NativeUsageEvent[]> {
+  const module = loadNativeSignalsModule();
+  if (!module) {
+    return [];
+  }
+
+  return module.readUsageEventsAsync(startIso, endIso);
 }
 
 export async function getGrantedHealthConnectPermissionsAsync(): Promise<string[]> {

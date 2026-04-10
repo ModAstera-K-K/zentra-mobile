@@ -25,6 +25,18 @@ class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEv
     return 'unsupported';
   }
 
+  async getUsageAccessPermissionStatusAsync(): Promise<'unsupported'> {
+    return 'unsupported';
+  }
+
+  async openUsageAccessSettingsAsync(): Promise<boolean> {
+    return false;
+  }
+
+  async readUsageEventsAsync(): Promise<[]> {
+    return [];
+  }
+
   async getGrantedHealthConnectPermissionsAsync(): Promise<string[]> {
     return [];
   }

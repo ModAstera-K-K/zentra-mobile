@@ -99,6 +99,7 @@ function getExportFileName(format: ExportFormat, range: DateRangeSelection): str
 function buildManifest(
   range: DateRangeSelection,
   events: Record<string, ZentraEventRecord[]>,
+  dailyAggregates: DailyAggregateRecord[],
 ): Record<string, unknown> {
   return {
     schema_version: 1,
@@ -110,11 +111,22 @@ function buildManifest(
     },
     data_types_included: getIncludedTypes(events),
     collectors: getCollectorEventsCount(events),
+    files: {
+      daily_aggregates_csv: dailyAggregates.length > 0,
+      format: Object.keys(events).length ? 'present' : 'empty',
+    },
     device: {
       os_version: 'Android (prototype shell)',
       model_hash: 'prototype-shell',
     },
   };
+}
+
+function flattenEvents(events: Record<string, ZentraEventRecord[]>): ZentraEventRecord[] {
+  return Object.values(events)
+    .flat()
+    .slice()
+    .sort((left, right) => left.timestampStart.localeCompare(right.timestampStart));
 }
 
 export async function buildAndShareExportBundle(
@@ -124,7 +136,7 @@ export async function buildAndShareExportBundle(
   dailyAggregates: DailyAggregateRecord[] = [],
 ): Promise<{ fileName: string; estimatedBytes: number }> {
   const zip = new JSZip();
-  const manifest = buildManifest(range, events);
+  const manifest = buildManifest(range, events, dailyAggregates);
 
   zip.file('manifest.json', JSON.stringify(manifest, null, 2));
   if (dailyAggregates.length) {
@@ -132,7 +144,7 @@ export async function buildAndShareExportBundle(
   }
 
   if (format === 'json') {
-    zip.file('events_full.json', JSON.stringify(events, null, 2));
+    zip.file('events.json', JSON.stringify(flattenEvents(events), null, 2));
   } else {
     Object.entries(events).forEach(([key, records]) => {
       zip.file(`events_${key}.csv`, buildEventsCsv(records));
@@ -171,17 +183,13 @@ export async function buildAndShareExportBundle(
 
 export function estimateExportBundleBytes(
   format: ExportFormat,
+  range: DateRangeSelection,
   events: Record<string, ZentraEventRecord[]>,
   dailyAggregates: DailyAggregateRecord[] = [],
 ): number {
-  const manifestBytes = JSON.stringify(buildManifest({
-    preset: 'today',
-    start: '2026-04-10',
-    end: '2026-04-10',
-  }, events)).length;
+  const manifestBytes = JSON.stringify(buildManifest(range, events, dailyAggregates)).length;
   const aggregateBytes = dailyAggregates.reduce((total, record) => total + JSON.stringify(record).length, 0);
-  const eventBytes = Object.values(events)
-    .flat()
+  const eventBytes = flattenEvents(events)
     .reduce((total, record) => total + JSON.stringify(record).length, 0);
   const multiplier = format === 'json' ? 1.15 : 0.9;
 

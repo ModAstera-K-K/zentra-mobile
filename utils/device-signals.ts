@@ -5,6 +5,7 @@ import type {
   CollectorDiagnosticRecord,
   CollectorKey,
   CollectorState,
+  DailyAggregateRecord,
   DashboardMetric,
   EventDataType,
   EventSource,
@@ -16,7 +17,7 @@ import type {
   ZentraEventRecord,
 } from '@/types/zentra';
 import { deriveDiagnosticPermissionStatus } from '@/utils/collector-permission-status';
-import { formatBytes, formatNumber } from '@/utils/format';
+import { formatBytes, formatMinutes, formatNumber } from '@/utils/format';
 
 type CollectorStateMap = Record<CollectorKey, CollectorState>;
 
@@ -111,8 +112,9 @@ export function buildLiveDashboardMetrics(
   collectors: CollectorStateMap,
   signals: SignalStoreState,
   todaySnapshot: TodayLiveSnapshot,
+  todayAggregate: DailyAggregateRecord | null,
 ): DashboardMetric[] {
-  const mobilityRadius = calculateMobilityRadius(todaySnapshot.locationSamples);
+  const mobilityRadius = todayAggregate?.mobilityRadiusMeters ?? calculateMobilityRadius(todaySnapshot.locationSamples);
 
   return [
     metric(
@@ -130,18 +132,26 @@ export function buildLiveDashboardMetrics(
     metric(
       'activeMinutes',
       'Active Minutes',
-      'Unavailable',
-      'Requires a background activity collector that is not available in this Expo prototype.',
+      todayAggregate ? formatNumber(todayAggregate.activeMinutes) : 'Waiting',
+      collectors.activity.enabled
+        ? (todayAggregate && todayAggregate.activeMinutes > 0
+          ? 'Derived from stored activity transitions captured on this device.'
+          : 'Activity history will appear once transitions are captured.')
+        : 'Turn on the Activity collector in Settings.',
       'physical',
-      false,
+      Boolean(todayAggregate && todayAggregate.activeMinutes > 0),
     ),
     metric(
       'screenTime',
       'Screen Time',
-      'Unavailable',
-      'App usage and screen-time access are not available through this Expo build.',
+      todayAggregate ? formatMinutes(Math.round(todayAggregate.screenTimeSeconds / 60)) : 'Waiting',
+      collectors.appUsage.enabled
+        ? (todayAggregate && todayAggregate.screenTimeSeconds > 0
+          ? 'Derived from Android Usage Access app session history.'
+          : 'Grant Usage Access to begin collecting screen-time history.')
+        : 'Turn on the Screen Time collector in Settings.',
       'cool',
-      false,
+      Boolean(todayAggregate && todayAggregate.screenTimeSeconds > 0),
     ),
     metric(
       'mobilityRadius',
@@ -158,14 +168,30 @@ export function buildLiveDashboardMetrics(
   ];
 }
 
-export function buildLiveSleepEstimate(): SleepEstimate {
+export function buildLiveSleepEstimate(sleepEvent: ZentraEventRecord | null): SleepEstimate {
+  if (!sleepEvent || typeof sleepEvent.valueNumeric !== 'number') {
+    return {
+      startLabel: '--:--',
+      endLabel: '--:--',
+      durationLabel: 'Not available',
+      confidence: 0,
+      available: false,
+      detail: 'Sleep windows appear once screen-state and unlock history are available, or when health records are imported.',
+    };
+  }
+
+  const startDate = new Date(sleepEvent.timestampStart);
+  const endDate = new Date(sleepEvent.timestampEnd);
+
   return {
-    startLabel: '--:--',
-    endLabel: '--:--',
-    durationLabel: 'Not available',
-    confidence: 0,
-    available: false,
-    detail: 'Sleep windows require a dedicated native collector and are not inferred in this prototype.',
+    startLabel: new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(startDate),
+    endLabel: new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(endDate),
+    durationLabel: formatMinutes(Math.round(sleepEvent.valueNumeric)),
+    confidence: sleepEvent.confidence,
+    available: true,
+    detail: sleepEvent.source === 'health_connect'
+      ? 'Imported from Health Connect history.'
+      : 'Inferred from screen-state, unlock, and charging patterns captured locally.',
   };
 }
 
@@ -253,9 +279,17 @@ export function buildCollectorStatuses(
   }));
 
   items.push(buildCollectorClone(collectors.appUsage, {
-    permissionStatus: collectors.appUsage.enabled ? 'unsupported' : 'not_requested',
-    health: collectors.appUsage.enabled ? 'degraded' : 'idle',
-    lastRunLabel: collectors.appUsage.enabled ? 'Unsupported in this build' : 'Off',
+    permissionStatus: collectors.appUsage.enabled
+      ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.appUsage, 'not_requested')
+      : 'not_requested',
+    health: collectors.appUsage.enabled
+      ? (diagnosticsByCollector.appUsage?.status === 'success' ? 'healthy' : 'degraded')
+      : 'idle',
+    lastRunLabel: collectors.appUsage.enabled
+      ? (diagnosticsByCollector.appUsage
+        ? `${diagnosticsByCollector.appUsage.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.appUsage.recordedAt)}`
+        : 'Waiting for usage stats')
+      : 'Off',
   }));
 
   items.push(buildCollectorClone(collectors.healthConnect, {
@@ -273,9 +307,17 @@ export function buildCollectorStatuses(
   }));
 
   items.push(buildCollectorClone(collectors.sleep, {
-    permissionStatus: collectors.sleep.enabled ? 'unsupported' : 'not_requested',
-    health: collectors.sleep.enabled ? 'degraded' : 'idle',
-    lastRunLabel: collectors.sleep.enabled ? 'Unsupported in this build' : 'Off',
+    permissionStatus: collectors.sleep.enabled
+      ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.sleep, 'derived')
+      : 'not_requested',
+    health: collectors.sleep.enabled
+      ? (diagnosticsByCollector.sleep?.status === 'success' ? 'healthy' : 'degraded')
+      : 'idle',
+    lastRunLabel: collectors.sleep.enabled
+      ? (diagnosticsByCollector.sleep
+        ? `${diagnosticsByCollector.sleep.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.sleep.recordedAt)}`
+        : 'Waiting for sleep inference')
+      : 'Off',
   }));
 
   return items;

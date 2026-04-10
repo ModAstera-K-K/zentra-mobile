@@ -26,12 +26,14 @@ export default function SettingsScreen() {
   const dataMode = useAppStore((state) => state.dataMode);
   const setDataMode = useAppStore((state) => state.setDataMode);
   const clearAllData = useAppStore((state) => state.clearAllData);
+  const retryCollectors = useAppStore((state) => state.retryCollectors);
   const lastExportedAt = useAppStore((state) => state.lastExportedAt);
   const themePreference = useAppearanceStore((state) => state.themePreference);
   const setThemePreference = useAppearanceStore((state) => state.setThemePreference);
   const clearCapturedData = useSignalStore((state) => state.clearCapturedData);
   const clearRepositoryData = useRepositoryStore((state) => state.clearRepositoryData);
   const diagnostics = useRepositoryStore((state) => state.diagnostics);
+  const diagnosticsHistory = useRepositoryStore((state) => state.diagnosticsHistory);
   const signals = useSignalStore(useShallow((state) => ({
     isHydrated: state.isHydrated,
     stepCount: state.stepCount,
@@ -129,6 +131,7 @@ export default function SettingsScreen() {
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>Data controls</Text>
         <View style={styles.actionRow}>
           <Button onPress={confirmDelete} variant="outline">Delete all data</Button>
+          <Button onPress={() => void retryCollectors()} variant="outline">Retry collectors</Button>
         </View>
       </Card>
 
@@ -155,6 +158,18 @@ export default function SettingsScreen() {
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Sunrise mode uses a local 06:00–18:00 daylight heuristic in this preview shell.
         </Text>
+        <View style={styles.diagnosticsColumn}>
+          {diagnosticsHistory.slice(0, 10).map((entry) => (
+            <View key={entry.id} style={[styles.diagnosticItem, { borderBottomColor: palette.border }]}>
+              <Text style={[styles.diagnosticKey, { color: palette.foreground }]}>
+                {entry.collectorKey}
+              </Text>
+              <Text style={[styles.detail, { color: palette.textSecondary }]}>
+                {entry.status} · {entry.message ?? 'No message'} · failures {entry.consecutiveFailures}
+              </Text>
+            </View>
+          ))}
+        </View>
       </Card>
     </ScreenShell>
   );
@@ -191,5 +206,20 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
+  },
+  diagnosticsColumn: {
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  diagnosticItem: {
+    borderBottomWidth: 1,
+    gap: 2,
+    paddingBottom: Spacing.sm,
+  },
+  diagnosticKey: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
   },
 });

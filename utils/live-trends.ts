@@ -78,6 +78,7 @@ function createTrendSeries(
 export function buildLiveTrendSeries(
   aggregates: DailyAggregateRecord[],
   rangeSelection: { start: string; end: string },
+  events: ZentraEventRecord[] = [],
 ): TrendSeries[] {
   const dates = enumerateISODateRange(rangeSelection.start, rangeSelection.end);
   const aggregateByDate = new Map(aggregates.map((record) => [record.date, record]));
@@ -94,6 +95,32 @@ export function buildLiveTrendSeries(
     dataCompleteness: 0,
     computedAt: new Date().toISOString(),
   });
+  const ambientByDate = dates.reduce<Record<string, number[]>>((result, date) => {
+    result[date] = [];
+    return result;
+  }, {});
+
+  events.forEach((event) => {
+    if (event.dataType !== 'ambient_light' || typeof event.valueNumeric !== 'number') {
+      return;
+    }
+
+    const dateKey = event.timestampStart.slice(0, 10);
+    if (!ambientByDate[dateKey]) {
+      ambientByDate[dateKey] = [];
+    }
+    ambientByDate[dateKey].push(event.valueNumeric);
+  });
+
+  const ambientValues = dates.map((date) => {
+    const values = ambientByDate[date] ?? [];
+    if (!values.length) {
+      return 0;
+    }
+
+    return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+  });
+
   const series = [
     createTrendSeries(
       'steps',
@@ -125,6 +152,14 @@ export function buildLiveTrendSeries(
       'm',
       'human',
       normalizedAggregates.map((record) => Math.round(record.mobilityRadiusMeters ?? 0)),
+      dates,
+    ),
+    createTrendSeries(
+      'ambientLight',
+      'Ambient Light',
+      'lux',
+      'cool',
+      ambientValues,
       dates,
     ),
   ];

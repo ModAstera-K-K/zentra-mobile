@@ -14,6 +14,21 @@ declare class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignals
   getHealthConnectAvailabilityAsync(): Promise<'available' | 'not_installed' | 'unsupported'>;
   getGrantedHealthConnectPermissionsAsync(): Promise<string[]>;
   requestHealthConnectPermissionsAsync(): Promise<string[]>;
+  getUsageAccessPermissionStatusAsync(): Promise<
+    'granted' | 'not_requested' | 'blocked' | 'unsupported'
+  >;
+  openUsageAccessSettingsAsync(): Promise<boolean>;
+  readUsageEventsAsync(startIso: string, endIso: string): Promise<Array<{
+    eventType:
+      | 'activity_resumed'
+      | 'activity_paused'
+      | 'screen_interactive'
+      | 'screen_non_interactive'
+      | 'keyguard_hidden';
+    packageName?: string | null;
+    className?: string | null;
+    timestamp: string;
+  }>>;
   readHealthConnectRecordsAsync(startIso: string, endIso: string): Promise<Array<{
     id: string;
     recordType: 'steps' | 'sleep' | 'heart_rate' | 'exercise_session';
