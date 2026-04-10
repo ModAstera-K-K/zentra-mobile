@@ -1,14 +1,12 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { EmptyState } from '@/components/zentra/EmptyState';
 import { HeatmapCard } from '@/components/zentra/HeatmapCard';
 import { ScreenShell } from '@/components/zentra/ScreenShell';
 import { TrendChartCard } from '@/components/zentra/TrendChartCard';
 import { Chip } from '@/components/ui/Chip';
-import { Card } from '@/components/ui/Card';
-import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Spacing } from '@/constants/theme';
 import { useAppStore, useRepositoryStore } from '@/stores';
 import type { TrendRange } from '@/types/zentra';
 import { getDateRangeForTrendRange } from '@/utils/dates';
@@ -33,8 +31,6 @@ export default function TrendsScreen() {
   const [liveSeries, setLiveSeries] = React.useState<import('@/types/zentra').TrendSeries[]>([]);
   const [liveHeatmap, setLiveHeatmap] = React.useState<import('@/types/zentra').HeatmapCell[]>([]);
   const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
-  const colorScheme = useColorScheme();
-  const palette = Colors[colorScheme];
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
   const repository = useRepositoryStore(useShallow((state) => ({
@@ -115,19 +111,6 @@ export default function TrendsScreen() {
         ))}
       </View>
 
-      {range === 'custom' ? (
-        <View style={styles.sectionBlock}>
-          <Card style={styles.customCard}>
-            <Text style={[styles.customTitle, { color: palette.foreground }]}>
-              Custom range preview
-            </Text>
-            <Text style={[styles.customBody, { color: palette.textSecondary }]}>
-              This shell uses a rolling 14-day custom window until native date pickers are added in the next pass.
-            </Text>
-          </Card>
-        </View>
-      ) : null}
-
       {isDemoMode || hasLiveTrendData ? (
         <>
           {series.map((entry) => (
@@ -155,19 +138,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: Spacing.sm,
     marginBottom: Spacing.lg,
-  },
-  customCard: {
-    marginBottom: 0,
-  },
-  customTitle: {
-    fontFamily: Fonts.bodyMedium,
-    fontSize: FontSizes.base,
-    marginBottom: Spacing.sm,
-  },
-  customBody: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.sm,
-    lineHeight: 20,
   },
   sectionBlock: {
     marginBottom: Spacing.lg,

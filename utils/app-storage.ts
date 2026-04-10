@@ -1,6 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { CollectorKey, CollectorState, DataMode, SignalStoreState } from '@/types/zentra';
+import type {
+  CollectorKey,
+  CollectorState,
+  DataMode,
+  LocationRetentionPreference,
+  SignalStoreState,
+} from '@/types/zentra';
 
 const APP_STATE_KEY = 'zentra-app-state';
 const SIGNAL_STATE_KEY = 'zentra-signal-state';
@@ -9,6 +15,7 @@ export interface PersistedAppState {
   hasCompletedOnboarding: boolean;
   lastExportedAt: string | null;
   dataMode: DataMode;
+  locationRetentionPreference: LocationRetentionPreference;
   collectors: Record<CollectorKey, CollectorState>;
 }
 

@@ -1,56 +1,69 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { PilotLight } from '@/components/zentra/PilotLight';
 import { Button } from '@/components/ui/Button';
+import { Colors, Fonts, FontSizes, Layout, Spacing } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface ScreenShellProps {
-  title: string;
-  subtitle: string;
   children: React.ReactNode;
   settingsEnabled?: boolean;
+  subtitle: string;
+  title: string;
 }
 
 export function ScreenShell({
-  title,
-  subtitle,
   children,
   settingsEnabled = true,
+  subtitle,
+  title,
 }: ScreenShellProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const isAndroid = Platform.OS === 'android';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom: isAndroid ? 0 : Layout.tabBarHeight + Spacing['4xl'],
+          },
+        ]}
         showsVerticalScrollIndicator={false}
         style={{ backgroundColor: palette.background }}
       >
-        <View style={styles.header}>
-          <View style={styles.headerCopy}>
-            <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-              {subtitle}
-            </Text>
-            <Text style={[styles.title, { color: palette.foreground }]}>
-              {title}
-            </Text>
+        <View style={styles.chromeRow}>
+          <View style={styles.brandRow}>
+            <PilotLight size={10} />
+            <View style={styles.brandCopy}>
+              <Text style={[styles.brandLabel, { color: palette.foreground }]}>Zentra</Text>
+              <Text style={[styles.brandMeta, { color: palette.mutedForeground }]}>Local observatory</Text>
+            </View>
           </View>
+
+          <View style={styles.headerCopy}>
+            <Text style={[styles.subtitle, { color: palette.textSecondary }]}>{subtitle}</Text>
+            <Text style={[styles.title, { color: palette.foreground }]}>{title}</Text>
+          </View>
+
           {settingsEnabled ? (
             <Button
               accessibilityLabel="Open settings"
               onPress={() => router.push('/(app)/settings')}
-              variant="secondary"
               style={styles.settingsButton}
+              variant="secondary"
             >
-              <Ionicons name="settings-outline" size={18} color={palette.foreground} />
+              <Ionicons color={palette.foreground} name="settings-outline" size={18} />
             </Button>
           ) : null}
         </View>
+
         {children}
       </ScrollView>
     </SafeAreaView>
@@ -62,19 +75,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: Spacing.lg,
-    paddingBottom: Spacing['4xl'],
+    padding: Layout.screenGutter,
   },
-  header: {
+  chromeRow: {
     alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: Spacing.xl,
+    position: 'relative',
+  },
+  brandRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  brandCopy: {
+    gap: 2,
+  },
+  brandLabel: {
+    fontFamily: Fonts.bodyMedium,
+    fontSize: FontSizes.base,
+  },
+  brandMeta: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   headerCopy: {
-    flex: 1,
     gap: Spacing.xs,
-    paddingRight: Spacing.lg,
+    paddingRight: Spacing['4xl'],
   },
   subtitle: {
     fontFamily: Fonts.mono,
@@ -91,6 +120,8 @@ const styles = StyleSheet.create({
     minHeight: 42,
     minWidth: 42,
     paddingHorizontal: 0,
+    position: 'absolute',
+    right: 0,
+    top: 2,
   },
 });
-

@@ -1,51 +1,72 @@
 import ExpoModulesCore
 
 public class ZentraNativeSignalsModule: Module {
+  private lazy var activityController = IOSActivityRecognitionController { payload in
+    self.sendEvent("onActivityTransition", payload)
+  }
+  private let healthKitController = IOSHealthKitController()
+
   public func definition() -> ModuleDefinition {
     Name("ZentraNativeSignals")
 
     Events("onActivityTransition")
 
-    AsyncFunction("getActivityRecognitionPermissionStatusAsync") {
-      return "unsupported"
+    OnDestroy {
+      self.activityController.stopUpdates()
     }
 
-    AsyncFunction("requestActivityRecognitionPermissionAsync") {
-      return "unsupported"
+    AsyncFunction("getActivityRecognitionPermissionStatusAsync") {
+      self.activityController.getPermissionStatus()
+    }
+
+    AsyncFunction("requestActivityRecognitionPermissionAsync") { (promise: Promise) in
+      self.activityController.requestPermission { status in
+        promise.resolve(status)
+      }
     }
 
     AsyncFunction("startActivityRecognitionUpdatesAsync") {
-      return false
+      self.activityController.startUpdates()
     }
 
-    AsyncFunction("stopActivityRecognitionUpdatesAsync") { }
+    AsyncFunction("stopActivityRecognitionUpdatesAsync") {
+      self.activityController.stopUpdates()
+    }
 
     AsyncFunction("getHealthConnectAvailabilityAsync") {
-      return "unsupported"
+      self.healthKitController.getAvailability()
     }
 
     AsyncFunction("getUsageAccessPermissionStatusAsync") {
-      return "unsupported"
+      "unsupported"
     }
 
     AsyncFunction("openUsageAccessSettingsAsync") {
-      return false
+      false
     }
 
     AsyncFunction("readUsageEventsAsync") { (_: String, _: String) in
-      return [[String: Any]]()
+      [[String: Any?]]()
     }
 
     AsyncFunction("getGrantedHealthConnectPermissionsAsync") {
-      return [String]()
+      self.healthKitController.getGrantedPermissions()
     }
 
-    AsyncFunction("requestHealthConnectPermissionsAsync") {
-      return [String]()
+    AsyncFunction("openHealthConnectSettingsAsync") {
+      false
     }
 
-    AsyncFunction("readHealthConnectRecordsAsync") { (_: String, _: String) in
-      return [[String: Any]]()
+    AsyncFunction("requestHealthConnectPermissionsAsync") { (promise: Promise) in
+      self.healthKitController.requestPermissions { grantedPermissions in
+        promise.resolve(grantedPermissions)
+      }
+    }
+
+    AsyncFunction("readHealthConnectRecordsAsync") { (startIso: String, endIso: String, promise: Promise) in
+      self.healthKitController.readRecords(startIso: startIso, endIso: endIso) { records in
+        promise.resolve(records)
+      }
     }
   }
 }

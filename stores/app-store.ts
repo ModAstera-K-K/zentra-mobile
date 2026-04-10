@@ -1,8 +1,14 @@
 import { create } from 'zustand';
 
-import type { CollectorKey, CollectorState, DataMode } from '@/types/zentra';
+import type {
+  CollectorKey,
+  CollectorState,
+  DataMode,
+  LocationRetentionPreference,
+} from '@/types/zentra';
 import { createInitialCollectors } from '@/utils/mock-data';
 import { loadPersistedAppState, savePersistedAppState } from '@/utils/app-storage';
+import { DEFAULT_LOCATION_RETENTION } from '@/utils/location-retention';
 
 type CollectorStateMap = Record<CollectorKey, CollectorState>;
 
@@ -11,12 +17,14 @@ interface AppState {
   hasCompletedOnboarding: boolean;
   lastExportedAt: string | null;
   dataMode: DataMode;
+  locationRetentionPreference: LocationRetentionPreference;
   collectors: CollectorStateMap;
   collectorRetryToken: number;
   bootstrap: () => Promise<void>;
   completeOnboarding: () => Promise<void>;
   setCollectorEnabled: (key: CollectorKey, enabled: boolean) => Promise<void>;
   setDataMode: (mode: DataMode) => Promise<void>;
+  setLocationRetentionPreference: (preference: LocationRetentionPreference) => Promise<void>;
   clearAllData: () => Promise<void>;
   noteExport: (timestamp: string) => Promise<void>;
   retryCollectors: () => Promise<void>;
@@ -27,6 +35,7 @@ async function persistState(state: AppState): Promise<void> {
     hasCompletedOnboarding: state.hasCompletedOnboarding,
     lastExportedAt: state.lastExportedAt,
     dataMode: state.dataMode,
+    locationRetentionPreference: state.locationRetentionPreference,
     collectors: state.collectors,
   });
 }
@@ -52,6 +61,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasCompletedOnboarding: false,
   lastExportedAt: null,
   dataMode: 'live',
+  locationRetentionPreference: DEFAULT_LOCATION_RETENTION,
   collectors: createInitialCollectors(),
   collectorRetryToken: 0,
 
@@ -67,6 +77,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       hasCompletedOnboarding: persisted?.hasCompletedOnboarding ?? false,
       lastExportedAt: persisted?.lastExportedAt ?? null,
       dataMode: persisted?.dataMode ?? 'live',
+      locationRetentionPreference: persisted?.locationRetentionPreference ?? DEFAULT_LOCATION_RETENTION,
       collectors: mergeCollectorsWithDefaults(persisted?.collectors),
     });
   },
@@ -88,6 +99,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setDataMode: async (dataMode) => {
     set({ dataMode });
+    await persistState(get());
+  },
+
+  setLocationRetentionPreference: async (locationRetentionPreference) => {
+    set({ locationRetentionPreference });
     await persistState(get());
   },
 

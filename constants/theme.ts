@@ -126,3 +126,10 @@ export const FontSizes = {
   '2xl': 28,
   '3xl': 38,
 } as const;
+
+export const Layout = {
+  screenGutter: Spacing.lg,
+  sectionGap: Spacing.lg,
+  tabBarHeight: 78,
+  tabBarOffset: 12,
+} as const;

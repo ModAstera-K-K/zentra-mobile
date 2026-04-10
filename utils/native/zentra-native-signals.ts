@@ -1,3 +1,6 @@
+import * as ExpoLinking from 'expo-linking';
+import { Platform } from 'react-native';
+
 import type { PermissionStatus } from '@/types/zentra';
 
 export interface NativeActivityTransition {
@@ -49,6 +52,7 @@ interface NativeSignalsModule {
   stopActivityRecognitionUpdatesAsync: () => Promise<void>;
   getHealthConnectAvailabilityAsync: () => Promise<HealthConnectAvailability>;
   getGrantedHealthConnectPermissionsAsync: () => Promise<string[]>;
+  openHealthConnectSettingsAsync: () => Promise<boolean>;
   requestHealthConnectPermissionsAsync: () => Promise<string[]>;
   getUsageAccessPermissionStatusAsync: () => Promise<UsageAccessPermissionStatus>;
   openUsageAccessSettingsAsync: () => Promise<boolean>;
@@ -56,12 +60,19 @@ interface NativeSignalsModule {
   readHealthConnectRecordsAsync: (startIso: string, endIso: string) => Promise<NativeHealthConnectRecord[]>;
 }
 
-const REQUIRED_HEALTH_CONNECT_PERMISSIONS = [
-  'android.permission.health.READ_STEPS',
-  'android.permission.health.READ_SLEEP',
-  'android.permission.health.READ_HEART_RATE',
-  'android.permission.health.READ_EXERCISE',
-] as const;
+const REQUIRED_HEALTH_CONNECT_PERMISSIONS = Platform.OS === 'ios'
+  ? [
+    'ios.healthkit.read.steps',
+    'ios.healthkit.read.sleep',
+    'ios.healthkit.read.heart_rate',
+    'ios.healthkit.read.exercise',
+  ] as const
+  : [
+    'android.permission.health.READ_STEPS',
+    'android.permission.health.READ_SLEEP',
+    'android.permission.health.READ_HEART_RATE',
+    'android.permission.health.READ_EXERCISE',
+  ] as const;
 
 function loadNativeSignalsModule(): NativeSignalsModule | null {
   try {
@@ -176,6 +187,24 @@ export async function getGrantedHealthConnectPermissionsAsync(): Promise<string[
   }
 
   return module.getGrantedHealthConnectPermissionsAsync();
+}
+
+export async function openHealthConnectSettingsAsync(): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (module && typeof module.openHealthConnectSettingsAsync === 'function') {
+    return module.openHealthConnectSettingsAsync();
+  }
+
+  if (Platform.OS !== 'android') {
+    return false;
+  }
+
+  try {
+    await ExpoLinking.sendIntent('androidx.health.ACTION_HEALTH_CONNECT_SETTINGS');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function requestHealthConnectPermissionsAsync(): Promise<string[]> {

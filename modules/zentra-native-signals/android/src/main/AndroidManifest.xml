@@ -7,6 +7,15 @@
   <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
   <uses-permission android:name="android.permission.health.READ_EXERCISE" />
 
+  <!-- Android 11+ package visibility: allow querying Health Connect and Play Services -->
+  <queries>
+    <package android:name="com.google.android.apps.healthdata" />
+    <package android:name="com.google.android.gms" />
+    <intent>
+      <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+    </intent>
+  </queries>
+
   <application>
     <receiver
       android:name=".ActivityTransitionReceiver"

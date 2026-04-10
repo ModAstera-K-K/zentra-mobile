@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 import type {
   EventSource,
   LocationSample,
@@ -105,6 +107,7 @@ function createHealthConnectEvent(record: NativeHealthConnectRecord): ZentraEven
     confidence: 1,
     metadata: {
       ...record.metadata,
+      health_platform: Platform.OS === 'ios' ? 'HealthKit' : 'Health Connect',
       record_id: record.id,
     },
   };

@@ -49,7 +49,7 @@ function getVariantStyles(variant: ButtonVariant, palette: AppPalette): {
     case 'secondary':
       return {
         container: {
-          backgroundColor: palette.card,
+          backgroundColor: palette.elevated,
           borderColor: palette.border,
           borderWidth: 1,
         },
@@ -63,13 +63,13 @@ function getVariantStyles(variant: ButtonVariant, palette: AppPalette): {
           backgroundColor: 'transparent',
         },
         text: {
-          color: palette.textSecondary,
+          color: palette.foreground,
         },
       };
     case 'outline':
       return {
         container: {
-          backgroundColor: 'transparent',
+          backgroundColor: palette.halo,
           borderColor: palette.primary,
           borderWidth: 1,
         },
@@ -94,16 +94,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: BorderRadius.pill,
     justifyContent: 'center',
-    minHeight: 48,
+    minHeight: 50,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
   },
   text: {
     fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.base,
+    letterSpacing: 0.2,
   },
   pressed: {
-    opacity: 0.82,
+    opacity: 0.88,
     transform: [{ scale: 0.98 }],
   },
 });

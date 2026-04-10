@@ -2,6 +2,7 @@ import React from 'react';
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { EmptyState } from '@/components/zentra/EmptyState';
+import { ScreenLead } from '@/components/zentra/ScreenLead';
 import { ScreenShell } from '@/components/zentra/ScreenShell';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -118,6 +119,26 @@ export default function ExportScreen() {
 
   return (
     <ScreenShell subtitle="Portable local bundles" title="Export">
+      <ScreenLead
+        body={dataMode === 'demo'
+          ? 'Demo bundles keep the same export structure as live mode, but the payload is illustrative.'
+          : 'Choose a date window, file format, and signal types. Files stay on-device until you explicitly share them.'}
+        eyebrow="Local bundle"
+        footer={(
+          <View style={styles.leadFooter}>
+            <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
+              {formatDateRangeLabel(range.start, range.end)}
+            </Text>
+            <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
+              {selectedTypes.length} type{selectedTypes.length === 1 ? '' : 's'} selected
+            </Text>
+          </View>
+        )}
+        title={availableTypes.length
+          ? 'Build a portable bundle without leaving the device.'
+          : 'Exports appear after local readings are stored.'}
+      />
+
       {!availableTypes.length ? (
         <EmptyState
           body="Real local readings appear here once Zentra has captured device data. Unsupported signals are omitted instead of being fabricated."
@@ -214,6 +235,17 @@ export default function ExportScreen() {
 }
 
 const styles = StyleSheet.create({
+  leadFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+  },
+  leadMeta: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
   section: {
     gap: Spacing.md,
     marginBottom: Spacing.lg,

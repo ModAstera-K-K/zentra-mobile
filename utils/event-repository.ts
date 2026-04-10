@@ -597,3 +597,28 @@ export async function getLatestEventByType(
 
   return row ? mapEventRow(row) : null;
 }
+
+export async function pruneLocationEventsBefore(cutoffIso: string): Promise<number> {
+  return enqueueWrite(async () => {
+    const database = await getLocalDatabase();
+    const countRow = await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) as count
+        FROM events
+        WHERE data_type = 'location' AND timestamp_start < ?`,
+      cutoffIso,
+    );
+    const deletedCount = countRow?.count ?? 0;
+
+    if (!deletedCount) {
+      return 0;
+    }
+
+    await database.runAsync(
+      `DELETE FROM events
+        WHERE data_type = 'location' AND timestamp_start < ?`,
+      cutoffIso,
+    );
+
+    return deletedCount;
+  });
+}

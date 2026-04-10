@@ -1,38 +1,40 @@
-import { appendEventsForCollector, ensureCollectorFailureState } from '@/utils/event-repository';
-import { createActivityEvent } from '@/utils/live-event-builders';
+import {
+  appendEventsForCollector,
+  ensureCollectorFailureState,
+} from "@/utils/event-repository";
+import { createActivityEvent } from "@/utils/live-event-builders";
 import {
   addActivityTransitionListener,
   getActivityRecognitionPermissionStatusAsync,
-  requestActivityRecognitionPermissionAsync,
   startActivityRecognitionUpdatesAsync,
   stopActivityRecognitionUpdatesAsync,
-} from '@/utils/native/zentra-native-signals';
-import type { ActivityCollectorDeps, CollectorHandle } from '@/utils/collectors/types';
+} from "@/utils/native/zentra-native-signals";
+import { getActivityUnsupportedMessage } from "@/utils/platform-capabilities";
+import type {
+  ActivityCollectorDeps,
+  CollectorHandle,
+} from "@/utils/collectors/types";
 
 export async function startActivityCollector(
   deps: ActivityCollectorDeps,
 ): Promise<CollectorHandle> {
-  let permissionStatus = await getActivityRecognitionPermissionStatusAsync();
+  const permissionStatus = await getActivityRecognitionPermissionStatusAsync();
 
-  if (permissionStatus === 'not_requested') {
-    permissionStatus = await requestActivityRecognitionPermissionAsync();
-  }
-
-  if (permissionStatus === 'unsupported') {
+  if (permissionStatus === "unsupported") {
     await ensureCollectorFailureState(
-      'activity',
-      'Activity recognition is unsupported in this build until the Android dev client is rebuilt',
+      "activity",
+      getActivityUnsupportedMessage(),
     );
     await deps.refreshRepository();
     return { stop: () => undefined };
   }
 
-  if (permissionStatus !== 'granted') {
+  if (permissionStatus !== "granted") {
     await ensureCollectorFailureState(
-      'activity',
-      permissionStatus === 'blocked'
-        ? 'Activity recognition permission denied'
-        : 'Activity recognition permission not granted',
+      "activity",
+      permissionStatus === "blocked"
+        ? "Activity recognition permission denied"
+        : "Activity recognition permission not granted",
     );
     await deps.refreshRepository();
     return { stop: () => undefined };
@@ -41,7 +43,7 @@ export async function startActivityCollector(
   const subscription = addActivityTransitionListener((payload) => {
     void (async () => {
       await appendEventsForCollector(
-        'activity',
+        "activity",
         [createActivityEvent(payload)],
         `Activity ${payload.activityType} ${payload.transitionType} stored`,
       );
@@ -54,8 +56,8 @@ export async function startActivityCollector(
   if (!didStart) {
     subscription?.remove();
     await ensureCollectorFailureState(
-      'activity',
-      'Activity recognition is unsupported in this build until the Android dev client is rebuilt',
+      "activity",
+      getActivityUnsupportedMessage(),
     );
     await deps.refreshRepository();
     return { stop: () => undefined };

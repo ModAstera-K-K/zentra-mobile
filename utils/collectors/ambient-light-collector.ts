@@ -1,17 +1,26 @@
+import { Platform } from 'react-native';
 import { LightSensor } from 'expo-sensors';
 
 import { appendEventsForCollector, ensureCollectorFailureState } from '@/utils/event-repository';
 import { createAmbientLightEvent } from '@/utils/live-event-builders';
 import type { AmbientLightCollectorDeps, CollectorHandle } from '@/utils/collectors/types';
+import { getAmbientLightUnsupportedMessage } from '@/utils/platform-capabilities';
 
 export async function startAmbientLightCollector(
   deps: AmbientLightCollectorDeps,
 ): Promise<CollectorHandle> {
+  if (Platform.OS === 'ios') {
+    await deps.setAmbientLightSupport(false);
+    await ensureCollectorFailureState('ambientLight', getAmbientLightUnsupportedMessage());
+    await deps.refreshRepository();
+    return { stop: () => undefined };
+  }
+
   const supported = await LightSensor.isAvailableAsync();
   await deps.setAmbientLightSupport(supported);
 
   if (!supported) {
-    await ensureCollectorFailureState('ambientLight', 'Ambient light sensor is not available on this device');
+    await ensureCollectorFailureState('ambientLight', getAmbientLightUnsupportedMessage());
     await deps.refreshRepository();
     return { stop: () => undefined };
   }

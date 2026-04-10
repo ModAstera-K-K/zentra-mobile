@@ -1,8 +1,10 @@
 package expo.modules.zentranativesignals
 
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import kotlinx.coroutines.launch
 
 class ZentraNativeSignalsModule : Module() {
   private lateinit var activityPermissionLauncher: AppContextActivityResultLauncher<ActivityPermissionRequest, Boolean>
@@ -38,13 +40,25 @@ class ZentraNativeSignalsModule : Module() {
       getActivityRecognitionController()?.getPermissionStatus() ?: "unsupported"
     }
 
-    AsyncFunction("requestActivityRecognitionPermissionAsync") Coroutine {
-      val controller = getActivityRecognitionController() ?: return@Coroutine "unsupported"
+    AsyncFunction("requestActivityRecognitionPermissionAsync") { promise: Promise ->
+      val controller = getActivityRecognitionController()
+      if (controller == null) {
+        promise.resolve("unsupported")
+        return@AsyncFunction
+      }
+
       controller.markPermissionRequested()
-      val granted = activityPermissionLauncher.launch(
-        ActivityPermissionRequest(android.Manifest.permission.ACTIVITY_RECOGNITION),
-      )
-      if (granted) "granted" else controller.getPermissionStatus()
+      appContext.mainQueue.launch {
+        try {
+          activityPermissionLauncher.launch(
+            ActivityPermissionRequest(android.Manifest.permission.ACTIVITY_RECOGNITION),
+          ) { granted ->
+            promise.resolve(if (granted) "granted" else controller.getPermissionStatus())
+          }
+        } catch (error: Throwable) {
+          promise.reject("ERR_ACTIVITY_PERMISSION", error.message, error)
+        }
+      }
     }
 
     AsyncFunction("startActivityRecognitionUpdatesAsync") {
@@ -76,21 +90,60 @@ class ZentraNativeSignalsModule : Module() {
       getUsageStatsController()?.readUsageEvents(startIso, endIso) ?: emptyList<Map<String, Any?>>()
     }
 
-    AsyncFunction("getGrantedHealthConnectPermissionsAsync") Coroutine {
-      getHealthConnectController()?.getGrantedPermissions() ?: arrayListOf()
-    }
-
-    AsyncFunction("requestHealthConnectPermissionsAsync") Coroutine {
-      val controller = getHealthConnectController() ?: return@Coroutine arrayListOf<String>()
-      if (controller.getAvailability() != "available") {
-        return@Coroutine arrayListOf<String>()
+    AsyncFunction("getGrantedHealthConnectPermissionsAsync") { promise: Promise ->
+      val controller = getHealthConnectController()
+      if (controller == null) {
+        promise.resolve(arrayListOf<String>())
+        return@AsyncFunction
       }
 
-      healthConnectPermissionsLauncher.launch(HealthConnectPermissionRequest(controller.requiredPermissions()))
+      appContext.backgroundCoroutineScope.launch {
+        try {
+          promise.resolve(controller.getGrantedPermissions())
+        } catch (error: Throwable) {
+          promise.reject("ERR_HEALTH_PERMISSIONS", error.message, error)
+        }
+      }
     }
 
-    AsyncFunction("readHealthConnectRecordsAsync") Coroutine { startIso: String, endIso: String ->
-      getHealthConnectController()?.readRecords(startIso, endIso) ?: emptyList<Map<String, Any?>>()
+    AsyncFunction("openHealthConnectSettingsAsync") {
+      getHealthConnectController()?.openSettings() ?: false
+    }
+
+    AsyncFunction("requestHealthConnectPermissionsAsync") { promise: Promise ->
+      val controller = getHealthConnectController()
+      if (controller == null || controller.getAvailability() != "available") {
+        promise.resolve(arrayListOf<String>())
+        return@AsyncFunction
+      }
+
+      appContext.mainQueue.launch {
+        try {
+          healthConnectPermissionsLauncher.launch(
+            HealthConnectPermissionRequest(controller.requiredPermissions()),
+          ) { grantedPermissions ->
+            promise.resolve(grantedPermissions)
+          }
+        } catch (error: Throwable) {
+          promise.reject("ERR_HEALTH_PERMISSION_REQUEST", error.message, error)
+        }
+      }
+    }
+
+    AsyncFunction("readHealthConnectRecordsAsync") { startIso: String, endIso: String, promise: Promise ->
+      val controller = getHealthConnectController()
+      if (controller == null) {
+        promise.resolve(emptyList<Map<String, Any?>>())
+        return@AsyncFunction
+      }
+
+      appContext.backgroundCoroutineScope.launch {
+        try {
+          promise.resolve(controller.readRecords(startIso, endIso))
+        } catch (error: Throwable) {
+          promise.reject("ERR_HEALTH_READ", error.message, error)
+        }
+      }
     }
   }
 

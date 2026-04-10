@@ -21,7 +21,7 @@ export function Chip({ label, active = false, onPress, style }: ChipProps) {
       style={({ pressed }) => [
         styles.base,
         {
-          backgroundColor: active ? palette.primary : palette.card,
+          backgroundColor: active ? palette.primary : 'transparent',
           borderColor: active ? palette.primary : palette.border,
         },
         pressed && styles.pressed,
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: BorderRadius.pill,
     borderWidth: 1,
-    minHeight: 36,
+    minHeight: 38,
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   pressed: {
-    opacity: 0.86,
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
   },
 });
-

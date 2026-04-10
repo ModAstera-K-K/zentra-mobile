@@ -6,9 +6,9 @@ import { CompletenessCard } from '@/components/zentra/CompletenessCard';
 import { EmptyState } from '@/components/zentra/EmptyState';
 import { MetricCard } from '@/components/zentra/MetricCard';
 import { PilotLight } from '@/components/zentra/PilotLight';
+import { ScreenLead } from '@/components/zentra/ScreenLead';
 import { ScreenShell } from '@/components/zentra/ScreenShell';
 import { SleepEstimateCard } from '@/components/zentra/SleepEstimateCard';
-import { Card } from '@/components/ui/Card';
 import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppStore, useRepositoryStore, useSignalStore } from '@/stores';
@@ -74,24 +74,32 @@ export default function TodayScreen() {
 
   return (
     <ScreenShell subtitle={formatScreenDate(new Date())} title="Today">
-      <Card elevated style={styles.heroCard}>
-        <View style={styles.heroRow}>
-          <View style={styles.heroCopy}>
-            <Text style={[styles.heroMeta, { color: palette.textSecondary }]}>
-              Active collection
+      <ScreenLead
+        body={isDemoMode
+          ? 'Demo mode renders the same shell and sample signals across iPhone and Android for walkthroughs.'
+          : hasCollectors
+            ? 'Available signals surface in one shared layout. Unsupported capabilities stay labeled instead of disappearing.'
+            : 'The interface stays ready before permissions are granted. Enable a collector in Settings to start the local record.'}
+        eyebrow="Collection state"
+        footer={(
+          <View style={styles.leadFooter}>
+            <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
+              {isDemoMode ? 'Demo mode' : 'Live mode'}
             </Text>
-            <Text style={[styles.heroTitle, { color: palette.foreground }]}>
-              One quiet instrument, always watching.
-            </Text>
-            <Text style={[styles.heroBody, { color: palette.textSecondary }]}>
-              {isDemoMode
-                ? 'Demonstration mode is active. These values are illustrative and do not reflect this device.'
-                : 'Live readings appear here when device access is available. Unsupported signals stay clearly marked.'}
+            <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
+              {hasCollectors
+                ? `${visibleCollectors.length} collector${visibleCollectors.length === 1 ? '' : 's'} enabled`
+                : 'No collectors enabled'}
             </Text>
           </View>
-          <PilotLight size={12} />
-        </View>
-      </Card>
+        )}
+        title={isDemoMode
+          ? 'Sample signals are filling the instrument.'
+          : hasCollectors
+            ? 'Live readings stay local and aligned across both platforms.'
+            : 'The shell is ready before collection begins.'}
+        trailing={<PilotLight size={14} />}
+      />
 
       {(!repository.isHydrated && !isDemoMode) || !hasCollectors ? (
         <EmptyState
@@ -123,34 +131,16 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  heroCard: {
-    marginBottom: Spacing.lg,
-  },
-  heroRow: {
-    alignItems: 'flex-start',
+  leadFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
   },
-  heroCopy: {
-    flex: 1,
-    gap: Spacing.sm,
-    paddingRight: Spacing.md,
-  },
-  heroMeta: {
+  leadMeta: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.3,
     textTransform: 'uppercase',
-  },
-  heroTitle: {
-    fontFamily: Fonts.display,
-    fontSize: FontSizes['2xl'],
-    lineHeight: 32,
-  },
-  heroBody: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.base,
-    lineHeight: 24,
   },
   metricGrid: {
     flexDirection: 'row',
@@ -159,6 +149,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   metricCell: {
+    height: 228,
     width: '48%',
   },
   sectionBlock: {

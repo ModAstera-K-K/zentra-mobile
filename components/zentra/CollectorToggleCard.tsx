@@ -1,18 +1,33 @@
 import React from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Toggle } from '@/components/ui/Toggle';
 import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { CollectorState } from '@/types/zentra';
 import { formatCollectorPermissionStatusLabel } from '@/utils/collector-permission-status';
 
 interface CollectorToggleCardProps {
+  actionDisabled?: boolean;
+  actionHelperText?: string;
+  actionLabel?: string;
+  actionPendingLabel?: string;
   collector: CollectorState;
+  onActionPress?: () => void;
   onValueChange: (value: boolean) => void;
 }
 
-export function CollectorToggleCard({ collector, onValueChange }: CollectorToggleCardProps) {
+export function CollectorToggleCard({
+  actionDisabled = false,
+  actionHelperText,
+  actionLabel,
+  actionPendingLabel = 'Working…',
+  collector,
+  onActionPress,
+  onValueChange,
+}: CollectorToggleCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 
@@ -25,10 +40,9 @@ export function CollectorToggleCard({ collector, onValueChange }: CollectorToggl
             {collector.description}
           </Text>
         </View>
-        <Switch
+        <Toggle
+          accessibilityLabel={`Toggle ${collector.label}`}
           onValueChange={onValueChange}
-          trackColor={{ false: palette.border, true: palette.primary }}
-          thumbColor={collector.enabled ? palette.primaryForeground : palette.background}
           value={collector.enabled}
         />
       </View>
@@ -43,6 +57,24 @@ export function CollectorToggleCard({ collector, onValueChange }: CollectorToggl
       <Text style={[styles.source, { color: palette.mutedForeground }]}>
         {collector.sourceLabel} · {collector.lastRunLabel}
       </Text>
+      {actionLabel && onActionPress ? (
+        <View style={styles.actionBlock}>
+          {actionHelperText ? (
+            <Text style={[styles.actionHelper, { color: palette.textSecondary }]}>
+              {actionHelperText}
+            </Text>
+          ) : null}
+          <Button
+            disabled={actionDisabled}
+            onPress={onActionPress}
+            style={styles.actionButton}
+            textStyle={styles.actionButtonText}
+            variant="outline"
+          >
+            {actionDisabled ? actionPendingLabel : actionLabel}
+          </Button>
+        </View>
+      ) : null}
     </Card>
   );
 }
@@ -70,6 +102,8 @@ const styles = StyleSheet.create({
   },
   metaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
     justifyContent: 'space-between',
   },
   meta: {
@@ -82,5 +116,23 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     marginTop: Spacing.sm,
+  },
+  actionBlock: {
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  actionHelper: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    lineHeight: 20,
+  },
+  actionButton: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  actionButtonText: {
+    fontSize: FontSizes.sm,
   },
 });

@@ -3,11 +3,13 @@ import { useEffect } from 'react';
 import { useAppStore, useRepositoryStore, useSignalStore } from '@/stores';
 import {
   getStoredEventCount,
+  pruneLocationEventsBefore,
   seedRepositoryEvents,
 } from '@/utils/event-repository';
 import {
   buildSeedEventsFromSignals,
 } from '@/utils/live-event-builders';
+import { getLocationRetentionDays } from '@/utils/location-retention';
 import {
   startActivityCollectorModule,
   startAmbientLightCollectorModule,
@@ -23,6 +25,7 @@ import type { CollectorHandle } from '@/utils/collectors/types';
 export function useSignalBootstrap(): void {
   const collectors = useAppStore((state) => state.collectors);
   const collectorRetryToken = useAppStore((state) => state.collectorRetryToken);
+  const locationRetentionPreference = useAppStore((state) => state.locationRetentionPreference);
   const isHydrated = useSignalStore((state) => state.isHydrated);
   const bootstrap = useSignalStore((state) => state.bootstrap);
   const setStepSupport = useSignalStore((state) => state.setStepSupport);
@@ -77,6 +80,32 @@ export function useSignalBootstrap(): void {
       isCancelled = true;
     };
   }, [currentSignals, isHydrated, refreshRepository, repositoryHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated || !repositoryHydrated) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function enforceLocationRetention(): Promise<void> {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - getLocationRetentionDays(locationRetentionPreference));
+      const deletedCount = await pruneLocationEventsBefore(cutoff.toISOString());
+
+      if (isCancelled || !deletedCount) {
+        return;
+      }
+
+      await refreshRepository();
+    }
+
+    void enforceLocationRetention();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isHydrated, locationRetentionPreference, refreshRepository, repositoryHydrated]);
 
   useEffect(() => {
     if (!isHydrated || !collectors.steps.enabled) {

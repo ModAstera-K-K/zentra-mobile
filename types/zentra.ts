@@ -17,6 +17,7 @@ export type TrendRange = '7d' | '30d' | '90d' | 'custom';
 export type ExportFormat = 'csv' | 'json';
 export type ExportPreset = 'today' | 'week' | 'month' | 'all' | 'custom';
 export type DataMode = 'live' | 'demo';
+export type LocationRetentionPreference = '24h' | '30d';
 export type EventDataType =
   | 'steps'
   | 'distance'

@@ -5,6 +5,7 @@ import {
 } from '@/utils/native/zentra-native-signals';
 import { createUsageDerivedEvents } from '@/utils/live-event-builders';
 import type { AppUsageCollectorDeps, CollectorHandle } from '@/utils/collectors/types';
+import { getAppUsageUnsupportedMessage } from '@/utils/platform-capabilities';
 
 function getSyncWindowStart(lastSyncedAt: string | null): string {
   if (lastSyncedAt) {
@@ -27,11 +28,11 @@ export async function startAppUsageCollector(
     if (permissionStatus === 'unsupported') {
       await ensureCollectorFailureState(
         'appUsage',
-        'Usage stats are unsupported in this build until the Android dev client is rebuilt',
+        getAppUsageUnsupportedMessage(),
       );
       await ensureCollectorFailureState(
         'deviceState',
-        'Screen and unlock events depend on Android Usage Access in this build',
+        getAppUsageUnsupportedMessage(),
       );
       await deps.refreshRepository();
       return;

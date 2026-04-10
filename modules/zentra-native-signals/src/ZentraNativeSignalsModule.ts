@@ -13,6 +13,7 @@ declare class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignals
   stopActivityRecognitionUpdatesAsync(): Promise<void>;
   getHealthConnectAvailabilityAsync(): Promise<'available' | 'not_installed' | 'unsupported'>;
   getGrantedHealthConnectPermissionsAsync(): Promise<string[]>;
+  openHealthConnectSettingsAsync(): Promise<boolean>;
   requestHealthConnectPermissionsAsync(): Promise<string[]>;
   getUsageAccessPermissionStatusAsync(): Promise<
     'granted' | 'not_requested' | 'blocked' | 'unsupported'

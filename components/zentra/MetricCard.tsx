@@ -1,9 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { Card } from '@/components/ui/Card';
-import { BorderRadius, Colors, Fonts, FontSizes, Spacing, type AppPalette } from '@/constants/theme';
+import { Colors, Fonts, FontSizes, Spacing, type AppPalette } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { DashboardMetric } from '@/types/zentra';
 
@@ -31,15 +30,10 @@ export function MetricCard({ metric }: MetricCardProps) {
 
   return (
     <Card style={styles.card}>
-      <LinearGradient
-        colors={[palette.halo, 'transparent']}
-        end={{ x: 1, y: 1 }}
-        start={{ x: 0, y: 0 }}
-        style={styles.gradient}
-      />
-      <Text style={[styles.label, { color: palette.textSecondary }]}>
-        {metric.label}
-      </Text>
+      <View style={styles.header}>
+        <Text style={[styles.label, { color: palette.textSecondary }]}>{metric.label}</Text>
+        <View style={[styles.accent, { backgroundColor: accent }]} />
+      </View>
       <Text style={[styles.value, { color: accent }]}>
         {metric.value}
       </Text>
@@ -53,17 +47,19 @@ export function MetricCard({ metric }: MetricCardProps) {
 
 const styles = StyleSheet.create({
   card: {
+    height: '100%',
     gap: Spacing.sm,
-    minHeight: 164,
-    position: 'relative',
+    paddingBottom: Spacing['2xl'],
   },
-  gradient: {
-    borderRadius: BorderRadius.xl,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  accent: {
+    borderRadius: 999,
+    height: 10,
+    width: 10,
   },
   label: {
     fontFamily: Fonts.mono,
@@ -84,5 +80,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
+    marginTop: 'auto',
   },
 });

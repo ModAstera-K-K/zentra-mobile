@@ -39,10 +39,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
     overflow: 'hidden',
-    padding: Spacing.lg,
+    padding: Spacing.xl,
   },
   pressed: {
-    opacity: 0.88,
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
   },
 });
-

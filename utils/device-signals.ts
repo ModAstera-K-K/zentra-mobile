@@ -1,5 +1,6 @@
 import * as Battery from 'expo-battery';
 import * as Location from 'expo-location';
+import { Platform } from 'react-native';
 
 import type {
   CollectorDiagnosticRecord,
@@ -18,6 +19,10 @@ import type {
 } from '@/types/zentra';
 import { deriveDiagnosticPermissionStatus } from '@/utils/collector-permission-status';
 import { formatBytes, formatMinutes, formatNumber } from '@/utils/format';
+import {
+  getCollectorPlatformOverrides,
+  getHealthPlatformName,
+} from '@/utils/platform-capabilities';
 
 type CollectorStateMap = Record<CollectorKey, CollectorState>;
 
@@ -145,13 +150,17 @@ export function buildLiveDashboardMetrics(
       'screenTime',
       'Screen Time',
       todayAggregate ? formatMinutes(Math.round(todayAggregate.screenTimeSeconds / 60)) : 'Waiting',
-      collectors.appUsage.enabled
-        ? (todayAggregate && todayAggregate.screenTimeSeconds > 0
-          ? 'Derived from Android Usage Access app session history.'
-          : 'Grant Usage Access to begin collecting screen-time history.')
-        : 'Turn on the Screen Time collector in Settings.',
+      Platform.OS === 'ios'
+        ? 'Screen time and unlock history are not available to normal iOS apps.'
+        : collectors.appUsage.enabled
+          ? (todayAggregate && todayAggregate.screenTimeSeconds > 0
+            ? 'Derived from Android Usage Access app session history.'
+            : 'Grant Usage Access to begin collecting screen-time history.')
+          : 'Turn on the Screen Time collector in Settings.',
       'cool',
-      Boolean(todayAggregate && todayAggregate.screenTimeSeconds > 0),
+      Platform.OS === 'ios'
+        ? false
+        : Boolean(todayAggregate && todayAggregate.screenTimeSeconds > 0),
     ),
     metric(
       'mobilityRadius',
@@ -190,7 +199,11 @@ export function buildLiveSleepEstimate(sleepEvent: ZentraEventRecord | null): Sl
     confidence: sleepEvent.confidence,
     available: true,
     detail: sleepEvent.source === 'health_connect'
-      ? 'Imported from Health Connect history.'
+      ? `Imported from ${
+        typeof sleepEvent.metadata.health_platform === 'string'
+          ? sleepEvent.metadata.health_platform
+          : getHealthPlatformName()
+      } history.`
       : 'Inferred from screen-state, unlock, and charging patterns captured locally.',
   };
 }
@@ -201,6 +214,7 @@ function buildCollectorClone(
 ): CollectorState {
   return {
     ...collector,
+    ...getCollectorPlatformOverrides(collector.key),
     ...overrides,
   };
 }
@@ -253,15 +267,17 @@ export function buildCollectorStatuses(
   }));
 
   items.push(buildCollectorClone(collectors.ambientLight, {
-    permissionStatus: 'granted',
+    permissionStatus: Platform.OS === 'ios' ? 'unsupported' : 'granted',
     health: !collectors.ambientLight.enabled
       ? 'idle'
       : diagnosticsByCollector.ambientLight?.status === 'success' || signals.ambientLightLux !== null ? 'healthy' : 'degraded',
     lastRunLabel: collectors.ambientLight.enabled
       ? (diagnosticsByCollector.ambientLight
         ? `${diagnosticsByCollector.ambientLight.message ?? 'Recorded'} · ${formatTimestampLabel(diagnosticsByCollector.ambientLight.recordedAt)}`
-        : signals.ambientLightLastUpdatedAt ? formatLux(signals.ambientLightLux) : 'Waiting for first light reading')
-      : 'Off',
+        : Platform.OS === 'ios'
+          ? 'Unsupported on iOS'
+          : signals.ambientLightLastUpdatedAt ? formatLux(signals.ambientLightLux) : 'Waiting for first light reading')
+      : Platform.OS === 'ios' ? 'Unsupported on iOS' : 'Off',
   }));
 
   items.push(buildCollectorClone(collectors.activity, {
@@ -279,17 +295,19 @@ export function buildCollectorStatuses(
   }));
 
   items.push(buildCollectorClone(collectors.appUsage, {
-    permissionStatus: collectors.appUsage.enabled
-      ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.appUsage, 'not_requested')
-      : 'not_requested',
+    permissionStatus: Platform.OS === 'ios'
+      ? 'unsupported'
+      : collectors.appUsage.enabled
+        ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.appUsage, 'not_requested')
+        : 'not_requested',
     health: collectors.appUsage.enabled
       ? (diagnosticsByCollector.appUsage?.status === 'success' ? 'healthy' : 'degraded')
       : 'idle',
     lastRunLabel: collectors.appUsage.enabled
       ? (diagnosticsByCollector.appUsage
         ? `${diagnosticsByCollector.appUsage.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.appUsage.recordedAt)}`
-        : 'Waiting for usage stats')
-      : 'Off',
+        : Platform.OS === 'ios' ? 'Unsupported on iOS' : 'Waiting for usage stats')
+      : Platform.OS === 'ios' ? 'Unsupported on iOS' : 'Off',
   }));
 
   items.push(buildCollectorClone(collectors.healthConnect, {
@@ -302,7 +320,7 @@ export function buildCollectorStatuses(
     lastRunLabel: collectors.healthConnect.enabled
       ? (diagnosticsByCollector.healthConnect
         ? `${diagnosticsByCollector.healthConnect.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.healthConnect.recordedAt)}`
-        : 'Waiting for Health Connect sync')
+        : `Waiting for ${getHealthPlatformName()} sync`)
       : 'Off',
   }));
 
