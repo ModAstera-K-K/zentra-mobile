@@ -1,0 +1,23 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.zentranativesignals'
+version = '0.7.10'
+
+android {
+  namespace "expo.modules.zentranativesignals"
+  defaultConfig {
+    versionCode 1
+    versionName "0.7.10"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  implementation 'com.google.android.gms:play-services-location:21.0.1'
+  implementation 'androidx.health.connect:connect-client:1.1.0'
+}

@@ -52,6 +52,9 @@ export default function TodayScreen() {
     locationServicesEnabled: state.locationServicesEnabled,
     locationSamples: state.locationSamples,
     locationLastUpdatedAt: state.locationLastUpdatedAt,
+    ambientLightSupported: state.ambientLightSupported,
+    ambientLightLux: state.ambientLightLux,
+    ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
   })));
   const demoCollectors = createDemoCollectors(collectors);
   const isDemoMode = dataMode === 'demo';

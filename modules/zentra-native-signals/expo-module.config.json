@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["ZentraNativeSignalsModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.zentranativesignals.ZentraNativeSignalsModule"]
+  }
+}

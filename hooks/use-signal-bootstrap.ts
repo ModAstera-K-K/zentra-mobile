@@ -10,6 +10,7 @@ import {
 } from '@/utils/live-event-builders';
 import {
   startActivityCollectorModule,
+  startAmbientLightCollectorModule,
   startAppUsageCollectorModule,
   startDeviceStateCollectorModule,
   startHealthConnectCollectorModule,
@@ -32,6 +33,8 @@ export function useSignalBootstrap(): void {
   const setLocationPermissionStatus = useSignalStore((state) => state.setLocationPermissionStatus);
   const setLocationServicesEnabled = useSignalStore((state) => state.setLocationServicesEnabled);
   const addLocationSample = useSignalStore((state) => state.addLocationSample);
+  const setAmbientLightSupport = useSignalStore((state) => state.setAmbientLightSupport);
+  const setAmbientLightLux = useSignalStore((state) => state.setAmbientLightLux);
   const currentSignals = useSignalStore((state) => state);
   const repositoryHydrated = useRepositoryStore((state) => state.isHydrated);
   const bootstrapRepository = useRepositoryStore((state) => state.bootstrap);
@@ -189,7 +192,7 @@ export function useSignalBootstrap(): void {
 
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startActivityCollectorModule(refreshRepository);
+      handle = await startActivityCollectorModule({ refreshRepository });
     })();
 
     return () => {
@@ -219,7 +222,7 @@ export function useSignalBootstrap(): void {
 
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startHealthConnectCollectorModule(refreshRepository);
+      handle = await startHealthConnectCollectorModule({ refreshRepository });
     })();
 
     return () => {
@@ -241,4 +244,29 @@ export function useSignalBootstrap(): void {
       handle?.stop();
     };
   }, [collectors.sleep.enabled, isHydrated, refreshRepository]);
+
+  useEffect(() => {
+    if (!isHydrated || !collectors.ambientLight.enabled) {
+      return;
+    }
+
+    let handle: CollectorHandle | null = null;
+    void (async () => {
+      handle = await startAmbientLightCollectorModule({
+        refreshRepository,
+        setAmbientLightSupport,
+        setAmbientLightLux,
+      });
+    })();
+
+    return () => {
+      handle?.stop();
+    };
+  }, [
+    collectors.ambientLight.enabled,
+    isHydrated,
+    refreshRepository,
+    setAmbientLightLux,
+    setAmbientLightSupport,
+  ]);
 }

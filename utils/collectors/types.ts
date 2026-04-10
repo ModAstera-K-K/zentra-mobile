@@ -34,3 +34,17 @@ export interface UnsupportedCollectorDeps {
   message: string;
   refreshRepository: () => Promise<void>;
 }
+
+export interface AmbientLightCollectorDeps {
+  refreshRepository: () => Promise<void>;
+  setAmbientLightSupport: (supported: boolean) => Promise<void>;
+  setAmbientLightLux: (lux: number) => Promise<void>;
+}
+
+export interface ActivityCollectorDeps {
+  refreshRepository: () => Promise<void>;
+}
+
+export interface HealthConnectCollectorDeps {
+  refreshRepository: () => Promise<void>;
+}

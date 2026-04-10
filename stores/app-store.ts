@@ -29,6 +29,15 @@ async function persistState(state: AppState): Promise<void> {
   });
 }
 
+function mergeCollectorsWithDefaults(
+  persistedCollectors: Partial<CollectorStateMap> | undefined,
+): CollectorStateMap {
+  return {
+    ...createInitialCollectors(),
+    ...persistedCollectors,
+  };
+}
+
 function buildUpdatedCollector(collector: CollectorState, enabled: boolean): CollectorState {
   return {
     ...collector,
@@ -55,7 +64,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       hasCompletedOnboarding: persisted?.hasCompletedOnboarding ?? false,
       lastExportedAt: persisted?.lastExportedAt ?? null,
       dataMode: persisted?.dataMode ?? 'live',
-      collectors: persisted?.collectors ?? createInitialCollectors(),
+      collectors: mergeCollectorsWithDefaults(persisted?.collectors),
     });
   },
 

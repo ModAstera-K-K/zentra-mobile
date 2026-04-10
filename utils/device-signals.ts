@@ -15,6 +15,7 @@ import type {
   TodayLiveSnapshot,
   ZentraEventRecord,
 } from '@/types/zentra';
+import { deriveDiagnosticPermissionStatus } from '@/utils/collector-permission-status';
 import { formatBytes, formatNumber } from '@/utils/format';
 
 type CollectorStateMap = Record<CollectorKey, CollectorState>;
@@ -85,6 +86,14 @@ function formatBatteryValue(level: number | null): string {
   }
 
   return `${Math.round(level * 100)}%`;
+}
+
+function formatLux(value: number | null): string {
+  if (value === null) {
+    return 'Waiting';
+  }
+
+  return `${Math.round(value)} lux`;
 }
 
 function metric(
@@ -217,28 +226,56 @@ export function buildCollectorStatuses(
       : 'Off',
   }));
 
+  items.push(buildCollectorClone(collectors.ambientLight, {
+    permissionStatus: 'granted',
+    health: !collectors.ambientLight.enabled
+      ? 'idle'
+      : diagnosticsByCollector.ambientLight?.status === 'success' || signals.ambientLightLux !== null ? 'healthy' : 'degraded',
+    lastRunLabel: collectors.ambientLight.enabled
+      ? (diagnosticsByCollector.ambientLight
+        ? `${diagnosticsByCollector.ambientLight.message ?? 'Recorded'} · ${formatTimestampLabel(diagnosticsByCollector.ambientLight.recordedAt)}`
+        : signals.ambientLightLastUpdatedAt ? formatLux(signals.ambientLightLux) : 'Waiting for first light reading')
+      : 'Off',
+  }));
+
   items.push(buildCollectorClone(collectors.activity, {
-    permissionStatus: 'blocked',
-    health: collectors.activity.enabled ? 'degraded' : 'idle',
-    lastRunLabel: collectors.activity.enabled ? 'Not available in Expo prototype' : 'Off',
+    permissionStatus: collectors.activity.enabled
+      ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.activity, 'not_requested')
+      : 'not_requested',
+    health: collectors.activity.enabled
+      ? (diagnosticsByCollector.activity?.status === 'success' ? 'healthy' : 'degraded')
+      : 'idle',
+    lastRunLabel: collectors.activity.enabled
+      ? (diagnosticsByCollector.activity
+        ? `${diagnosticsByCollector.activity.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.activity.recordedAt)}`
+        : 'Waiting for activity updates')
+      : 'Off',
   }));
 
   items.push(buildCollectorClone(collectors.appUsage, {
-    permissionStatus: 'blocked',
+    permissionStatus: collectors.appUsage.enabled ? 'unsupported' : 'not_requested',
     health: collectors.appUsage.enabled ? 'degraded' : 'idle',
-    lastRunLabel: collectors.appUsage.enabled ? 'Not available in Expo prototype' : 'Off',
+    lastRunLabel: collectors.appUsage.enabled ? 'Unsupported in this build' : 'Off',
   }));
 
   items.push(buildCollectorClone(collectors.healthConnect, {
-    permissionStatus: 'blocked',
-    health: collectors.healthConnect.enabled ? 'degraded' : 'idle',
-    lastRunLabel: collectors.healthConnect.enabled ? 'Requires native Health Connect integration' : 'Off',
+    permissionStatus: collectors.healthConnect.enabled
+      ? deriveDiagnosticPermissionStatus(diagnosticsByCollector.healthConnect, 'not_requested')
+      : 'not_requested',
+    health: collectors.healthConnect.enabled
+      ? (diagnosticsByCollector.healthConnect?.status === 'success' ? 'healthy' : 'degraded')
+      : 'idle',
+    lastRunLabel: collectors.healthConnect.enabled
+      ? (diagnosticsByCollector.healthConnect
+        ? `${diagnosticsByCollector.healthConnect.message ?? 'Waiting'} · ${formatTimestampLabel(diagnosticsByCollector.healthConnect.recordedAt)}`
+        : 'Waiting for Health Connect sync')
+      : 'Off',
   }));
 
   items.push(buildCollectorClone(collectors.sleep, {
-    permissionStatus: 'blocked',
+    permissionStatus: collectors.sleep.enabled ? 'unsupported' : 'not_requested',
     health: collectors.sleep.enabled ? 'degraded' : 'idle',
-    lastRunLabel: collectors.sleep.enabled ? 'Requires native sleep inference collector' : 'Off',
+    lastRunLabel: collectors.sleep.enabled ? 'Unsupported in this build' : 'Off',
   }));
 
   return items;
@@ -316,6 +353,16 @@ export function buildRealExportEvents(signals: SignalStoreState): Record<string,
         metadata: {
           low_power_mode: Boolean(signals.lowPowerMode),
         },
+      },
+    ];
+  }
+
+  if (signals.ambientLightLux !== null) {
+    events.ambient_light = [
+      {
+        ...baseEvent('ambient-light-current', 'ambient_light', 'sensor'),
+        valueNumeric: signals.ambientLightLux,
+        unit: 'lux',
       },
     ];
   }

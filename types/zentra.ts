@@ -7,9 +7,10 @@ export type CollectorKey =
   | 'deviceState'
   | 'healthConnect'
   | 'location'
-  | 'sleep';
+  | 'sleep'
+  | 'ambientLight';
 
-export type PermissionStatus = 'granted' | 'not_requested' | 'blocked' | 'derived';
+export type PermissionStatus = 'granted' | 'not_requested' | 'blocked' | 'derived' | 'unsupported';
 export type CollectorHealth = 'healthy' | 'degraded' | 'idle';
 export type MetricTone = 'hero' | 'physical' | 'human' | 'cool';
 export type TrendRange = '7d' | '30d' | '90d' | 'custom';
@@ -174,6 +175,9 @@ export interface SignalStoreState {
   locationServicesEnabled: boolean | null;
   locationSamples: LocationSample[];
   locationLastUpdatedAt: string | null;
+  ambientLightSupported: boolean | null;
+  ambientLightLux: number | null;
+  ambientLightLastUpdatedAt: string | null;
 }
 
 export interface LiveDashboardMetric extends DashboardMetric {

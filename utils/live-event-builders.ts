@@ -4,6 +4,10 @@ import type {
   SignalStoreState,
   ZentraEventRecord,
 } from '@/types/zentra';
+import type {
+  NativeActivityTransition,
+  NativeHealthConnectRecord,
+} from '@/utils/native/zentra-native-signals';
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -66,6 +70,49 @@ export function createLocationEvent(sample: LocationSample): ZentraEventRecord {
   };
 }
 
+export function createAmbientLightEvent(lux: number, timestamp = new Date().toISOString()): ZentraEventRecord {
+  return {
+    ...createBaseEvent('ambient_light', 'sensor', timestamp),
+    valueNumeric: lux,
+    unit: 'lux',
+  };
+}
+
+export function createActivityEvent(transition: NativeActivityTransition): ZentraEventRecord {
+  return {
+    ...createBaseEvent('activity', 'activity_recognition', transition.timestamp),
+    valueText: transition.activityType,
+    unit: 'transition',
+    metadata: {
+      confidence: transition.confidence,
+      transition: transition.transitionType,
+    },
+  };
+}
+
+function createHealthConnectEvent(record: NativeHealthConnectRecord): ZentraEventRecord {
+  const dataType = record.recordType === 'sleep' ? 'sleep_inferred' : record.recordType;
+
+  return {
+    ...createBaseEvent(dataType, 'health_connect', record.startTime),
+    id: `health-connect-${record.recordType}-${record.id}`,
+    timestampEnd: record.endTime,
+    valueNumeric: record.valueNumeric ?? undefined,
+    valueText: record.valueText ?? undefined,
+    valueJson: record.valueJson ?? undefined,
+    unit: record.unit,
+    confidence: 1,
+    metadata: {
+      ...record.metadata,
+      record_id: record.id,
+    },
+  };
+}
+
+export function createHealthConnectEvents(records: NativeHealthConnectRecord[]): ZentraEventRecord[] {
+  return records.map(createHealthConnectEvent);
+}
+
 export function buildSeedEventsFromSignals(signals: SignalStoreState): ZentraEventRecord[] {
   const events: ZentraEventRecord[] = [];
 
@@ -84,6 +131,13 @@ export function buildSeedEventsFromSignals(signals: SignalStoreState): ZentraEve
   signals.locationSamples.forEach((sample) => {
     events.push(createLocationEvent(sample));
   });
+
+  if (signals.ambientLightLux !== null) {
+    events.push(createAmbientLightEvent(
+      signals.ambientLightLux,
+      signals.ambientLightLastUpdatedAt ?? new Date().toISOString(),
+    ));
+  }
 
   return events;
 }

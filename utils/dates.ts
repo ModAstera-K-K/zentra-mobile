@@ -1,4 +1,4 @@
-import type { DateRangeSelection, ExportPreset } from '@/types/zentra';
+import type { DateRangeSelection, ExportPreset, TrendRange } from '@/types/zentra';
 
 function pad(value: number): string {
   return value.toString().padStart(2, '0');
@@ -73,8 +73,29 @@ export function getTrendRangeDays(range: '7d' | '30d' | '90d' | 'custom'): numbe
   }
 }
 
+export function getDateRangeForTrendRange(range: TrendRange): { start: string; end: string } {
+  const end = toISODate(new Date());
+  const days = getTrendRangeDays(range);
+
+  return {
+    start: shiftISODate(end, -(days - 1)),
+    end,
+  };
+}
+
+export function enumerateISODateRange(start: string, end: string): string[] {
+  const dates: string[] = [];
+  let current = start;
+
+  while (current <= end) {
+    dates.push(current);
+    current = shiftISODate(current, 1);
+  }
+
+  return dates;
+}
+
 export function isSunriseThemeLight(date: Date): boolean {
   const hour = date.getHours();
   return hour >= 6 && hour < 18;
 }
-

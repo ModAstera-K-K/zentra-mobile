@@ -19,6 +19,7 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
+    "android": "^0.0.8",
     "expo": "~54.0.33",
     "expo-battery": "~10.0.8",
     "expo-constants": "~18.0.13",

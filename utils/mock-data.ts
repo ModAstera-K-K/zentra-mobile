@@ -95,6 +95,17 @@ const BASE_COLLECTORS: CollectorStateMap = {
     lastRunLabel: 'Requires native sleep inference',
     sourceLabel: 'Inference',
   },
+  ambientLight: {
+    key: 'ambientLight',
+    label: 'Ambient Light',
+    description: 'Indoor and outdoor light context from the device sensor.',
+    permissionLabel: 'Light sensor',
+    enabled: false,
+    permissionStatus: 'not_requested',
+    health: 'idle',
+    lastRunLabel: 'Off',
+    sourceLabel: 'Light Sensor',
+  },
 };
 
 const HOURS = ['00', '02', '04', '06', '08', '10', '12', '14', '16', '18', '20', '22'];
@@ -283,6 +294,7 @@ export function buildTrendSeries(
 }
 
 export function buildHeatmap(
+  range: TrendRange,
   collectors: CollectorStateMap,
   hasSeedData: boolean,
 ): HeatmapCell[] {
@@ -290,11 +302,13 @@ export function buildHeatmap(
     return [];
   }
 
+  const rangeWeight = Math.max(1, Math.round(getTrendRangeDays(range) / 7));
+
   return DAYS.flatMap((dayLabel, dayIndex) => (
     HOURS.map((hourLabel, hourIndex) => ({
       dayLabel,
       hourLabel,
-      value: buildWaveValue(dayIndex + hourIndex, 8, 100, dayIndex),
+      value: buildWaveValue((dayIndex * rangeWeight) + hourIndex, 8, 100, dayIndex + rangeWeight),
     }))
   ));
 }
@@ -382,6 +396,13 @@ export function buildExportEvents(
         confidence: 0.84,
       }),
     ];
+  }
+
+  if (isCollectorReady(collectors, 'ambientLight')) {
+    exports.ambient_light = Array.from({ length: 6 }, (_, index) => createEventRecord('ambient_light', 'sensor', index, {
+      valueNumeric: buildWaveValue(index, 45, 560, 6),
+      unit: 'lux',
+    }));
   }
 
   return exports;

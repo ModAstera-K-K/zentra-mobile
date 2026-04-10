@@ -9,9 +9,17 @@ import { Chip } from '@/components/ui/Chip';
 import { Card } from '@/components/ui/Card';
 import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAppStore } from '@/stores';
+import { useAppStore, useRepositoryStore } from '@/stores';
 import type { TrendRange } from '@/types/zentra';
+import { getDateRangeForTrendRange } from '@/utils/dates';
+import {
+  getDailyAggregatesForRange,
+  getEventsForRange,
+  recomputeDailyAggregatesForRange,
+} from '@/utils/event-repository';
+import { buildLiveHeatmap, buildLiveTrendSeries } from '@/utils/live-trends';
 import { buildHeatmap, buildTrendSeries, createDemoCollectors } from '@/utils/mock-data';
+import { useShallow } from 'zustand/react/shallow';
 
 const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
   { label: '7D', value: '7d' },
@@ -22,19 +30,77 @@ const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
 
 export default function TrendsScreen() {
   const [range, setRange] = React.useState<TrendRange>('30d');
+  const [liveSeries, setLiveSeries] = React.useState<import('@/types/zentra').TrendSeries[]>([]);
+  const [liveHeatmap, setLiveHeatmap] = React.useState<import('@/types/zentra').HeatmapCell[]>([]);
+  const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
+  const repository = useRepositoryStore(useShallow((state) => ({
+    isHydrated: state.isHydrated,
+    lastUpdatedAt: state.lastUpdatedAt,
+  })));
   const demoCollectors = createDemoCollectors(collectors);
   const isDemoMode = dataMode === 'demo';
-  const series = isDemoMode ? buildTrendSeries(range, demoCollectors, true) : [];
-  const heatmap = isDemoMode ? buildHeatmap(demoCollectors, true) : [];
+  const rangeSelection = getDateRangeForTrendRange(range);
+  const rangeStart = rangeSelection.start;
+  const rangeEnd = rangeSelection.end;
+  const series = isDemoMode ? buildTrendSeries(range, demoCollectors, true) : liveSeries;
+  const heatmap = isDemoMode ? buildHeatmap(range, demoCollectors, true) : liveHeatmap;
   const hasCollectors = Object.values(collectors).some((collector) => collector.enabled);
-  const emptyTitle = hasCollectors ? 'Collecting data' : 'No trend data yet';
-  const emptyBody = hasCollectors
-    ? 'Come back later once Zentra has gathered enough on-device history to show patterns here.'
-    : 'Turn on one or more collectors in Settings to start building trend history.';
+  const hasLiveTrendData = series.length > 0 || heatmap.length > 0;
+  const emptyTitle = isLoadingLiveData
+    ? 'Refreshing trend history'
+    : hasCollectors ? 'Collecting data' : 'No trend data yet';
+  const emptyBody = isLoadingLiveData
+    ? 'Zentra is recomputing local aggregates for this date window.'
+    : hasCollectors
+      ? 'Come back later once Zentra has gathered enough on-device history to show patterns here.'
+      : 'Turn on one or more collectors in Settings to start building trend history.';
+
+  React.useEffect(() => {
+    if (isDemoMode || !repository.isHydrated) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function loadLiveTrends(): Promise<void> {
+      setIsLoadingLiveData(true);
+
+      try {
+        await recomputeDailyAggregatesForRange(rangeStart, rangeEnd);
+        const [aggregates, events] = await Promise.all([
+          getDailyAggregatesForRange(rangeStart, rangeEnd),
+          getEventsForRange(rangeStart, rangeEnd),
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        setLiveSeries(buildLiveTrendSeries(aggregates, { start: rangeStart, end: rangeEnd }));
+        setLiveHeatmap(buildLiveHeatmap(events));
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingLiveData(false);
+        }
+      }
+    }
+
+    void loadLiveTrends();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    isDemoMode,
+    rangeEnd,
+    rangeStart,
+    repository.isHydrated,
+    repository.lastUpdatedAt,
+  ]);
 
   return (
     <ScreenShell subtitle="Long-view patterns" title="Trends">
@@ -62,7 +128,7 @@ export default function TrendsScreen() {
         </View>
       ) : null}
 
-      {isDemoMode ? (
+      {isDemoMode || hasLiveTrendData ? (
         <>
           {series.map((entry) => (
             <View key={entry.key} style={styles.sectionBlock}>

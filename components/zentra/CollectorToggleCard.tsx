@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { CollectorState } from '@/types/zentra';
+import { formatCollectorPermissionStatusLabel } from '@/utils/collector-permission-status';
 
 interface CollectorToggleCardProps {
   collector: CollectorState;
@@ -36,7 +37,7 @@ export function CollectorToggleCard({ collector, onValueChange }: CollectorToggl
           {collector.permissionLabel}
         </Text>
         <Text style={[styles.meta, { color: palette.textSecondary }]}>
-          {collector.permissionStatus}
+          {formatCollectorPermissionStatusLabel(collector)}
         </Text>
       </View>
       <Text style={[styles.source, { color: palette.mutedForeground }]}>

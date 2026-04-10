@@ -18,6 +18,8 @@ interface SignalState extends SignalStoreState {
   setLocationPermissionStatus: (status: PermissionStatus) => Promise<void>;
   setLocationServicesEnabled: (enabled: boolean) => Promise<void>;
   addLocationSample: (sample: LocationSample) => Promise<void>;
+  setAmbientLightSupport: (supported: boolean) => Promise<void>;
+  setAmbientLightLux: (lux: number) => Promise<void>;
   clearCapturedData: () => Promise<void>;
 }
 
@@ -37,6 +39,9 @@ const EMPTY_SIGNAL_STATE: SignalStoreState = {
   locationServicesEnabled: null,
   locationSamples: [],
   locationLastUpdatedAt: null,
+  ambientLightSupported: null,
+  ambientLightLux: null,
+  ambientLightLastUpdatedAt: null,
 };
 
 async function persistSignalState(state: SignalState): Promise<void> {
@@ -56,6 +61,9 @@ async function persistSignalState(state: SignalState): Promise<void> {
     locationServicesEnabled: state.locationServicesEnabled,
     locationSamples: state.locationSamples,
     locationLastUpdatedAt: state.locationLastUpdatedAt,
+    ambientLightSupported: state.ambientLightSupported,
+    ambientLightLux: state.ambientLightLux,
+    ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
   });
 }
 
@@ -130,6 +138,16 @@ export const useSignalStore = create<SignalState>((set, get) => ({
     set((state) => withTimestamp({
       locationSamples: [...state.locationSamples, sample].slice(-24),
     }, 'locationLastUpdatedAt'));
+    await persistSignalState(get());
+  },
+
+  setAmbientLightSupport: async (ambientLightSupported) => {
+    set({ ambientLightSupported });
+    await persistSignalState(get());
+  },
+
+  setAmbientLightLux: async (ambientLightLux) => {
+    set(withTimestamp({ ambientLightLux }, 'ambientLightLastUpdatedAt'));
     await persistSignalState(get());
   },
 

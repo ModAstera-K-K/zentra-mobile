@@ -1,5 +1,16 @@
-import type { CollectorHandle, DeviceStateCollectorDeps, LocationCollectorDeps, StepCollectorDeps } from '@/utils/collectors/types';
+import type {
+  ActivityCollectorDeps,
+  AmbientLightCollectorDeps,
+  CollectorHandle,
+  DeviceStateCollectorDeps,
+  HealthConnectCollectorDeps,
+  LocationCollectorDeps,
+  StepCollectorDeps,
+} from '@/utils/collectors/types';
+import { startActivityCollector } from '@/utils/collectors/activity-collector';
+import { startAmbientLightCollector } from '@/utils/collectors/ambient-light-collector';
 import { startDeviceStateCollector } from '@/utils/collectors/device-state-collector';
+import { startHealthConnectCollector } from '@/utils/collectors/health-connect-collector';
 import { startLocationCollector } from '@/utils/collectors/location-collector';
 import { startStepCollector } from '@/utils/collectors/step-collector';
 import { startUnsupportedCollector } from '@/utils/collectors/unsupported-collector';
@@ -20,12 +31,16 @@ export function startLocationCollectorModule(
   return startLocationCollector(deps);
 }
 
-export function startActivityCollectorModule(refreshRepository: () => Promise<void>): Promise<CollectorHandle> {
-  return startUnsupportedCollector({
-    collectorKey: 'activity',
-    message: 'Activity recognition requires native Android integration beyond this Expo build',
-    refreshRepository,
-  });
+export function startAmbientLightCollectorModule(
+  deps: AmbientLightCollectorDeps,
+): Promise<CollectorHandle> {
+  return startAmbientLightCollector(deps);
+}
+
+export function startActivityCollectorModule(
+  deps: ActivityCollectorDeps,
+): Promise<CollectorHandle> {
+  return startActivityCollector(deps);
 }
 
 export function startAppUsageCollectorModule(refreshRepository: () => Promise<void>): Promise<CollectorHandle> {
@@ -36,12 +51,10 @@ export function startAppUsageCollectorModule(refreshRepository: () => Promise<vo
   });
 }
 
-export function startHealthConnectCollectorModule(refreshRepository: () => Promise<void>): Promise<CollectorHandle> {
-  return startUnsupportedCollector({
-    collectorKey: 'healthConnect',
-    message: 'Health Connect collection requires a custom native Android implementation',
-    refreshRepository,
-  });
+export function startHealthConnectCollectorModule(
+  deps: HealthConnectCollectorDeps,
+): Promise<CollectorHandle> {
+  return startHealthConnectCollector(deps);
 }
 
 export function startSleepCollectorModule(refreshRepository: () => Promise<void>): Promise<CollectorHandle> {

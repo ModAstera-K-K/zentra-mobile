@@ -48,6 +48,9 @@ export default function SettingsScreen() {
     locationServicesEnabled: state.locationServicesEnabled,
     locationSamples: state.locationSamples,
     locationLastUpdatedAt: state.locationLastUpdatedAt,
+    ambientLightSupported: state.ambientLightSupported,
+    ambientLightLux: state.ambientLightLux,
+    ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
   })));
   const collectorStatuses = buildCollectorStatuses(collectors, signals, diagnostics);
 
@@ -147,7 +150,7 @@ export default function SettingsScreen() {
           Repository diagnostics {diagnostics.length ? `${diagnostics.length} collector(s) with stored status` : 'No stored collector activity yet'}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
-          Live signals currently supported in this Expo build: steps, battery state, and foreground location.
+          Live signals currently supported in this build: steps, battery state, foreground location, ambient light, and native Activity or Health Connect once the Android dev client is rebuilt.
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Sunrise mode uses a local 06:00–18:00 daylight heuristic in this preview shell.
