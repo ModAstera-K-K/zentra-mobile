@@ -21,5 +21,9 @@
       android:name=".ActivityTransitionReceiver"
       android:enabled="true"
       android:exported="false" />
+    <receiver
+      android:name=".ActivityUpdateReceiver"
+      android:enabled="true"
+      android:exported="false" />
   </application>
 </manifest>

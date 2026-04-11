@@ -1,26 +1,21 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { InteractionManager, StyleSheet, View } from "react-native";
 
 import { EmptyState } from "@/components/zentra/EmptyState";
-import { HeatmapCard } from "@/components/zentra/HeatmapCard";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { TrendChartCard } from "@/components/zentra/TrendChartCard";
 import { Chip } from "@/components/ui/Chip";
 import { Spacing } from "@/constants/theme";
 import { useAppStore, useRepositoryStore } from "@/stores";
-import type { TrendRange } from "@/types/zentra";
+import type { TrendRange, TrendSeries } from "@/types/zentra";
 import { getDateRangeForTrendRange } from "@/utils/dates";
 import {
   getDailyAggregatesForRange,
   getEventsForRange,
   recomputeDailyAggregatesForRange,
 } from "@/utils/event-repository";
-import { buildLiveHeatmap, buildLiveTrendSeries } from "@/utils/live-trends";
-import {
-  buildHeatmap,
-  buildTrendSeries,
-  createDemoCollectors,
-} from "@/utils/mock-data";
+import { buildLiveTrendSeries } from "@/utils/live-trends";
+import { buildTrendSeries, createDemoCollectors } from "@/utils/mock-data";
 import { useShallow } from "zustand/react/shallow";
 
 const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
@@ -32,12 +27,7 @@ const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
 
 export default function TrendsScreen() {
   const [range, setRange] = React.useState<TrendRange>("30d");
-  const [liveSeries, setLiveSeries] = React.useState<
-    import("@/types/zentra").TrendSeries[]
-  >([]);
-  const [liveHeatmap, setLiveHeatmap] = React.useState<
-    import("@/types/zentra").HeatmapCell[]
-  >([]);
+  const [liveSeries, setLiveSeries] = React.useState<TrendSeries[]>([]);
   const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
@@ -47,21 +37,23 @@ export default function TrendsScreen() {
       lastUpdatedAt: state.lastUpdatedAt,
     })),
   );
-  const demoCollectors = createDemoCollectors(collectors);
   const isDemoMode = dataMode === "demo";
+  const demoCollectors = React.useMemo(
+    () => createDemoCollectors(collectors),
+    [collectors],
+  );
   const rangeSelection = getDateRangeForTrendRange(range);
   const rangeStart = rangeSelection.start;
   const rangeEnd = rangeSelection.end;
-  const series = isDemoMode
-    ? buildTrendSeries(range, demoCollectors, true)
-    : liveSeries;
-  const heatmap = isDemoMode
-    ? buildHeatmap(range, demoCollectors, true)
-    : liveHeatmap;
+  const series = React.useMemo(
+    () =>
+      isDemoMode ? buildTrendSeries(range, demoCollectors, true) : liveSeries,
+    [isDemoMode, range, demoCollectors, liveSeries],
+  );
   const hasCollectors = Object.values(collectors).some(
     (collector) => collector.enabled,
   );
-  const hasLiveTrendData = series.length > 0 || heatmap.length > 0;
+  const hasLiveTrendData = series.length > 0;
   const emptyTitle = isLoadingLiveData
     ? "Pulling things together…"
     : hasCollectors
@@ -85,7 +77,7 @@ export default function TrendsScreen() {
 
       try {
         await recomputeDailyAggregatesForRange(rangeStart, rangeEnd);
-        const [aggregates, events] = await Promise.all([
+        const [aggregates, trendEvents] = await Promise.all([
           getDailyAggregatesForRange(rangeStart, rangeEnd),
           getEventsForRange(rangeStart, rangeEnd),
         ]);
@@ -98,10 +90,9 @@ export default function TrendsScreen() {
           buildLiveTrendSeries(
             aggregates,
             { start: rangeStart, end: rangeEnd },
-            events,
+            trendEvents,
           ),
         );
-        setLiveHeatmap(buildLiveHeatmap(events));
       } finally {
         if (!isCancelled) {
           setIsLoadingLiveData(false);
@@ -109,10 +100,13 @@ export default function TrendsScreen() {
       }
     }
 
-    void loadLiveTrends();
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      void loadLiveTrends();
+    });
 
     return () => {
       isCancelled = true;
+      interaction.cancel();
     };
   }, [
     isDemoMode,
@@ -142,9 +136,6 @@ export default function TrendsScreen() {
               <TrendChartCard series={entry} />
             </View>
           ))}
-          <View style={styles.sectionBlock}>
-            <HeatmapCard cells={heatmap} />
-          </View>
         </>
       ) : (
         <EmptyState body={emptyBody} title={emptyTitle} />

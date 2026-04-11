@@ -1,43 +1,50 @@
-export type ThemePreference = 'system' | 'light' | 'dark' | 'sunrise';
+export type ThemePreference = "system" | "light" | "dark" | "sunrise";
 
 export type CollectorKey =
-  | 'steps'
-  | 'activity'
-  | 'appUsage'
-  | 'deviceState'
-  | 'healthConnect'
-  | 'location'
-  | 'sleep'
-  | 'ambientLight';
+  | "steps"
+  | "activity"
+  | "appUsage"
+  | "deviceState"
+  | "healthConnect"
+  | "location"
+  | "sleep"
+  | "ambientLight";
 
-export type PermissionStatus = 'granted' | 'not_requested' | 'blocked' | 'derived' | 'unsupported';
-export type CollectorHealth = 'healthy' | 'degraded' | 'idle';
-export type MetricTone = 'hero' | 'physical' | 'human' | 'cool';
-export type TrendRange = '7d' | '30d' | '90d' | 'custom';
-export type ExportFormat = 'csv' | 'json';
-export type ExportPreset = 'today' | 'week' | 'month' | 'all' | 'custom';
-export type DataMode = 'live' | 'demo';
-export type LocationRetentionPreference = '24h' | '30d';
+export type PermissionStatus =
+  | "granted"
+  | "not_requested"
+  | "blocked"
+  | "derived"
+  | "unsupported";
+export type CollectorHealth = "healthy" | "degraded" | "idle";
+export type MetricTone = "hero" | "physical" | "human" | "cool";
+export type TrendRange = "7d" | "30d" | "90d" | "custom";
+export type ExportFormat = "csv" | "json";
+export type ExportPreset = "today" | "week" | "month" | "all" | "custom";
+export type UnifiedTimelineResolution = "minute" | "15min" | "hour";
+export type ActivityPatternGranularity = "day" | "month" | "year";
+export type DataMode = "live" | "demo";
+export type LocationRetentionPreference = "24h" | "30d";
 export type EventDataType =
-  | 'steps'
-  | 'distance'
-  | 'activity'
-  | 'location'
-  | 'screen_state'
-  | 'app_usage'
-  | 'unlock_event'
-  | 'charging_state'
-  | 'sleep_inferred'
-  | 'heart_rate'
-  | 'exercise_session'
-  | 'ambient_light';
+  | "steps"
+  | "distance"
+  | "activity"
+  | "location"
+  | "screen_state"
+  | "app_usage"
+  | "unlock_event"
+  | "charging_state"
+  | "sleep_inferred"
+  | "heart_rate"
+  | "exercise_session"
+  | "ambient_light";
 export type EventSource =
-  | 'sensor'
-  | 'health_connect'
-  | 'activity_recognition'
-  | 'usage_stats'
-  | 'system_broadcast'
-  | 'inferred';
+  | "sensor"
+  | "health_connect"
+  | "activity_recognition"
+  | "usage_stats"
+  | "system_broadcast"
+  | "inferred";
 
 export interface CollectorState {
   key: CollectorKey;
@@ -64,7 +71,7 @@ export interface ActivityHour {
   hour: string;
   label: string;
   intensity: number;
-  kind: 'rest' | 'movement' | 'screen';
+  kind: "rest" | "movement" | "screen";
   movementIntensity: number;
   restIntensity: number;
   screenIntensity: number;
@@ -104,6 +111,54 @@ export interface DateRangeSelection {
   preset: ExportPreset;
   start: string;
   end: string;
+}
+
+export interface UnifiedTimelineWindow {
+  endTimestamp: string;
+  resolution: UnifiedTimelineResolution;
+  startTimestamp: string;
+}
+
+export interface UnifiedTimelineBucket {
+  activityEvents: number;
+  ambientLightAverageLux: number | null;
+  batteryLevel: number | null;
+  chargingStateLabel: string | null;
+  dataCompleteness: number;
+  dataTypeCoverage: Partial<Record<EventDataType, number>>;
+  dominantKind: "rest" | "movement" | "screen";
+  exerciseSeconds: number;
+  hasAnyData: boolean;
+  heartRateAverageBpm: number | null;
+  label: string;
+  locationSamples: number;
+  movementScore: number;
+  resolution: UnifiedTimelineResolution;
+  restScore: number;
+  screenScore: number;
+  screenTimeSeconds: number;
+  sleepMinutes: number;
+  sourceCoverage: Partial<Record<EventSource, number>>;
+  steps: number;
+  timestampEnd: string;
+  timestampStart: string;
+  unlockCount: number;
+}
+
+export interface ActivityPatternCell {
+  detailLabel: string;
+  dominantKind: "rest" | "movement" | "screen";
+  endTimestamp: string;
+  granularity: ActivityPatternGranularity;
+  hasAnyData: boolean;
+  id: string;
+  intensity: number;
+  label: string;
+  movementScore: number;
+  placeholder?: boolean;
+  restScore: number;
+  screenScore: number;
+  startTimestamp: string;
 }
 
 export interface ZentraEventRecord {
@@ -156,7 +211,7 @@ export interface TodayLiveSnapshot {
 export interface CollectorDiagnosticRecord {
   id: string;
   collectorKey: CollectorKey;
-  status: 'success' | 'failure';
+  status: "success" | "failure";
   message: string | null;
   eventCount: number;
   consecutiveFailures: number;

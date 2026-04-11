@@ -17,8 +17,10 @@ import type {
   TodayLiveSnapshot,
   ZentraEventRecord,
 } from "@/types/zentra";
+import { getCurrentActivityLabel } from "@/utils/activity-summary";
 import { deriveDiagnosticPermissionStatus } from "@/utils/collector-permission-status";
 import { formatBytes, formatMinutes, formatNumber } from "@/utils/format";
+import { computeCumulativeSteps } from "@/utils/repository-aggregates";
 import {
   getCollectorPlatformOverrides,
   getHealthPlatformName,
@@ -126,37 +128,53 @@ export function buildLiveDashboardMetrics(
   signals: SignalStoreState,
   todaySnapshot: TodayLiveSnapshot,
   todayAggregate: DailyAggregateRecord | null,
+  todayEvents: ZentraEventRecord[],
 ): DashboardMetric[] {
   const mobilityRadius =
     todayAggregate?.mobilityRadiusMeters ??
     calculateMobilityRadius(todaySnapshot.locationSamples);
+  const currentActivity = getCurrentActivityLabel(todayEvents);
+  const cumulativeSteps = computeCumulativeSteps(todayEvents);
+  const hasSteps = cumulativeSteps > 0 || todaySnapshot.stepCount !== null;
+  const displaySteps = hasSteps
+    ? formatNumber(
+        cumulativeSteps > 0 ? cumulativeSteps : (todaySnapshot.stepCount ?? 0),
+      )
+    : "Waiting";
 
   return [
     metric(
       "steps",
       "Steps",
-      todaySnapshot.stepCount !== null
-        ? formatNumber(todaySnapshot.stepCount)
-        : "Waiting",
+      displaySteps,
       collectors.steps.enabled
         ? signals.stepPermissionStatus === "granted"
-          ? "Steps counted directly by your phone this session."
+          ? "Cumulative steps recorded today."
           : "Allow motion access so Zentra can count your steps."
         : "Turn on Steps in Settings to start counting.",
       "hero",
-      todaySnapshot.stepCount !== null,
+      hasSteps,
     ),
     metric(
       "activeMinutes",
       "Active Minutes",
-      todayAggregate ? formatNumber(todayAggregate.activeMinutes) : "Waiting",
+      todayAggregate
+        ? formatNumber(todayAggregate.activeMinutes)
+        : currentActivity
+          ? "0"
+          : "Waiting",
       collectors.activity.enabled
-        ? todayAggregate && todayAggregate.activeMinutes > 0
-          ? "Based on activity shifts your phone recorded today."
-          : "Activity patterns will appear once your phone starts recording transitions."
+        ? currentActivity
+          ? todayAggregate && todayAggregate.activeMinutes > 0
+            ? `Current activity: ${currentActivity}. Active minutes are based on recorded motion transitions today.`
+            : `Current activity: ${currentActivity}. Zentra is waiting for more activity shifts to build the day.`
+          : todayAggregate && todayAggregate.activeMinutes > 0
+            ? "Based on activity shifts your phone recorded today."
+            : "Activity patterns appear after the first recorded motion transition."
         : "Turn on Activity in Settings to start.",
       "physical",
-      Boolean(todayAggregate && todayAggregate.activeMinutes > 0),
+      Boolean(currentActivity) ||
+        Boolean(todayAggregate && todayAggregate.activeMinutes > 0),
     ),
     metric(
       "screenTime",

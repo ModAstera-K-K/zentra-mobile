@@ -1,5 +1,12 @@
 import React from "react";
-import { Alert, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  InteractionManager,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { EmptyState } from "@/components/zentra/EmptyState";
 import { ScreenLead } from "@/components/zentra/ScreenLead";
@@ -57,7 +64,10 @@ export default function ExportScreen() {
   );
   const range =
     preset === "custom" ? customRange : getExportRangeForPreset(preset);
-  const demoCollectors = createDemoCollectors(collectors);
+  const demoCollectors = React.useMemo(
+    () => createDemoCollectors(collectors),
+    [collectors],
+  );
   const allEvents =
     dataMode === "demo" ? buildExportEvents(demoCollectors, true) : liveEvents;
   const availableTypes =
@@ -89,10 +99,13 @@ export default function ExportScreen() {
       setLiveAggregates(aggregates);
     }
 
-    void loadLiveExportData();
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      void loadLiveExportData();
+    });
 
     return () => {
       isCancelled = true;
+      interaction.cancel();
     };
   }, [
     dataMode,

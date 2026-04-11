@@ -10,6 +10,12 @@ import type {
   TodayLiveSnapshot,
   ZentraEventRecord,
 } from '@/types/zentra';
+import {
+  countActivityTypes,
+  formatActivityLabel,
+  getCurrentActivityLabel,
+  getLatestActivityEvent,
+} from '@/utils/activity-summary';
 import { formatMinutes, formatNumber, formatPercent } from '@/utils/format';
 import { getActivitySourceLabel, getHealthPlatformName } from '@/utils/platform-capabilities';
 
@@ -419,18 +425,6 @@ function buildDeviceContextValue(todaySnapshot: TodayLiveSnapshot): string {
   return 'Waiting';
 }
 
-function countActivityTypes(events: ZentraEventRecord[]): Map<string, number> {
-  return events.reduce<Map<string, number>>((result, event) => {
-    if (event.dataType !== 'activity') {
-      return result;
-    }
-
-    const label = event.valueText ? titleCase(event.valueText) : 'Unknown';
-    result.set(label, (result.get(label) ?? 0) + 1);
-    return result;
-  }, new Map<string, number>());
-}
-
 function buildStepsVisual(events: ZentraEventRecord[]): TodayDetailVisual | null {
   const points = sortEventsAscending(events)
     .filter((event) => typeof event.valueNumeric === 'number')
@@ -452,29 +446,20 @@ function buildStepsVisual(events: ZentraEventRecord[]): TodayDetailVisual | null
 }
 
 function buildActiveMinutesVisual(events: ZentraEventRecord[]): TodayDetailVisual | null {
-  let activeCount = 0;
-  const points = sortEventsAscending(events)
-    .filter((event) => event.dataType === 'activity')
-    .map((event) => {
-      if (event.valueText !== 'still') {
-        activeCount += 1;
-      }
+  const bars = countActivityTypes(events).map((entry) => ({
+    label: entry.label,
+    value: entry.count,
+    valueLabel: formatNumber(entry.count),
+  }));
 
-      return {
-        label: formatTimestampLabel(event.timestampStart),
-        value: activeCount,
-        valueLabel: `${activeCount} min`,
-      };
-    });
-
-  if (!points.length) {
+  if (!bars.length) {
     return null;
   }
 
   return {
-    type: 'line',
-    annotation: 'Running total of captured movement transitions.',
-    points,
+    type: 'distribution',
+    annotation: 'Top recorded activities so far today.',
+    bars,
   };
 }
 
@@ -560,12 +545,11 @@ function buildLocationRadiusVisual(events: ZentraEventRecord[]): TodayDetailVisu
 }
 
 function buildTopActivityVisual(events: ZentraEventRecord[]): TodayDetailVisual | null {
-  const counts = Array.from(countActivityTypes(events).entries())
-    .sort((left, right) => right[1] - left[1])
-    .map(([label, value]) => ({
-      label,
-      value,
-      valueLabel: formatNumber(value),
+  const counts = countActivityTypes(events)
+    .map((entry) => ({
+      label: entry.label,
+      value: entry.count,
+      valueLabel: formatNumber(entry.count),
     }));
 
   if (!counts.length) {
@@ -762,6 +746,8 @@ function buildVisualForEventType(eventType: EventDataType, events: ZentraEventRe
 function buildMetricFacts(metric: MetricLike, context: TodayVisualizationContext): TodayDetailFact[] {
   const relatedEvents = getRelatedEvents(context.todayEvents, metric.key);
   const latestEvent = relatedEvents[0];
+  const currentActivityLabel = getCurrentActivityLabel(context.todayEvents);
+  const latestActivityEvent = getLatestActivityEvent(context.todayEvents);
 
   switch (metric.key) {
     case 'steps':
@@ -773,7 +759,8 @@ function buildMetricFacts(metric: MetricLike, context: TodayVisualizationContext
     case 'activeMinutes':
       return [
         { label: 'Source', value: getMetricSourceLabel(metric.key) },
-        { label: 'Top activity', value: context.todayAggregate?.topActivity ? titleCase(context.todayAggregate.topActivity) : 'No dominant pattern yet' },
+        { label: 'Current activity', value: currentActivityLabel ?? 'Waiting for first transition' },
+        { label: 'Top activity', value: context.todayAggregate?.topActivity ? formatActivityLabel(context.todayAggregate.topActivity) : 'No dominant pattern yet' },
         { label: 'Transitions', value: formatNumber(relatedEvents.length) },
       ];
     case 'screenTime':
@@ -798,7 +785,7 @@ function buildMetricFacts(metric: MetricLike, context: TodayVisualizationContext
       return [
         { label: 'Source', value: getMetricSourceLabel(metric.key) },
         { label: 'Captured transitions', value: formatNumber(relatedEvents.length) },
-        { label: 'Latest transition', value: latestEvent ? formatDateTimeLabel(latestEvent.timestampStart) : 'No transitions captured' },
+        { label: 'Latest transition', value: latestActivityEvent ? formatDateTimeLabel(latestActivityEvent.timestampStart) : 'No transitions captured' },
       ];
     case 'dataCompleteness':
       return [
@@ -822,8 +809,17 @@ function buildMetricFacts(metric: MetricLike, context: TodayVisualizationContext
 
 function buildMetricMeta(metric: MetricLike, context: TodayVisualizationContext): string {
   const relatedEvents = getRelatedEvents(context.todayEvents, metric.key);
+  const currentActivityLabel = getCurrentActivityLabel(context.todayEvents);
   if (relatedEvents.length) {
+    if (metric.key === 'activeMinutes' && currentActivityLabel) {
+      return `${relatedEvents.length} activity transition${relatedEvents.length === 1 ? '' : 's'} stored today · current ${currentActivityLabel}`;
+    }
+
     return `${relatedEvents.length} related reading${relatedEvents.length === 1 ? '' : 's'} stored today`;
+  }
+
+  if (metric.key === 'activeMinutes' && currentActivityLabel) {
+    return `Current activity is ${currentActivityLabel}, but no transition history has landed yet`;
   }
 
   return metric.available ? 'No raw rows surfaced for this metric yet' : 'This metric is still waiting for usable data';
@@ -835,7 +831,7 @@ export function buildTodaySecondaryMetrics(
   todayEvents: ZentraEventRecord[],
 ): TodaySummaryMetric[] {
   const unlockCount = todayAggregate?.unlockCount ?? todayEvents.filter((event) => event.dataType === 'unlock_event').length;
-  const topActivity = todayAggregate?.topActivity ? titleCase(todayAggregate.topActivity) : 'Waiting';
+  const topActivity = todayAggregate?.topActivity ? formatActivityLabel(todayAggregate.topActivity) : 'Waiting';
   const completenessValue = todayAggregate?.dataCompleteness ?? (
     todayEvents.length ? getCoverageCount(todayEvents) / CORE_SIGNAL_TYPES.length : 0
   );

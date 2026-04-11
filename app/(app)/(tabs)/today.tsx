@@ -1,11 +1,17 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  InteractionManager,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
+import { ActivityPatternCard } from "@/components/zentra/ActivityPatternCard";
 import { ActivityStrip } from "@/components/zentra/ActivityStrip";
 import { CompletenessCard } from "@/components/zentra/CompletenessCard";
 import { DetailSheet } from "@/components/zentra/DetailSheet";
 import { EmptyState } from "@/components/zentra/EmptyState";
-import { HeatmapCard } from "@/components/zentra/HeatmapCard";
 import { MetricCard } from "@/components/zentra/MetricCard";
 import { PilotLight } from "@/components/zentra/PilotLight";
 import { RecentSignalFeed } from "@/components/zentra/RecentSignalFeed";
@@ -27,9 +33,13 @@ import {
   buildLiveDashboardMetrics,
   buildLiveSleepEstimate,
 } from "@/utils/device-signals";
+import { buildActivityPatternDetailPayload } from "@/utils/activity-pattern-detail";
+import { buildDemoTimelineEvents } from "@/utils/demo-timeline-events";
 import { getEventsForRange } from "@/utils/event-repository";
-import { buildLiveActivityHours } from "@/utils/live-activity-strip";
-import { buildLiveHeatmap } from "@/utils/live-trends";
+import {
+  buildMonthlyActivityPattern,
+  buildUnifiedDailyTimeline,
+} from "@/utils/unified-timeline";
 import { getActivityRecognitionPermissionStatusAsync } from "@/utils/native/zentra-native-signals";
 import {
   buildRecentSignalDetailPayload,
@@ -39,13 +49,15 @@ import {
   buildTodaySecondaryMetrics,
 } from "@/utils/today-visualization";
 import {
-  buildActivityHours,
   buildDashboardMetrics,
-  buildHeatmap,
   buildSleepEstimate,
   createDemoCollectors,
 } from "@/utils/mock-data";
-import type { HeatmapCell, PermissionStatus } from "@/types/zentra";
+import type {
+  ActivityPatternCell,
+  PermissionStatus,
+  ZentraEventRecord,
+} from "@/types/zentra";
 import { useShallow } from "zustand/react/shallow";
 
 export default function TodayScreen() {
@@ -86,15 +98,19 @@ export default function TodayScreen() {
       ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
     })),
   );
-  const demoCollectors = createDemoCollectors(collectors);
   const isDemoMode = dataMode === "demo";
+  const demoCollectors = React.useMemo(
+    () => createDemoCollectors(collectors),
+    [collectors],
+  );
   const [activityPermissionStatus, setActivityPermissionStatus] =
     React.useState<PermissionStatus>("not_requested");
   const [selectedDetail, setSelectedDetail] =
     React.useState<TodayDetailPayload | null>(null);
-  const [overviewHeatmap, setOverviewHeatmap] = React.useState<HeatmapCell[]>(
-    [],
-  );
+  const [overviewEvents, setOverviewEvents] = React.useState<
+    ZentraEventRecord[]
+  >([]);
+  const [hasLoadedPattern, setHasLoadedPattern] = React.useState(false);
 
   React.useEffect(() => {
     if (isDemoMode || !collectors.activity.enabled) {
@@ -115,68 +131,140 @@ export default function TodayScreen() {
     let isCancelled = false;
     const range = getDateRangeForTrendRange("7d");
 
-    async function loadOverviewHeatmap(): Promise<void> {
-      const events = await getEventsForRange(range.start, range.end);
+    async function loadOverviewEvents(): Promise<void> {
+      try {
+        const events = await getEventsForRange(range.start, range.end);
 
-      if (!isCancelled) {
-        setOverviewHeatmap(buildLiveHeatmap(events));
+        if (!isCancelled) {
+          setOverviewEvents(events);
+          setHasLoadedPattern(true);
+        }
+      } catch {
+        // keep previous data on failure
       }
     }
 
-    void loadOverviewHeatmap();
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      void loadOverviewEvents();
+    });
 
     return () => {
       isCancelled = true;
+      interaction.cancel();
     };
   }, [isDemoMode, repository.isHydrated, repository.lastUpdatedAt]);
 
-  const metrics = isDemoMode
-    ? buildDashboardMetrics(demoCollectors, true)
-    : buildLiveDashboardMetrics(
-        collectors,
-        signals,
-        repository.todaySnapshot,
-        repository.todayAggregate,
-      );
-  const activityHours = isDemoMode
-    ? buildActivityHours(demoCollectors, true)
-    : buildLiveActivityHours(repository.todayEvents);
-  const sleepEstimate = isDemoMode
-    ? buildSleepEstimate(demoCollectors, true)
-    : buildLiveSleepEstimate(repository.latestSleepEvent);
-  const visibleCollectors = isDemoMode
-    ? Object.values(demoCollectors).filter((collector) => collector.enabled)
-    : buildCollectorStatuses(collectors, signals, repository.diagnostics, {
-        hasLatestSleepEstimate: Boolean(repository.latestSleepEvent),
-        permissionStatusByCollector: {
-          activity: collectors.activity.enabled
-            ? activityPermissionStatus
-            : "not_requested",
-        },
-      }).filter((collector) => collector.enabled);
+  const metrics = React.useMemo(
+    () =>
+      isDemoMode
+        ? buildDashboardMetrics(demoCollectors, true)
+        : buildLiveDashboardMetrics(
+            collectors,
+            signals,
+            repository.todaySnapshot,
+            repository.todayAggregate,
+            repository.todayEvents,
+          ),
+    [
+      isDemoMode,
+      demoCollectors,
+      collectors,
+      signals,
+      repository.todaySnapshot,
+      repository.todayAggregate,
+      repository.todayEvents,
+    ],
+  );
+  const sleepEstimate = React.useMemo(
+    () =>
+      isDemoMode
+        ? buildSleepEstimate(demoCollectors, true)
+        : buildLiveSleepEstimate(repository.latestSleepEvent),
+    [isDemoMode, demoCollectors, repository.latestSleepEvent],
+  );
+  const visibleCollectors = React.useMemo(
+    () =>
+      isDemoMode
+        ? Object.values(demoCollectors).filter((collector) => collector.enabled)
+        : buildCollectorStatuses(collectors, signals, repository.diagnostics, {
+            hasLatestSleepEstimate: Boolean(repository.latestSleepEvent),
+            permissionStatusByCollector: {
+              activity: collectors.activity.enabled
+                ? activityPermissionStatus
+                : "not_requested",
+            },
+          }).filter((collector) => collector.enabled),
+    [
+      isDemoMode,
+      demoCollectors,
+      collectors,
+      signals,
+      repository.diagnostics,
+      repository.latestSleepEvent,
+      activityPermissionStatus,
+    ],
+  );
   const hasCollectors = Object.values(collectors).some(
     (collector) => collector.enabled,
   );
-  const secondaryMetrics: TodaySummaryMetric[] = isDemoMode
-    ? []
-    : buildTodaySecondaryMetrics(
-        repository.todayAggregate,
-        repository.todaySnapshot,
-        repository.todayEvents,
-      );
-  const recentSignals: TodayRecentSignalRow[] = isDemoMode
-    ? []
-    : buildRecentSignalRows(repository.todayEvents);
-  const signalHealthSummary = isDemoMode
-    ? null
-    : buildSignalHealthSummary(
-        repository.todayAggregate,
-        visibleCollectors,
-        repository.todayEvents,
-      );
-  const overviewCells = isDemoMode
-    ? buildHeatmap("7d", demoCollectors, true)
-    : overviewHeatmap;
+  const secondaryMetrics: TodaySummaryMetric[] = React.useMemo(
+    () =>
+      isDemoMode
+        ? []
+        : buildTodaySecondaryMetrics(
+            repository.todayAggregate,
+            repository.todaySnapshot,
+            repository.todayEvents,
+          ),
+    [
+      isDemoMode,
+      repository.todayAggregate,
+      repository.todaySnapshot,
+      repository.todayEvents,
+    ],
+  );
+  const recentSignals: TodayRecentSignalRow[] = React.useMemo(
+    () => (isDemoMode ? [] : buildRecentSignalRows(repository.todayEvents)),
+    [isDemoMode, repository.todayEvents],
+  );
+  const signalHealthSummary = React.useMemo(
+    () =>
+      isDemoMode
+        ? null
+        : buildSignalHealthSummary(
+            repository.todayAggregate,
+            visibleCollectors,
+            repository.todayEvents,
+          ),
+    [
+      isDemoMode,
+      repository.todayAggregate,
+      visibleCollectors,
+      repository.todayEvents,
+    ],
+  );
+  const todayAnchor = React.useMemo(
+    () => new Date().toISOString().slice(0, 10),
+    [],
+  );
+  const demoPatternEvents = React.useMemo(
+    () => buildDemoTimelineEvents(demoCollectors),
+    [demoCollectors],
+  );
+  const patternSourceEvents = isDemoMode ? demoPatternEvents : overviewEvents;
+  const dailyRhythmBuckets = React.useMemo(
+    () =>
+      buildUnifiedDailyTimeline(
+        isDemoMode ? demoPatternEvents : (repository.todayEvents ?? []),
+        todayAnchor,
+        "hour",
+      ),
+    [isDemoMode, demoPatternEvents, repository.todayEvents, todayAnchor],
+  );
+  const monthCells = React.useMemo(
+    () => buildMonthlyActivityPattern(patternSourceEvents, todayAnchor, "hour"),
+    [patternSourceEvents, todayAnchor],
+  );
 
   function handleSelectMetric(metric: (typeof metrics)[number]): void {
     setSelectedDetail(
@@ -250,7 +338,36 @@ export default function TodayScreen() {
       ) : (
         <>
           <View style={styles.sectionBlock}>
-            <HeatmapCard cells={overviewCells} />
+            {!hasLoadedPattern && !isDemoMode ? (
+              <Card>
+                <View style={styles.patternLoading}>
+                  <ActivityIndicator
+                    color={palette.mutedForeground}
+                    size="small"
+                  />
+                  <Text
+                    style={[
+                      styles.patternLoadingText,
+                      { color: palette.textSecondary },
+                    ]}
+                  >
+                    Building your pattern…
+                  </Text>
+                </View>
+              </Card>
+            ) : (
+              <ActivityPatternCard
+                cells={monthCells}
+                onSelectCell={(cell: ActivityPatternCell) =>
+                  setSelectedDetail(
+                    buildActivityPatternDetailPayload(
+                      cell,
+                      patternSourceEvents,
+                    ),
+                  )
+                }
+              />
+            )}
           </View>
           <View style={styles.metricGrid}>
             {metrics.map((metric) => (
@@ -263,7 +380,7 @@ export default function TodayScreen() {
             ))}
           </View>
           <View style={styles.sectionBlock}>
-            <ActivityStrip hours={activityHours} />
+            <ActivityStrip buckets={dailyRhythmBuckets} />
           </View>
           {secondaryMetrics.length ? (
             <View style={styles.sectionBlock}>
@@ -353,6 +470,18 @@ const styles = StyleSheet.create({
   metricCell: {
     height: 228,
     width: "48%",
+  },
+  patternLoading: {
+    alignItems: "center",
+    gap: Spacing.sm,
+    justifyContent: "center",
+    minHeight: 120,
+  },
+  patternLoadingText: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
   },
   sectionBlock: {
     marginBottom: Spacing.lg,

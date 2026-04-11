@@ -33,6 +33,7 @@ class ZentraNativeSignalsModule : Module() {
 
     OnDestroy {
       ZentraNativeSignalsEventRegistry.setActivityTransitionListener(null)
+      ZentraNativeSignalsEventRegistry.resetActivityState()
       getActivityRecognitionController()?.stopUpdates()
     }
 

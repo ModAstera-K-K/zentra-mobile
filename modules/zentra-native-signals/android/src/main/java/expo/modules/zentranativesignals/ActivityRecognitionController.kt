@@ -51,6 +51,7 @@ internal class ActivityRecognitionController(
   fun startUpdates(): Boolean {
     return try {
       Tasks.await(client.requestActivityTransitionUpdates(createTransitionRequest(), createPendingIntent()))
+      Tasks.await(client.requestActivityUpdates(ACTIVITY_UPDATE_INTERVAL_MS, createActivityUpdatePendingIntent()))
       true
     } catch (_: Exception) {
       false
@@ -60,6 +61,7 @@ internal class ActivityRecognitionController(
   fun stopUpdates() {
     try {
       Tasks.await(client.removeActivityTransitionUpdates(createPendingIntent()))
+      Tasks.await(client.removeActivityUpdates(createActivityUpdatePendingIntent()))
     } catch (_: Exception) {
     }
   }
@@ -102,8 +104,23 @@ internal class ActivityRecognitionController(
     )
   }
 
+  private fun createActivityUpdatePendingIntent(): PendingIntent {
+    val intent = Intent(context, ActivityUpdateReceiver::class.java).apply {
+      action = ActivityUpdateReceiver.ACTION_ACTIVITY_UPDATE
+    }
+
+    return PendingIntent.getBroadcast(
+      context,
+      ACTIVITY_UPDATE_REQUEST_CODE,
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+  }
+
   companion object {
     private const val ACTIVITY_REQUEST_CODE = 4411
+    private const val ACTIVITY_UPDATE_REQUEST_CODE = 4412
+    private const val ACTIVITY_UPDATE_INTERVAL_MS = 5_000L
     private const val PREFERENCES_NAME = "zentra_native_signals"
     private const val KEY_ACTIVITY_PERMISSION_REQUESTED = "activity_permission_requested"
   }

@@ -1,10 +1,10 @@
-import React from 'react';
-import { Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import React from "react";
+import { Platform } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Tabs } from "expo-router";
 
-import { BorderRadius, Colors, Layout } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { BorderRadius, Colors, Layout } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 
 function TabBarIcon({
   color,
@@ -19,14 +19,16 @@ function TabBarIcon({
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
-  const isAndroid = Platform.OS === 'android';
+  const isAndroid = Platform.OS === "android";
 
   return (
     <Tabs
       screenOptions={{
+        lazy: true,
+        freezeOnBlur: true,
         headerShown: false,
         tabBarActiveTintColor: palette.primary,
-        tabBarActiveBackgroundColor: isAndroid ? 'transparent' : palette.halo,
+        tabBarActiveBackgroundColor: isAndroid ? "transparent" : palette.halo,
         tabBarInactiveTintColor: palette.mutedForeground,
         sceneStyle: {
           backgroundColor: palette.background,
@@ -44,7 +46,7 @@ export default function TabLayout() {
           paddingBottom: 10,
           paddingHorizontal: isAndroid ? 0 : 8,
           paddingTop: 10,
-          position: isAndroid ? 'relative' : 'absolute',
+          position: isAndroid ? "relative" : "absolute",
           right: isAndroid ? 0 : Layout.tabBarOffset,
         },
         tabBarItemStyle: {
@@ -52,10 +54,10 @@ export default function TabLayout() {
           marginHorizontal: isAndroid ? 0 : 2,
         },
         tabBarLabelStyle: {
-          fontFamily: 'JetBrainsMonoRegular',
+          fontFamily: "JetBrainsMonoRegular",
           fontSize: 11,
           letterSpacing: 0.6,
-          textTransform: 'uppercase',
+          textTransform: "uppercase",
         },
         tabBarIconStyle: {
           marginBottom: 2,
@@ -65,22 +67,28 @@ export default function TabLayout() {
       <Tabs.Screen
         name="today"
         options={{
-          title: 'Today',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} name="sunny-outline" />,
+          title: "Today",
+          tabBarIcon: ({ color }) => (
+            <TabBarIcon color={color} name="sunny-outline" />
+          ),
         }}
       />
       <Tabs.Screen
         name="trends"
         options={{
-          title: 'Trends',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} name="analytics-outline" />,
+          title: "Trends",
+          tabBarIcon: ({ color }) => (
+            <TabBarIcon color={color} name="analytics-outline" />
+          ),
         }}
       />
       <Tabs.Screen
         name="export"
         options={{
-          title: 'Export',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} name="download-outline" />,
+          title: "Export",
+          tabBarIcon: ({ color }) => (
+            <TabBarIcon color={color} name="download-outline" />
+          ),
         }}
       />
     </Tabs>

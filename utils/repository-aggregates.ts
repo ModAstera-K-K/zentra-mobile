@@ -3,22 +3,57 @@ import type {
   LocationSample,
   TodayLiveSnapshot,
   ZentraEventRecord,
-} from '@/types/zentra';
-import { parseISODate, shiftISODate, toISODate } from '@/utils/dates';
+} from "@/types/zentra";
+import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
 
 interface LocationPayload {
   latitude: number;
   longitude: number;
 }
 
-const COMPLETENESS_TYPES: ZentraEventRecord['dataType'][] = [
-  'steps',
-  'activity',
-  'app_usage',
-  'charging_state',
-  'location',
-  'sleep_inferred',
+const COMPLETENESS_TYPES: ZentraEventRecord["dataType"][] = [
+  "steps",
+  "activity",
+  "app_usage",
+  "charging_state",
+  "location",
+  "sleep_inferred",
 ];
+
+/**
+ * Sum step deltas from sensor step events.
+ * Each sensor step event stores the running pedometer counter.
+ * Convert consecutive readings to deltas and sum them for the true
+ * cumulative step count.
+ */
+export function computeCumulativeSteps(events: ZentraEventRecord[]): number {
+  const sensorSteps = events
+    .filter(
+      (event) =>
+        event.dataType === "steps" &&
+        event.source === "sensor" &&
+        typeof event.valueNumeric === "number",
+    )
+    .sort((left, right) =>
+      left.timestampStart.localeCompare(right.timestampStart),
+    );
+
+  if (!sensorSteps.length) {
+    return 0;
+  }
+
+  let total = Math.max(0, Math.round(sensorSteps[0].valueNumeric ?? 0));
+  for (let i = 1; i < sensorSteps.length; i++) {
+    const current = Math.max(0, Math.round(sensorSteps[i].valueNumeric ?? 0));
+    const previous = Math.max(
+      0,
+      Math.round(sensorSteps[i - 1].valueNumeric ?? 0),
+    );
+    total += Math.max(0, current - previous);
+  }
+
+  return total;
+}
 
 function toRadians(value: number): number {
   return (value * Math.PI) / 180;
@@ -30,8 +65,9 @@ function distanceMeters(a: LocationSample, b: LocationSample): number {
   const deltaLon = toRadians(b.longitude - a.longitude);
   const latA = toRadians(a.latitude);
   const latB = toRadians(b.latitude);
-  const haversine = Math.sin(deltaLat / 2) ** 2
-    + Math.cos(latA) * Math.cos(latB) * Math.sin(deltaLon / 2) ** 2;
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(latA) * Math.cos(latB) * Math.sin(deltaLon / 2) ** 2;
 
   return 2 * earthRadius * Math.asin(Math.sqrt(haversine));
 }
@@ -43,7 +79,10 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
 
   try {
     const parsed = JSON.parse(valueJson) as Partial<LocationPayload>;
-    if (typeof parsed.latitude !== 'number' || typeof parsed.longitude !== 'number') {
+    if (
+      typeof parsed.latitude !== "number" ||
+      typeof parsed.longitude !== "number"
+    ) {
       return null;
     }
 
@@ -58,7 +97,7 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
 
 function extractLocationSamples(events: ZentraEventRecord[]): LocationSample[] {
   return events
-    .filter((event) => event.dataType === 'location')
+    .filter((event) => event.dataType === "location")
     .map((event) => {
       const payload = parseLocationPayload(event.valueJson);
       if (!payload) {
@@ -86,7 +125,7 @@ function calculateMobilityRadius(samples: LocationSample[]): number | null {
 
 function countTopActivity(events: ZentraEventRecord[]): string | null {
   const counts = events.reduce<Record<string, number>>((result, event) => {
-    if (event.dataType !== 'activity' || !event.valueText) {
+    if (event.dataType !== "activity" || !event.valueText) {
       return result;
     }
 
@@ -94,7 +133,9 @@ function countTopActivity(events: ZentraEventRecord[]): string | null {
     return result;
   }, {});
 
-  const topEntry = Object.entries(counts).sort((left, right) => right[1] - left[1])[0];
+  const topEntry = Object.entries(counts).sort(
+    (left, right) => right[1] - left[1],
+  )[0];
   return topEntry?.[0] ?? null;
 }
 
@@ -104,7 +145,9 @@ function calculateCompleteness(events: ZentraEventRecord[]): number {
   }
 
   const presentTypes = new Set(events.map((event) => event.dataType));
-  const coveredTypes = COMPLETENESS_TYPES.filter((type) => presentTypes.has(type)).length;
+  const coveredTypes = COMPLETENESS_TYPES.filter((type) =>
+    presentTypes.has(type),
+  ).length;
 
   return Number((coveredTypes / COMPLETENESS_TYPES.length).toFixed(2));
 }
@@ -119,25 +162,35 @@ export function buildDailyAggregateRecord(
 ): DailyAggregateRecord {
   const locationSamples = extractLocationSamples(events);
   const sleepEvent = events
-    .filter((event) => event.dataType === 'sleep_inferred' && typeof event.valueNumeric === 'number')
-    .sort((left, right) => right.timestampStart.localeCompare(left.timestampStart))[0];
-  const stepsTotal = Math.max(
-    0,
-    ...events
-      .filter((event) => event.dataType === 'steps' && typeof event.valueNumeric === 'number')
-      .map((event) => Math.round(event.valueNumeric ?? 0)),
-  );
+    .filter(
+      (event) =>
+        event.dataType === "sleep_inferred" &&
+        typeof event.valueNumeric === "number",
+    )
+    .sort((left, right) =>
+      right.timestampStart.localeCompare(left.timestampStart),
+    )[0];
+  const stepsTotal = computeCumulativeSteps(events);
 
   return {
     date,
     stepsTotal,
-    activeMinutes: events.filter((event) => event.dataType === 'activity' && event.valueText !== 'still').length,
+    activeMinutes: events.filter(
+      (event) => event.dataType === "activity" && event.valueText !== "still",
+    ).length,
     distanceMeters: 0,
     screenTimeSeconds: events
-      .filter((event) => event.dataType === 'app_usage' && typeof event.valueNumeric === 'number')
+      .filter(
+        (event) =>
+          event.dataType === "app_usage" &&
+          typeof event.valueNumeric === "number",
+      )
       .reduce((total, event) => total + Math.round(event.valueNumeric ?? 0), 0),
-    unlockCount: events.filter((event) => event.dataType === 'unlock_event').length,
-    sleepEstimateMinutes: sleepEvent?.valueNumeric ? Math.round(sleepEvent.valueNumeric) : null,
+    unlockCount: events.filter((event) => event.dataType === "unlock_event")
+      .length,
+    sleepEstimateMinutes: sleepEvent?.valueNumeric
+      ? Math.round(sleepEvent.valueNumeric)
+      : null,
     mobilityRadiusMeters: calculateMobilityRadius(locationSamples),
     topActivity: countTopActivity(events),
     dataCompleteness: calculateCompleteness(events),
@@ -145,13 +198,22 @@ export function buildDailyAggregateRecord(
   };
 }
 
-export function buildTodaySnapshot(events: ZentraEventRecord[]): TodayLiveSnapshot {
+export function buildTodaySnapshot(
+  events: ZentraEventRecord[],
+): TodayLiveSnapshot {
   const stepEvents = events
-    .filter((event) => event.dataType === 'steps' && typeof event.valueNumeric === 'number')
-    .sort((left, right) => right.timestampStart.localeCompare(left.timestampStart));
+    .filter(
+      (event) =>
+        event.dataType === "steps" && typeof event.valueNumeric === "number",
+    )
+    .sort((left, right) =>
+      right.timestampStart.localeCompare(left.timestampStart),
+    );
   const batteryEvents = events
-    .filter((event) => event.dataType === 'charging_state')
-    .sort((left, right) => right.timestampStart.localeCompare(left.timestampStart));
+    .filter((event) => event.dataType === "charging_state")
+    .sort((left, right) =>
+      right.timestampStart.localeCompare(left.timestampStart),
+    );
   const latestBatteryEvent = batteryEvents[0];
   const locationSamples = extractLocationSamples(events);
 
@@ -160,9 +222,10 @@ export function buildTodaySnapshot(events: ZentraEventRecord[]): TodayLiveSnapsh
     stepLastUpdatedAt: stepEvents[0]?.timestampStart ?? null,
     batteryLevel: latestBatteryEvent?.valueNumeric ?? null,
     batteryStateLabel: latestBatteryEvent?.valueText ?? null,
-    lowPowerMode: typeof latestBatteryEvent?.metadata.low_power_mode === 'boolean'
-      ? latestBatteryEvent.metadata.low_power_mode
-      : null,
+    lowPowerMode:
+      typeof latestBatteryEvent?.metadata.low_power_mode === "boolean"
+        ? latestBatteryEvent.metadata.low_power_mode
+        : null,
     batteryLastUpdatedAt: latestBatteryEvent?.timestampStart ?? null,
     locationSamples,
     locationLastUpdatedAt: locationSamples.at(-1)?.timestamp ?? null,
@@ -170,10 +233,15 @@ export function buildTodaySnapshot(events: ZentraEventRecord[]): TodayLiveSnapsh
 }
 
 export function getLocalDatesForEvents(events: ZentraEventRecord[]): string[] {
-  return Array.from(new Set(events.map((event) => getLocalDate(event.timestampStart))));
+  return Array.from(
+    new Set(events.map((event) => getLocalDate(event.timestampStart))),
+  );
 }
 
-export function getRangeBounds(start: string, end: string): { startIso: string; endExclusiveIso: string } {
+export function getRangeBounds(
+  start: string,
+  end: string,
+): { startIso: string; endExclusiveIso: string } {
   const startDate = parseISODate(start);
   const endExclusiveDate = parseISODate(shiftISODate(end, 1));
 

@@ -3,12 +3,17 @@
     "name": "Zentra",
     "slug": "zentra",
     "version": "1.0.0",
+    "icon": "./assets/branding/zentra-app-icon.png",
     "orientation": "portrait",
     "scheme": "zentra",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
       "package": "com.modastera.zentra",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/branding/zentra-app-icon.png",
+        "backgroundColor": "#F2EDE4"
+      },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": true,
       "blockedPermissions": [
