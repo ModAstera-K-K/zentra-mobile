@@ -35,6 +35,12 @@ function getSeriesColor(series: TrendSeries, palette: AppPalette): string {
   }
 }
 
+function getChangeLabel(change: number): string {
+  if (change > 0) return `↑${change}%`;
+  if (change < 0) return `↓${Math.abs(change)}%`;
+  return "0%";
+}
+
 export function TrendChartCard({ series }: TrendChartCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -173,9 +179,14 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
           })}
         </Svg>
       </View>
-      <Text style={[styles.submeta, { color: palette.textSecondary }]}>
-        {series.change}% change · {series.variability}% variability
-      </Text>
+      <View style={styles.submetaRow}>
+        <Text style={[styles.submeta, { color: palette.textSecondary }]}>
+          {getChangeLabel(series.change)} change
+        </Text>
+        <Text style={[styles.submeta, { color: palette.textSecondary }]}>
+          {series.variability}% variability
+        </Text>
+      </View>
       <View style={styles.labelsRow}>
         <Text style={[styles.caption, { color: palette.mutedForeground }]}>
           {series.points[0]?.label}
@@ -224,9 +235,13 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.1,
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.sm,
     textTransform: "uppercase",
+  },
+  submetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.sm,
   },
   caption: {
     fontFamily: Fonts.mono,

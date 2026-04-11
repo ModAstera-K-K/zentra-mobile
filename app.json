@@ -43,7 +43,8 @@
         {
           "motionPermission": "Allow Zentra to access motion data for live step readings."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

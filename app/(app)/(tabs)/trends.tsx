@@ -1,20 +1,28 @@
 import React from "react";
-import { InteractionManager, StyleSheet, View } from "react-native";
+import { InteractionManager, StyleSheet, Text, View } from "react-native";
 
+import { DateRangePickerRow } from "@/components/zentra/DateRangePickerRow";
 import { EmptyState } from "@/components/zentra/EmptyState";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { TrendChartCard } from "@/components/zentra/TrendChartCard";
 import { Chip } from "@/components/ui/Chip";
-import { Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import type { TrendRange, TrendSeries } from "@/types/zentra";
-import { getDateRangeForTrendRange } from "@/utils/dates";
+import {
+  formatDateRangeLabel,
+  getDateRangeForTrendRange,
+  isValidISODate,
+  shiftISODate,
+  toISODate,
+} from "@/utils/dates";
 import {
   getDailyAggregatesForRange,
   getEventsForRange,
   recomputeDailyAggregatesForRange,
 } from "@/utils/event-repository";
-import { buildLiveTrendSeries } from "@/utils/live-trends";
+import { buildLiveTrendSeries, groupTrendSeries } from "@/utils/live-trends";
 import { buildTrendSeries, createDemoCollectors } from "@/utils/mock-data";
 import { useShallow } from "zustand/react/shallow";
 
@@ -26,7 +34,13 @@ const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
 ];
 
 export default function TrendsScreen() {
+  const colorScheme = useColorScheme();
+  const palette = Colors[colorScheme];
   const [range, setRange] = React.useState<TrendRange>("30d");
+  const [customRange, setCustomRange] = React.useState(() => {
+    const end = toISODate(new Date());
+    return { start: shiftISODate(end, -13), end };
+  });
   const [liveSeries, setLiveSeries] = React.useState<TrendSeries[]>([]);
   const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
   const collectors = useAppStore((state) => state.collectors);
@@ -42,9 +56,27 @@ export default function TrendsScreen() {
     () => createDemoCollectors(collectors),
     [collectors],
   );
-  const rangeSelection = getDateRangeForTrendRange(range);
-  const rangeStart = rangeSelection.start;
-  const rangeEnd = rangeSelection.end;
+  const rangeSelection =
+    range === "custom"
+      ? customRange
+      : getDateRangeForTrendRange(range);
+  const validCustom =
+    range === "custom" &&
+    isValidISODate(customRange.start) &&
+    isValidISODate(customRange.end) &&
+    customRange.start <= customRange.end;
+  const rangeStart =
+    range === "custom" && validCustom
+      ? customRange.start
+      : range === "custom"
+        ? shiftISODate(toISODate(new Date()), -13)
+        : rangeSelection.start;
+  const rangeEnd =
+    range === "custom" && validCustom
+      ? customRange.end
+      : range === "custom"
+        ? toISODate(new Date())
+        : rangeSelection.end;
   const series = React.useMemo(
     () =>
       isDemoMode ? buildTrendSeries(range, demoCollectors, true) : liveSeries,
@@ -54,6 +86,7 @@ export default function TrendsScreen() {
     (collector) => collector.enabled,
   );
   const hasLiveTrendData = series.length > 0;
+  const groups = React.useMemo(() => groupTrendSeries(series), [series]);
   const emptyTitle = isLoadingLiveData
     ? "Pulling things together…"
     : hasCollectors
@@ -129,27 +162,68 @@ export default function TrendsScreen() {
         ))}
       </View>
 
+      <Text style={[styles.helper, { color: palette.mutedForeground }]}>
+        {formatDateRangeLabel(rangeStart, rangeEnd)}
+      </Text>
+
+      {range === "custom" ? (
+        <DateRangePickerRow
+          end={customRange.end}
+          onChange={setCustomRange}
+          start={customRange.start}
+        />
+      ) : null}
+
       {isDemoMode || hasLiveTrendData ? (
         <>
-          {series.map((entry) => (
-            <View key={entry.key} style={styles.sectionBlock}>
-              <TrendChartCard series={entry} />
+          {groups.map((group) => (
+            <View key={group.key} style={styles.groupBlock}>
+              <Text
+                style={[styles.groupLabel, { color: palette.textSecondary }]}
+              >
+                {group.label}
+              </Text>
+              {group.series.map((entry) => (
+                <View key={entry.key} style={styles.sectionBlock}>
+                  <TrendChartCard series={entry} />
+                </View>
+              ))}
             </View>
           ))}
         </>
       ) : (
-        <EmptyState body={emptyBody} iconName="analytics-outline" title={emptyTitle} />
+        <EmptyState
+          body={emptyBody}
+          iconName="analytics-outline"
+          title={emptyTitle}
+        />
       )}
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
+  groupBlock: {
+    marginBottom: Spacing.md,
+  },
+  groupLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 1.3,
+    marginBottom: Spacing.md,
+    textTransform: "uppercase",
+  },
+  helper: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    lineHeight: 20,
+    marginBottom: Spacing.sm,
+  },
   rangeRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
   sectionBlock: {
     marginBottom: Spacing.lg,

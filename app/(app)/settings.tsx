@@ -1,5 +1,13 @@
 import React from "react";
-import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  AppState,
+  Linking,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import Constants from "expo-constants";
@@ -170,6 +178,16 @@ export default function SettingsScreen() {
     collectors.activity.enabled,
     collectors.healthConnect.enabled,
   ]);
+
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void refreshNativePermissionStatuses();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [refreshNativePermissionStatuses]);
 
   const collectorStatuses = React.useMemo(
     () =>

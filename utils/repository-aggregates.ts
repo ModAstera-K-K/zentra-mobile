@@ -55,6 +55,88 @@ export function computeCumulativeSteps(events: ZentraEventRecord[]): number {
   return total;
 }
 
+/**
+ * Compute active minutes from paired enter/exit activity transitions.
+ * Falls back to counting non-still events as 1 minute each if no
+ * transition metadata is present (e.g. demo data with timestampStart/End).
+ */
+export function computeActiveMinutes(events: ZentraEventRecord[]): number {
+  const activityEvents = events
+    .filter((event) => event.dataType === "activity")
+    .sort((left, right) =>
+      left.timestampStart.localeCompare(right.timestampStart),
+    );
+
+  if (!activityEvents.length) {
+    return 0;
+  }
+
+  // Check if events use transition metadata (live data)
+  const hasTransitions = activityEvents.some(
+    (event) =>
+      event.metadata.transition === "enter" ||
+      event.metadata.transition === "exit",
+  );
+
+  if (hasTransitions) {
+    return computeActiveMinutesFromTransitions(activityEvents);
+  }
+
+  // Fall back to duration from timestampStart/End for non-transition events (demo data)
+  return computeActiveMinutesFromDurations(activityEvents);
+}
+
+function computeActiveMinutesFromTransitions(
+  events: ZentraEventRecord[],
+): number {
+  let totalMs = 0;
+  let activeStart: string | null = null;
+
+  for (const event of events) {
+    const isStill = event.valueText === "still";
+    const transition = event.metadata.transition;
+
+    if (transition === "enter" && !isStill) {
+      activeStart = event.timestampStart;
+    } else if (
+      (transition === "exit" && !isStill && activeStart) ||
+      (transition === "enter" && isStill && activeStart)
+    ) {
+      const startMs = new Date(activeStart).getTime();
+      const endMs = new Date(event.timestampStart).getTime();
+      totalMs += Math.max(0, endMs - startMs);
+      activeStart = null;
+    }
+  }
+
+  // If still in an active state at the end, count up to now (capped at 60 min)
+  if (activeStart) {
+    const startMs = new Date(activeStart).getTime();
+    const elapsed = Math.max(0, Date.now() - startMs);
+    totalMs += Math.min(elapsed, 60 * 60_000);
+  }
+
+  return Math.round(totalMs / 60_000);
+}
+
+function computeActiveMinutesFromDurations(
+  events: ZentraEventRecord[],
+): number {
+  let totalMs = 0;
+
+  for (const event of events) {
+    if (event.valueText === "still") {
+      continue;
+    }
+    const startMs = new Date(event.timestampStart).getTime();
+    const endMs = new Date(event.timestampEnd).getTime();
+    const durationMs = Math.max(0, endMs - startMs);
+    totalMs += durationMs > 0 ? durationMs : 60_000; // default 1 minute if point-in-time
+  }
+
+  return Math.round(totalMs / 60_000);
+}
+
 function toRadians(value: number): number {
   return (value * Math.PI) / 180;
 }
@@ -175,9 +257,7 @@ export function buildDailyAggregateRecord(
   return {
     date,
     stepsTotal,
-    activeMinutes: events.filter(
-      (event) => event.dataType === "activity" && event.valueText !== "still",
-    ).length,
+    activeMinutes: computeActiveMinutes(events),
     distanceMeters: 0,
     screenTimeSeconds: events
       .filter(

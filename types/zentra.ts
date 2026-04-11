@@ -100,6 +100,15 @@ export interface TrendSeries {
   points: TrendPoint[];
   change: number;
   variability: number;
+  group?: TrendSeriesGroupKey;
+}
+
+export type TrendSeriesGroupKey = "body" | "device" | "environment" | "quality";
+
+export interface TrendSeriesGroup {
+  key: TrendSeriesGroupKey;
+  label: string;
+  series: TrendSeries[];
 }
 
 export interface HeatmapCell {

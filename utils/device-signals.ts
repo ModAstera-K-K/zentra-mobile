@@ -166,11 +166,11 @@ export function buildLiveDashboardMetrics(
       collectors.activity.enabled
         ? currentActivity
           ? todayAggregate && todayAggregate.activeMinutes > 0
-            ? `Current activity: ${currentActivity}. Active minutes are based on recorded motion transitions today.`
-            : `Current activity: ${currentActivity}. Zentra is waiting for more activity shifts to build the day.`
+            ? `Current activity: ${currentActivity}. Total time spent in non-idle activities today.`
+            : `Current activity: ${currentActivity}. Zentra is waiting for more activity data to build the day.`
           : todayAggregate && todayAggregate.activeMinutes > 0
-            ? "Based on activity shifts your phone recorded today."
-            : "Activity patterns appear after the first recorded motion transition."
+            ? "Total time spent walking, running, or in other non-idle activities today."
+            : "Active minutes appear after your phone detects movement transitions."
         : "Turn on Activity in Settings to start.",
       "physical",
       Boolean(currentActivity) ||
