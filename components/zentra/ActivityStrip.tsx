@@ -73,9 +73,9 @@ function getSummaryCopy(mode: ActivityMode): string {
     case "movement":
       return "See your steps per hour through the day.";
     case "screen":
-      return "Explore your screen-heavy stretches.";
+      return "Score based on app usage, unlocks, and screen-on time. Higher means more screen activity that hour.";
     default:
-      return "Find the quieter parts of your day.";
+      return "Score based on screen-off and idle periods. Higher means more downtime that hour.";
   }
 }
 

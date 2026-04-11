@@ -20,6 +20,7 @@ export type CollectorHealth = "healthy" | "degraded" | "idle";
 export type MetricTone = "hero" | "physical" | "human" | "cool";
 export type TrendRange = "7d" | "30d" | "90d" | "custom";
 export type ExportFormat = "csv" | "json";
+export type ExportMode = "raw" | "unified";
 export type ExportPreset = "today" | "week" | "month" | "all" | "custom";
 export type UnifiedTimelineResolution = "minute" | "15min" | "hour";
 export type ActivityPatternGranularity = "day" | "month" | "year";

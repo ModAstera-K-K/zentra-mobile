@@ -149,9 +149,6 @@ export function ActivityPatternCard({
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
           Activity pattern
         </Text>
-        <Text style={[styles.description, { color: palette.foreground }]}>
-          Rolling 4-week pattern with one square per day
-        </Text>
       </View>
 
       <View style={styles.weekdayRow}>
