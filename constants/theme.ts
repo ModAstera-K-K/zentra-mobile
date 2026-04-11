@@ -127,6 +127,12 @@ export const FontSizes = {
   '3xl': 38,
 } as const;
 
+export const IconSizes = {
+  inline: 16,
+  compact: 18,
+  primary: 20,
+} as const;
+
 export const Layout = {
   screenGutter: Spacing.lg,
   sectionGap: Spacing.lg,

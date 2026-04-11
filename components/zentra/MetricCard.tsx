@@ -1,8 +1,21 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Card } from '@/components/ui/Card';
-import { Colors, Fonts, FontSizes, Spacing, type AppPalette } from '@/constants/theme';
+import {
+  getMetricIcon,
+  getMetricIconColor,
+  isMetricIconKey,
+} from '@/constants/iconography';
+import {
+  Colors,
+  Fonts,
+  FontSizes,
+  IconSizes,
+  Spacing,
+  type AppPalette,
+} from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { DashboardMetric } from '@/types/zentra';
 
@@ -28,11 +41,18 @@ export function MetricCard({ metric, onPress }: MetricCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const accent = getToneColor(metric, palette);
+  const iconColor = getMetricIconColor(metric.tone, palette);
+  const iconName = isMetricIconKey(metric.key)
+    ? getMetricIcon(metric.key)
+    : 'ellipse-outline';
 
   return (
     <Card onPress={onPress} style={styles.card}>
       <View style={styles.header}>
-        <Text style={[styles.label, { color: palette.textSecondary }]}>{metric.label}</Text>
+        <View style={styles.labelRow}>
+          <Ionicons color={iconColor} name={iconName} size={IconSizes.compact} />
+          <Text style={[styles.label, { color: palette.textSecondary }]}>{metric.label}</Text>
+        </View>
         <View style={[styles.accent, { backgroundColor: accent }]} />
       </View>
       <Text style={[styles.value, { color: accent }]}>
@@ -57,12 +77,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  labelRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 1,
+    gap: Spacing.sm,
+    minWidth: 0,
+  },
   accent: {
     borderRadius: 999,
-    height: 10,
-    width: 10,
+    height: 8,
+    opacity: 0.55,
+    width: 8,
   },
   label: {
+    flexShrink: 1,
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.2,

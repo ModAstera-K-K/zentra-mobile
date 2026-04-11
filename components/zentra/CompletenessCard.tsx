@@ -1,13 +1,20 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 import { Card } from "@/components/ui/Card";
+import {
+  getCollectorHealthIcon,
+  getCollectorHealthIconColor,
+  getCollectorIcon,
+  getMetricIcon,
+} from "@/constants/iconography";
 import {
   Colors,
   Fonts,
   FontSizes,
+  IconSizes,
   Spacing,
-  type AppPalette,
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { CollectorState } from "@/types/zentra";
@@ -19,20 +26,6 @@ interface CompletenessCardProps {
     detail: string;
     valueLabel: string;
   };
-}
-
-function getHealthColor(
-  health: CollectorState["health"],
-  palette: AppPalette,
-): string {
-  switch (health) {
-    case "healthy":
-      return palette.signalPhysical;
-    case "degraded":
-      return palette.primary;
-    default:
-      return palette.mutedForeground;
-  }
 }
 
 function formatHealthLabel(health: CollectorState["health"]): string {
@@ -65,9 +58,16 @@ export function CompletenessCard({
             { backgroundColor: palette.elevated, borderColor: palette.border },
           ]}
         >
-          <Text style={[styles.summaryValue, { color: palette.primary }]}>
-            {summary.valueLabel}
-          </Text>
+          <View style={styles.summaryHeader}>
+            <Ionicons
+              color={palette.primary}
+              name={getMetricIcon("dataCompleteness")}
+              size={IconSizes.compact}
+            />
+            <Text style={[styles.summaryValue, { color: palette.primary }]}>
+              {summary.valueLabel}
+            </Text>
+          </View>
           <Text style={[styles.summaryCoverage, { color: palette.foreground }]}>
             {summary.coverageLabel}
           </Text>
@@ -85,21 +85,40 @@ export function CompletenessCard({
             style={[styles.item, { borderBottomColor: palette.border }]}
           >
             <View style={styles.itemCopy}>
-              <Text style={[styles.label, { color: palette.foreground }]}>
-                {collector.label}
-              </Text>
+              <View style={styles.labelRow}>
+                <Ionicons
+                  color={palette.foreground}
+                  name={getCollectorIcon(collector.key)}
+                  size={IconSizes.compact}
+                />
+                <Text style={[styles.label, { color: palette.foreground }]}>
+                  {collector.label}
+                </Text>
+              </View>
               <Text style={[styles.detail, { color: palette.textSecondary }]}>
                 {collector.lastRunLabel}
               </Text>
             </View>
-            <Text
-              style={[
-                styles.status,
-                { color: getHealthColor(collector.health, palette) },
-              ]}
-            >
-              {formatHealthLabel(collector.health)}
-            </Text>
+            <View style={styles.statusRow}>
+              <Ionicons
+                color={getCollectorHealthIconColor(collector.health, palette)}
+                name={getCollectorHealthIcon(collector.health)}
+                size={IconSizes.inline}
+              />
+              <Text
+                style={[
+                  styles.status,
+                  {
+                    color: getCollectorHealthIconColor(
+                      collector.health,
+                      palette,
+                    ),
+                  },
+                ]}
+              >
+                {formatHealthLabel(collector.health)}
+              </Text>
+            </View>
           </View>
         ))}
       </View>
@@ -131,6 +150,11 @@ const styles = StyleSheet.create({
     gap: 2,
     minWidth: 0,
   },
+  labelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
   label: {
     fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.base,
@@ -141,12 +165,17 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   status: {
-    alignSelf: "flex-start",
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     flexShrink: 0,
     letterSpacing: 1.2,
     textTransform: "uppercase",
+  },
+  statusRow: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    gap: Spacing.xs,
   },
   summaryCard: {
     borderRadius: 18,
@@ -167,5 +196,10 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontFamily: Fonts.monoMedium,
     fontSize: FontSizes.xl,
+  },
+  summaryHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
   },
 });

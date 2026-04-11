@@ -1,19 +1,23 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 
-import { BorderRadius, Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
+import type { AppIconName } from '@/constants/iconography';
+import { BorderRadius, Colors, Fonts, FontSizes, IconSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface ChipProps {
   label: string;
   active?: boolean;
+  leadingIconName?: AppIconName;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
-export function Chip({ label, active = false, onPress, style }: ChipProps) {
+export function Chip({ label, active = false, leadingIconName, onPress, style }: ChipProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const color = active ? palette.primaryForeground : palette.textSecondary;
 
   return (
     <Pressable
@@ -28,14 +32,10 @@ export function Chip({ label, active = false, onPress, style }: ChipProps) {
         style,
       ]}
     >
-      <Text
-        style={[
-          styles.label,
-          {
-            color: active ? palette.primaryForeground : palette.textSecondary,
-          },
-        ]}
-      >
+      {leadingIconName ? (
+        <Ionicons color={color} name={leadingIconName} size={IconSizes.inline} />
+      ) : null}
+      <Text style={[styles.label, { color }]}>
         {label}
       </Text>
     </Pressable>
@@ -44,8 +44,11 @@ export function Chip({ label, active = false, onPress, style }: ChipProps) {
 
 const styles = StyleSheet.create({
   base: {
+    alignItems: 'center',
     borderRadius: BorderRadius.pill,
     borderWidth: 1,
+    flexDirection: 'row',
+    gap: Spacing.xs,
     minHeight: 38,
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,

@@ -129,6 +129,7 @@ export function ActivityPatternCard({
     return (
       <EmptyState
         body="Keep your collectors on for a bit longer. The activity pattern needs stored signals before it can take shape."
+        iconName="grid-outline"
         title="Pattern still forming"
       />
     );
@@ -138,6 +139,7 @@ export function ActivityPatternCard({
     return (
       <EmptyState
         body="Keep collecting for a few days and the rolling 4-week grid will start to form."
+        iconName="calendar-outline"
         title="No monthly pattern yet"
       />
     );

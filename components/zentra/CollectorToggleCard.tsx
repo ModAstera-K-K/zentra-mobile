@@ -1,10 +1,17 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
-import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
+import type { AppIconName } from '@/constants/iconography';
+import {
+  getCollectorIcon,
+  getPermissionStatusIcon,
+  getPermissionStatusIconColor,
+} from '@/constants/iconography';
+import { Colors, Fonts, FontSizes, IconSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { CollectorState } from '@/types/zentra';
 import { formatCollectorPermissionStatusLabel } from '@/utils/collector-permission-status';
@@ -12,6 +19,7 @@ import { formatCollectorPermissionStatusLabel } from '@/utils/collector-permissi
 interface CollectorToggleCardProps {
   actionDisabled?: boolean;
   actionHelperText?: string;
+  actionIconName?: AppIconName;
   actionLabel?: string;
   actionPendingLabel?: string;
   collector: CollectorState;
@@ -22,6 +30,7 @@ interface CollectorToggleCardProps {
 export function CollectorToggleCard({
   actionDisabled = false,
   actionHelperText,
+  actionIconName,
   actionLabel,
   actionPendingLabel = 'Working…',
   collector,
@@ -35,7 +44,14 @@ export function CollectorToggleCard({
     <Card>
       <View style={styles.header}>
         <View style={styles.copy}>
-          <Text style={[styles.title, { color: palette.foreground }]}>{collector.label}</Text>
+          <View style={styles.titleRow}>
+            <Ionicons
+              color={palette.foreground}
+              name={getCollectorIcon(collector.key)}
+              size={IconSizes.compact}
+            />
+            <Text style={[styles.title, { color: palette.foreground }]}>{collector.label}</Text>
+          </View>
           <Text style={[styles.description, { color: palette.textSecondary }]}>
             {collector.description}
           </Text>
@@ -47,16 +63,45 @@ export function CollectorToggleCard({
         />
       </View>
       <View style={styles.metaRow}>
-        <Text style={[styles.meta, { color: palette.mutedForeground }]}>
-          {collector.permissionLabel}
+        <View style={styles.metaItem}>
+          <Ionicons
+            color={palette.mutedForeground}
+            name="key-outline"
+            size={IconSizes.inline}
+          />
+          <Text style={[styles.meta, { color: palette.mutedForeground }]}>
+            {collector.permissionLabel}
+          </Text>
+        </View>
+        <View style={styles.metaItem}>
+          <Ionicons
+            color={getPermissionStatusIconColor(collector.permissionStatus, palette)}
+            name={getPermissionStatusIcon(collector.permissionStatus)}
+            size={IconSizes.inline}
+          />
+          <Text style={[styles.meta, { color: palette.textSecondary }]}>
+            {formatCollectorPermissionStatusLabel(collector)}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.sourceRow}>
+        <Ionicons
+          color={palette.mutedForeground}
+          name="hardware-chip-outline"
+          size={IconSizes.inline}
+        />
+        <Text style={[styles.source, { color: palette.mutedForeground }]}>
+          {collector.sourceLabel}
         </Text>
-        <Text style={[styles.meta, { color: palette.textSecondary }]}>
-          {formatCollectorPermissionStatusLabel(collector)}
+        <Ionicons
+          color={palette.mutedForeground}
+          name="time-outline"
+          size={IconSizes.inline}
+        />
+        <Text style={[styles.source, { color: palette.mutedForeground }]}>
+          {collector.lastRunLabel}
         </Text>
       </View>
-      <Text style={[styles.source, { color: palette.mutedForeground }]}>
-        {collector.sourceLabel} · {collector.lastRunLabel}
-      </Text>
       {actionLabel && onActionPress ? (
         <View style={styles.actionBlock}>
           {actionHelperText ? (
@@ -66,6 +111,7 @@ export function CollectorToggleCard({
           ) : null}
           <Button
             disabled={actionDisabled}
+            leadingIconName={actionIconName}
             onPress={onActionPress}
             style={styles.actionButton}
             textStyle={styles.actionButtonText}
@@ -91,6 +137,11 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     paddingRight: Spacing.md,
   },
+  titleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
   title: {
     fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.base,
@@ -106,6 +157,11 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     justifyContent: 'space-between',
   },
+  metaItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.xs,
+  },
   meta: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
@@ -115,6 +171,12 @@ const styles = StyleSheet.create({
   source: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
+  },
+  sourceRow: {
+    alignItems: 'center',
+    columnGap: Spacing.xs,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     marginTop: Spacing.sm,
   },
   actionBlock: {

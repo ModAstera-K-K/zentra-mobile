@@ -141,6 +141,7 @@ export function ActivityStrip({ buckets }: ActivityStripProps) {
     return (
       <EmptyState
         body="Turn on the Activity or Location collector in Settings. Your rhythm through the day will appear here."
+        iconName="pulse-outline"
         title="No daily rhythm yet"
       />
     );

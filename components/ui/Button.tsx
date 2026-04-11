@@ -1,13 +1,16 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, type PressableProps, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
-import { BorderRadius, Colors, Fonts, FontSizes, Spacing, type AppPalette } from '@/constants/theme';
+import type { AppIconName } from '@/constants/iconography';
+import { BorderRadius, Colors, Fonts, FontSizes, IconSizes, Spacing, type AppPalette } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'outline';
 
 interface ButtonProps extends Omit<PressableProps, 'style'> {
   children: React.ReactNode;
+  leadingIconName?: AppIconName;
   variant?: ButtonVariant;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
@@ -15,6 +18,7 @@ interface ButtonProps extends Omit<PressableProps, 'style'> {
 
 export function Button({
   children,
+  leadingIconName,
   variant = 'primary',
   style,
   textStyle,
@@ -34,9 +38,14 @@ export function Button({
       ]}
       {...props}
     >
-      <Text style={[styles.text, variantStyles.text, textStyle]}>
-        {children}
-      </Text>
+      {leadingIconName ? (
+        <Ionicons
+          color={String(variantStyles.text.color)}
+          name={leadingIconName}
+          size={IconSizes.inline}
+        />
+      ) : null}
+      <Text style={[styles.text, variantStyles.text, textStyle]}>{children}</Text>
     </Pressable>
   );
 }
@@ -93,6 +102,8 @@ const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
     borderRadius: BorderRadius.pill,
+    flexDirection: 'row',
+    gap: Spacing.sm,
     justifyContent: 'center',
     minHeight: 50,
     paddingHorizontal: Spacing.xl,

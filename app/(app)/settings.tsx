@@ -1,5 +1,6 @@
 import React from "react";
 import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import Constants from "expo-constants";
 
@@ -9,7 +10,12 @@ import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
-import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import {
+  getActionIcon,
+  getDataModeIcon,
+  getThemePreferenceIcon,
+} from "@/constants/iconography";
+import { Colors, Fonts, FontSizes, IconSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   useAppearanceStore,
@@ -59,6 +65,12 @@ const LOCATION_RETENTION_OPTIONS: LocationRetentionPreference[] = [
   "24h",
   "30d",
 ];
+const QUICK_ACTION_ICONS: Record<CollectorQuickActionType, keyof typeof Ionicons.glyphMap> = {
+  request_activity: "key-outline",
+  open_app_settings: "settings-outline",
+  open_usage_access: "phone-portrait-outline",
+  connect_health: "fitness-outline",
+};
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
@@ -326,6 +338,7 @@ export default function SettingsScreen() {
       title="Settings"
     >
       <Button
+        leadingIconName="chevron-back-outline"
         onPress={() => router.back()}
         style={styles.backButton}
         variant="ghost"
@@ -359,6 +372,7 @@ export default function SettingsScreen() {
               key={option}
               active={themePreference === option}
               label={option}
+              leadingIconName={getThemePreferenceIcon(option)}
               onPress={() => void setThemePreference(option)}
             />
           ))}
@@ -375,6 +389,7 @@ export default function SettingsScreen() {
               key={option}
               active={dataMode === option}
               label={option}
+              leadingIconName={getDataModeIcon(option)}
               onPress={() => void setDataMode(option)}
             />
           ))}
@@ -410,47 +425,54 @@ export default function SettingsScreen() {
           Your signals
         </Text>
         <View style={styles.column}>
-          {collectorStatuses.map((collector) => (
-            <CollectorToggleCard
-              actionDisabled={pendingActionKey === collector.key}
-              actionHelperText={getCollectorQuickAction(collector)?.helperText}
-              actionLabel={getCollectorQuickAction(collector)?.label}
-              actionPendingLabel={
-                pendingActionKey === collector.key
-                  ? getCollectorActionPendingLabel(collector.key)
-                  : undefined
-              }
-              collector={collector}
-              key={collector.key}
-              onActionPress={() => {
-                const action = getCollectorQuickAction(collector);
+          {collectorStatuses.map((collector) => {
+            const quickAction = getCollectorQuickAction(collector);
 
-                if (!action) {
-                  return;
+            return (
+              <CollectorToggleCard
+                actionDisabled={pendingActionKey === collector.key}
+                actionHelperText={quickAction?.helperText}
+                actionIconName={
+                  quickAction ? QUICK_ACTION_ICONS[quickAction.type] : undefined
                 }
+                actionLabel={quickAction?.label}
+                actionPendingLabel={
+                  pendingActionKey === collector.key
+                    ? getCollectorActionPendingLabel(collector.key)
+                    : undefined
+                }
+                collector={collector}
+                key={collector.key}
+                onActionPress={() => {
+                  const action = getCollectorQuickAction(collector);
 
-                void runCollectorQuickAction(action.type, collector.key);
-              }}
-              onValueChange={(value) => {
-                void setCollectorEnabled(collector.key, value);
-
-                if (value) {
-                  // Re-derive the action that would apply once the collector is enabled.
-                  const pendingAction = getCollectorQuickAction({
-                    ...collector,
-                    enabled: true,
-                  });
-
-                  if (pendingAction) {
-                    void runCollectorQuickAction(
-                      pendingAction.type,
-                      collector.key,
-                    );
+                  if (!action) {
+                    return;
                   }
-                }
-              }}
-            />
-          ))}
+
+                  void runCollectorQuickAction(action.type, collector.key);
+                }}
+                onValueChange={(value) => {
+                  void setCollectorEnabled(collector.key, value);
+
+                  if (value) {
+                    // Re-derive the action that would apply once the collector is enabled.
+                    const pendingAction = getCollectorQuickAction({
+                      ...collector,
+                      enabled: true,
+                    });
+
+                    if (pendingAction) {
+                      void runCollectorQuickAction(
+                        pendingAction.type,
+                        collector.key,
+                      );
+                    }
+                  }
+                }}
+              />
+            );
+          })}
         </View>
       </Card>
 
@@ -459,10 +481,10 @@ export default function SettingsScreen() {
           Data controls
         </Text>
         <View style={styles.actionRow}>
-          <Button onPress={confirmDelete} variant="outline">
+          <Button leadingIconName={getActionIcon("delete")} onPress={confirmDelete} variant="outline">
             Delete all data
           </Button>
-          <Button onPress={() => void retryCollectors()} variant="outline">
+          <Button leadingIconName={getActionIcon("retry")} onPress={() => void retryCollectors()} variant="outline">
             Retry signals
           </Button>
         </View>

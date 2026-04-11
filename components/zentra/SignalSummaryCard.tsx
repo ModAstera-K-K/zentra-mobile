@@ -1,8 +1,14 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Card } from '@/components/ui/Card';
-import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
+import {
+  getMetricIcon,
+  getMetricIconColor,
+  isMetricIconKey,
+} from '@/constants/iconography';
+import { Colors, Fonts, FontSizes, IconSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { TodaySummaryMetric } from '@/utils/today-visualization';
 
@@ -27,6 +33,10 @@ export function SignalSummaryCard({ metrics, onSelectMetric }: SignalSummaryCard
               : metric.tone === 'cool'
                 ? palette.signalCool
                 : palette.primary;
+          const iconColor = getMetricIconColor(metric.tone, palette);
+          const iconName = isMetricIconKey(metric.key)
+            ? getMetricIcon(metric.key)
+            : 'ellipse-outline';
 
           return (
             <Pressable
@@ -42,9 +52,16 @@ export function SignalSummaryCard({ metrics, onSelectMetric }: SignalSummaryCard
               ]}
             >
               <View style={styles.metricHeader}>
-                <Text style={[styles.metricLabel, { color: palette.textSecondary }]}>
-                  {metric.label}
-                </Text>
+                <View style={styles.metricLabelRow}>
+                  <Ionicons
+                    color={iconColor}
+                    name={iconName}
+                    size={IconSizes.inline}
+                  />
+                  <Text style={[styles.metricLabel, { color: palette.textSecondary }]}>
+                    {metric.label}
+                  </Text>
+                </View>
                 <View style={[styles.dot, { backgroundColor: accent }]} />
               </View>
               <Text
@@ -67,8 +84,9 @@ export function SignalSummaryCard({ metrics, onSelectMetric }: SignalSummaryCard
 const styles = StyleSheet.create({
   dot: {
     borderRadius: 999,
-    height: 8,
-    width: 8,
+    height: 7,
+    opacity: 0.55,
+    width: 7,
   },
   eyebrow: {
     fontFamily: Fonts.mono,
@@ -92,7 +110,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  metricLabelRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 1,
+    gap: Spacing.sm,
+    minWidth: 0,
+  },
   metricLabel: {
+    flexShrink: 1,
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.2,

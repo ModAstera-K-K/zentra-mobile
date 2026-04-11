@@ -333,6 +333,7 @@ export default function TodayScreen() {
       {(!repository.isHydrated && !isDemoMode) || !hasCollectors ? (
         <EmptyState
           body="Head to Settings and turn on a collector. Zentra will start reading your signals quietly in the background."
+          iconName="radio-outline"
           title="Nothing here yet"
         />
       ) : (

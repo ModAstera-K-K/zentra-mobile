@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 import { EmptyState } from "@/components/zentra/EmptyState";
 import { ScreenLead } from "@/components/zentra/ScreenLead";
@@ -14,7 +15,13 @@ import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
-import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import {
+  getActionIcon,
+  getDataModeIcon,
+  getEventTypeIcon,
+  isEventDataType,
+} from "@/constants/iconography";
+import { Colors, Fonts, FontSizes, IconSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import type {
@@ -55,6 +62,14 @@ const RESOLUTION_OPTIONS: Array<{
   { key: "15min", label: "15 min" },
   { key: "hour", label: "1 hour" },
 ];
+const SECTION_ICONS = {
+  bundle: "archive-outline",
+  dateRange: "calendar-outline",
+  exportMode: "layers-outline",
+  resolution: "time-outline",
+  format: "document-text-outline",
+  signals: "apps-outline",
+} as const;
 
 export default function ExportScreen() {
   const colorScheme = useColorScheme();
@@ -280,11 +295,18 @@ export default function ExportScreen() {
             <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
               {formatDateRangeLabel(range.start, range.end)}
             </Text>
-            <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
-              {exportMode === "unified"
-                ? `${resolution} resolution`
-                : `${selectedTypes.length} signal${selectedTypes.length === 1 ? "" : "s"} selected`}
-            </Text>
+            <View style={styles.leadMetaRow}>
+              <Ionicons
+                color={palette.textSecondary}
+                name={getDataModeIcon(dataMode)}
+                size={IconSizes.inline}
+              />
+              <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
+                {exportMode === "unified"
+                  ? `${resolution} resolution`
+                  : `${selectedTypes.length} signal${selectedTypes.length === 1 ? "" : "s"} selected`}
+              </Text>
+            </View>
           </View>
         }
         title={
@@ -297,14 +319,22 @@ export default function ExportScreen() {
       {!availableTypes.length ? (
         <EmptyState
           body="Once Zentra has captured some signals, they'll appear here ready to bundle. Signals your device doesn't support simply won't show up."
+          iconName="archive-outline"
           title="Nothing to bundle yet"
         />
       ) : (
         <>
           <Card style={styles.section}>
-            <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-              Date range
-            </Text>
+            <View style={styles.labelRow}>
+              <Ionicons
+                color={palette.textSecondary}
+                name={SECTION_ICONS.dateRange}
+                size={IconSizes.inline}
+              />
+              <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+                Date range
+              </Text>
+            </View>
             <View style={styles.chipRow}>
               {PRESETS.map((value) => (
                 <Chip
@@ -358,18 +388,27 @@ export default function ExportScreen() {
           </Card>
 
           <Card style={styles.section}>
-            <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-              Export mode
-            </Text>
+            <View style={styles.labelRow}>
+              <Ionicons
+                color={palette.textSecondary}
+                name={SECTION_ICONS.exportMode}
+                size={IconSizes.inline}
+              />
+              <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+                Export mode
+              </Text>
+            </View>
             <View style={styles.chipRow}>
               <Chip
                 active={exportMode === "unified"}
                 label="Unified timeline"
+                leadingIconName="layers-outline"
                 onPress={() => setExportMode("unified")}
               />
               <Chip
                 active={exportMode === "raw"}
                 label="Raw events"
+                leadingIconName="albums-outline"
                 onPress={() => setExportMode("raw")}
               />
             </View>
@@ -382,9 +421,16 @@ export default function ExportScreen() {
 
           {exportMode === "unified" ? (
             <Card style={styles.section}>
-              <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-                Resolution
-              </Text>
+              <View style={styles.labelRow}>
+                <Ionicons
+                  color={palette.textSecondary}
+                  name={SECTION_ICONS.resolution}
+                  size={IconSizes.inline}
+                />
+                <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+                  Resolution
+                </Text>
+              </View>
               <View style={styles.chipRow}>
                 {RESOLUTION_OPTIONS.map((option) => (
                   <Chip
@@ -404,18 +450,27 @@ export default function ExportScreen() {
           ) : null}
 
           <Card style={styles.section}>
-            <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-              Format
-            </Text>
+            <View style={styles.labelRow}>
+              <Ionicons
+                color={palette.textSecondary}
+                name={SECTION_ICONS.format}
+                size={IconSizes.inline}
+              />
+              <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+                Format
+              </Text>
+            </View>
             <View style={styles.chipRow}>
               <Chip
                 active={format === "json"}
                 label="JSON"
+                leadingIconName="code-outline"
                 onPress={() => setFormat("json")}
               />
               <Chip
                 active={format === "csv"}
                 label="CSV"
+                leadingIconName="grid-outline"
                 onPress={() => setFormat("csv")}
               />
             </View>
@@ -423,15 +478,25 @@ export default function ExportScreen() {
 
           {exportMode === "raw" ? (
             <Card style={styles.section}>
-              <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-                Which signals
-              </Text>
+              <View style={styles.labelRow}>
+                <Ionicons
+                  color={palette.textSecondary}
+                  name={SECTION_ICONS.signals}
+                  size={IconSizes.inline}
+                />
+                <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+                  Which signals
+                </Text>
+              </View>
               <View style={styles.chipRow}>
                 {availableTypes.map((type) => (
                   <Chip
                     key={type}
                     active={selectedTypes.includes(type)}
                     label={type.replace("_", " ")}
+                    leadingIconName={
+                      isEventDataType(type) ? getEventTypeIcon(type) : "ellipse-outline"
+                    }
                     onPress={() => toggleType(type)}
                   />
                 ))}
@@ -440,11 +505,18 @@ export default function ExportScreen() {
           ) : null}
 
           <Card elevated style={styles.section}>
-            <Text
-              style={[styles.summaryLabel, { color: palette.textSecondary }]}
-            >
-              Bundle estimate
-            </Text>
+            <View style={styles.labelRow}>
+              <Ionicons
+                color={palette.textSecondary}
+                name={SECTION_ICONS.bundle}
+                size={IconSizes.inline}
+              />
+              <Text
+                style={[styles.summaryLabel, { color: palette.textSecondary }]}
+              >
+                Bundle estimate
+              </Text>
+            </View>
             <Text style={[styles.summaryValue, { color: palette.primary }]}>
               {formatBytes(bundleEstimate)}
             </Text>
@@ -457,7 +529,7 @@ export default function ExportScreen() {
             </Text>
           </Card>
 
-          <Button onPress={() => void handleExport()}>
+          <Button leadingIconName={getActionIcon("export")} onPress={() => void handleExport()}>
             {isExporting ? "Bundling…" : "Bundle and export"}
           </Button>
         </>
@@ -471,6 +543,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.md,
+  },
+  leadMetaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.xs,
   },
   leadMeta: {
     fontFamily: Fonts.mono,
@@ -487,6 +564,11 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     letterSpacing: 1.3,
     textTransform: "uppercase",
+  },
+  labelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.xs,
   },
   chipRow: {
     flexDirection: "row",

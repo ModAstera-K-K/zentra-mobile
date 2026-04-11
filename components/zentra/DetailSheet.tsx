@@ -1,4 +1,5 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   Modal,
   Pressable,
@@ -9,7 +10,11 @@ import {
 } from 'react-native';
 
 import { MetricDetailVisual } from '@/components/zentra/MetricDetailVisual';
-import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
+import {
+  getActionIcon,
+  getDetailFactIcon,
+} from '@/constants/iconography';
+import { Colors, Fonts, FontSizes, IconSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { TodayDetailPayload } from '@/utils/today-visualization';
 
@@ -52,6 +57,11 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
                   onPress={onClose}
                   style={[styles.closeButton, { borderColor: palette.border }]}
                 >
+                  <Ionicons
+                    color={palette.textSecondary}
+                    name={getActionIcon('close')}
+                    size={IconSizes.inline}
+                  />
                   <Text style={[styles.closeLabel, { color: palette.textSecondary }]}>Close</Text>
                 </Pressable>
               </View>
@@ -71,7 +81,14 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
                     key={`${payload.key}-${fact.label}`}
                     style={[styles.factCard, { backgroundColor: palette.card, borderColor: palette.border }]}
                   >
-                    <Text style={[styles.factLabel, { color: palette.textSecondary }]}>{fact.label}</Text>
+                    <View style={styles.factLabelRow}>
+                      <Ionicons
+                        color={palette.textSecondary}
+                        name={getDetailFactIcon(fact.label)}
+                        size={IconSizes.inline}
+                      />
+                      <Text style={[styles.factLabel, { color: palette.textSecondary }]}>{fact.label}</Text>
+                    </View>
                     <Text style={[styles.factValue, { color: palette.foreground }]}>{fact.value}</Text>
                   </View>
                 ))}
@@ -80,6 +97,11 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
               {payload.rows.length ? (
                 <View style={styles.section}>
                   <Pressable onPress={() => setShowRows((current) => !current)} style={styles.toggleRow}>
+                    <Ionicons
+                      color={palette.textSecondary}
+                      name={showRows ? 'chevron-down-outline' : 'chevron-forward-outline'}
+                      size={IconSizes.inline}
+                    />
                     <Text style={[styles.sectionLabel, { color: palette.textSecondary }]}>
                       {showRows ? 'Hide recent rows' : 'Show recent rows'}
                     </Text>
@@ -89,7 +111,14 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
                       key={`${payload.key}-${index}-${row.label}-${row.value}`}
                       style={[styles.eventRow, { borderTopColor: palette.border }]}
                     >
-                      <Text style={[styles.eventLabel, { color: palette.textSecondary }]}>{row.label}</Text>
+                      <View style={styles.eventLabelRow}>
+                        <Ionicons
+                          color={palette.textSecondary}
+                          name="time-outline"
+                          size={IconSizes.inline}
+                        />
+                        <Text style={[styles.eventLabel, { color: palette.textSecondary }]}>{row.label}</Text>
+                      </View>
                       <Text style={[styles.eventValue, { color: palette.foreground }]}>{row.value}</Text>
                     </View>
                   )) : null}
@@ -108,6 +137,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 999,
     borderWidth: 1,
+    flexDirection: 'row',
+    gap: Spacing.xs,
     justifyContent: 'center',
     minHeight: 36,
     minWidth: 68,
@@ -129,6 +160,11 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     letterSpacing: 1.1,
     textTransform: 'uppercase',
+  },
+  eventLabelRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.xs,
   },
   eventRow: {
     gap: Spacing.xs,
@@ -157,6 +193,11 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     letterSpacing: 1.1,
     textTransform: 'uppercase',
+  },
+  factLabelRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.xs,
   },
   factGrid: {
     flexDirection: 'row',
@@ -219,6 +260,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   toggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.xs,
     paddingBottom: Spacing.xs,
   },
   title: {

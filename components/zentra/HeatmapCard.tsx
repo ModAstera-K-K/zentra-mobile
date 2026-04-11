@@ -26,6 +26,7 @@ export function HeatmapCard({ cells }: HeatmapCardProps) {
     return (
       <EmptyState
         body="Keep the Activity collector on for a few days. Your pattern will start to take shape."
+        iconName="grid-outline"
         title="Pattern still forming"
       />
     );

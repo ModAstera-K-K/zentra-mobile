@@ -138,7 +138,7 @@ export default function TrendsScreen() {
           ))}
         </>
       ) : (
-        <EmptyState body={emptyBody} title={emptyTitle} />
+        <EmptyState body={emptyBody} iconName="analytics-outline" title={emptyTitle} />
       )}
     </ScreenShell>
   );

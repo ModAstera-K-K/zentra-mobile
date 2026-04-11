@@ -3,17 +3,25 @@ import { Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
-import { BorderRadius, Colors, Layout } from "@/constants/theme";
+import { BorderRadius, Colors, IconSizes, Layout } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 function TabBarIcon({
   color,
+  focused,
   name,
 }: {
   color: string;
+  focused: boolean;
   name: keyof typeof Ionicons.glyphMap;
 }) {
-  return <Ionicons color={color} name={name} size={20} />;
+  return (
+    <Ionicons
+      color={color}
+      name={focused ? name : `${name}-outline`}
+      size={IconSizes.primary}
+    />
+  );
 }
 
 export default function TabLayout() {
@@ -68,8 +76,8 @@ export default function TabLayout() {
         name="today"
         options={{
           title: "Today",
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon color={color} name="sunny-outline" />
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon color={color} focused={focused} name="sunny" />
           ),
         }}
       />
@@ -77,8 +85,8 @@ export default function TabLayout() {
         name="trends"
         options={{
           title: "Trends",
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon color={color} name="analytics-outline" />
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon color={color} focused={focused} name="analytics" />
           ),
         }}
       />
@@ -86,8 +94,8 @@ export default function TabLayout() {
         name="export"
         options={{
           title: "Export",
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon color={color} name="download-outline" />
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon color={color} focused={focused} name="download" />
           ),
         }}
       />
