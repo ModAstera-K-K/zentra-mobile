@@ -20,7 +20,7 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
     <Card elevated>
       <View style={styles.eyebrowRow}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-          Last night's rest
+          {"Last night's rest"}
         </Text>
         {sleepEstimate.available ? (
           <View

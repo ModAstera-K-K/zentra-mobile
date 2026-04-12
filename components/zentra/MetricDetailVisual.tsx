@@ -344,7 +344,7 @@ function HeatmapVisual({
         },
         {},
       ),
-    [visual.cells],
+    [visual],
   );
 
   return (
