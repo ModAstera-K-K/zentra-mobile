@@ -23,13 +23,7 @@ import {
   getDataModeIcon,
   getThemePreferenceIcon,
 } from "@/constants/iconography";
-import {
-  Colors,
-  Fonts,
-  FontSizes,
-  IconSizes,
-  Spacing,
-} from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   useAppearanceStore,

@@ -23,6 +23,7 @@ export const HeatmapCard = React.memo(function HeatmapCard({
 }: HeatmapCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const grouped = React.useMemo(() => getGroupedCells(cells), [cells]);
 
   if (!cells.length) {
     return (
@@ -33,8 +34,6 @@ export const HeatmapCard = React.memo(function HeatmapCard({
       />
     );
   }
-
-  const grouped = React.useMemo(() => getGroupedCells(cells), [cells]);
 
   return (
     <Card>

@@ -22,7 +22,7 @@ interface ActivityStripProps {
 
 type ActivityMode = "movement" | "screen" | "rest";
 
-const MODE_OPTIONS: Array<{ key: ActivityMode; label: string }> = [
+const MODE_OPTIONS: { key: ActivityMode; label: string }[] = [
   { key: "movement", label: "Movement" },
   { key: "screen", label: "Screen" },
   { key: "rest", label: "Rest" },
@@ -93,7 +93,7 @@ function getInitialSelectedIndex(
 function buildPoints(
   buckets: UnifiedTimelineBucket[],
   mode: ActivityMode,
-): Array<{ label: string; value: number }> {
+): { label: string; value: number }[] {
   return buckets.map((bucket) => ({
     label: bucket.label,
     value: getModeValue(bucket, mode),

@@ -23,7 +23,12 @@ import { Card } from "@/components/ui/Card";
 import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
-import type { DashboardMetric } from "@/types/zentra";
+import type {
+  ActivityPatternCell,
+  DashboardMetric,
+  PermissionStatus,
+  ZentraEventRecord,
+} from "@/types/zentra";
 import type {
   TodayDetailPayload,
   TodayRecentSignalRow,
@@ -55,11 +60,6 @@ import {
   buildSleepEstimate,
   createDemoCollectors,
 } from "@/utils/mock-data";
-import type {
-  ActivityPatternCell,
-  PermissionStatus,
-  ZentraEventRecord,
-} from "@/types/zentra";
 import { useShallow } from "zustand/react/shallow";
 
 export default function TodayScreen() {

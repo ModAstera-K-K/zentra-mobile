@@ -17,7 +17,7 @@ import { Chip } from "@/components/ui/Chip";
 import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
-import type { TrendRange, TrendSeries } from "@/types/zentra";
+import type { TrendRange, TrendSeries, TrendSeriesGroup } from "@/types/zentra";
 import {
   formatDateRangeLabel,
   getDateRangeForTrendRange,
@@ -32,7 +32,6 @@ import {
 import { buildLiveTrendSeries, groupTrendSeries } from "@/utils/live-trends";
 import { buildTrendSeries, createDemoCollectors } from "@/utils/mock-data";
 import { useShallow } from "zustand/react/shallow";
-import type { TrendSeriesGroup } from "@/types/zentra";
 
 type TrendListItem =
   | { type: "groupHeader"; key: string; group: TrendSeriesGroup }

@@ -21,7 +21,13 @@ import {
   getEventTypeIcon,
   isEventDataType,
 } from "@/constants/iconography";
-import { Colors, Fonts, FontSizes, IconSizes, Spacing } from "@/constants/theme";
+import {
+  Colors,
+  Fonts,
+  FontSizes,
+  IconSizes,
+  Spacing,
+} from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import type {
@@ -54,10 +60,10 @@ import { buildUnifiedTimeline } from "@/utils/unified-timeline";
 import { useShallow } from "zustand/react/shallow";
 
 const PRESETS: ExportPreset[] = ["today", "week", "month", "all", "custom"];
-const RESOLUTION_OPTIONS: Array<{
+const RESOLUTION_OPTIONS: {
   key: UnifiedTimelineResolution;
   label: string;
-}> = [
+}[] = [
   { key: "minute", label: "1 min" },
   { key: "15min", label: "15 min" },
   { key: "hour", label: "1 hour" },
@@ -427,7 +433,9 @@ export default function ExportScreen() {
                   name={SECTION_ICONS.resolution}
                   size={IconSizes.inline}
                 />
-                <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+                <Text
+                  style={[styles.eyebrow, { color: palette.textSecondary }]}
+                >
                   Resolution
                 </Text>
               </View>
@@ -484,7 +492,9 @@ export default function ExportScreen() {
                   name={SECTION_ICONS.signals}
                   size={IconSizes.inline}
                 />
-                <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+                <Text
+                  style={[styles.eyebrow, { color: palette.textSecondary }]}
+                >
                   Which signals
                 </Text>
               </View>
@@ -495,7 +505,9 @@ export default function ExportScreen() {
                     active={selectedTypes.includes(type)}
                     label={type.replace("_", " ")}
                     leadingIconName={
-                      isEventDataType(type) ? getEventTypeIcon(type) : "ellipse-outline"
+                      isEventDataType(type)
+                        ? getEventTypeIcon(type)
+                        : "ellipse-outline"
                     }
                     onPress={() => toggleType(type)}
                   />
@@ -529,7 +541,10 @@ export default function ExportScreen() {
             </Text>
           </Card>
 
-          <Button leadingIconName={getActionIcon("export")} onPress={() => void handleExport()}>
+          <Button
+            leadingIconName={getActionIcon("export")}
+            onPress={() => void handleExport()}
+          >
             {isExporting ? "Bundling…" : "Bundle and export"}
           </Button>
         </>
