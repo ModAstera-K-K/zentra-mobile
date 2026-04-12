@@ -3,22 +3,25 @@ import { Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
-import { BorderRadius, Colors, IconSizes, Layout } from "@/constants/theme";
+import type { AppIconName } from "@/constants/iconography";
+import { Colors, IconSizes, Layout } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 function TabBarIcon({
   color,
   focused,
-  name,
+  activeName,
+  inactiveName,
 }: {
   color: string;
   focused: boolean;
-  name: keyof typeof Ionicons.glyphMap;
+  activeName: AppIconName;
+  inactiveName: AppIconName;
 }) {
   return (
     <Ionicons
       color={color}
-      name={focused ? name : `${name}-outline`}
+      name={focused ? activeName : inactiveName}
       size={IconSizes.primary}
     />
   );
@@ -36,30 +39,30 @@ export default function TabLayout() {
         freezeOnBlur: true,
         headerShown: false,
         tabBarActiveTintColor: palette.primary,
-        tabBarActiveBackgroundColor: isAndroid ? "transparent" : palette.halo,
+        tabBarActiveBackgroundColor: "transparent",
         tabBarInactiveTintColor: palette.mutedForeground,
         sceneStyle: {
           backgroundColor: palette.background,
         },
         tabBarStyle: {
-          backgroundColor: isAndroid ? palette.card : palette.elevated,
+          backgroundColor: palette.card,
           borderColor: palette.border,
-          borderRadius: isAndroid ? 0 : BorderRadius.xl,
+          borderRadius: 0,
           borderTopColor: palette.border,
           borderTopWidth: 1,
-          bottom: isAndroid ? 0 : Layout.tabBarOffset,
+          bottom: 0,
           elevation: 0,
           height: isAndroid ? 84 : Layout.tabBarHeight,
-          left: isAndroid ? 0 : Layout.tabBarOffset,
+          left: 0,
           paddingBottom: 10,
-          paddingHorizontal: isAndroid ? 0 : 8,
+          paddingHorizontal: 0,
           paddingTop: 10,
-          position: isAndroid ? "relative" : "absolute",
-          right: isAndroid ? 0 : Layout.tabBarOffset,
+          position: "relative",
+          right: 0,
         },
         tabBarItemStyle: {
-          borderRadius: isAndroid ? 0 : BorderRadius.lg,
-          marginHorizontal: isAndroid ? 0 : 2,
+          borderRadius: 0,
+          marginHorizontal: 0,
         },
         tabBarLabelStyle: {
           fontFamily: "JetBrainsMonoRegular",
@@ -77,7 +80,12 @@ export default function TabLayout() {
         options={{
           title: "Today",
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon color={color} focused={focused} name="sunny" />
+            <TabBarIcon
+              activeName="sunny"
+              color={color}
+              focused={focused}
+              inactiveName="sunny-outline"
+            />
           ),
         }}
       />
@@ -86,7 +94,12 @@ export default function TabLayout() {
         options={{
           title: "Trends",
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon color={color} focused={focused} name="analytics" />
+            <TabBarIcon
+              activeName="analytics"
+              color={color}
+              focused={focused}
+              inactiveName="analytics-outline"
+            />
           ),
         }}
       />
@@ -95,7 +108,12 @@ export default function TabLayout() {
         options={{
           title: "Export",
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon color={color} focused={focused} name="download" />
+            <TabBarIcon
+              activeName="download"
+              color={color}
+              focused={focused}
+              inactiveName="download-outline"
+            />
           ),
         }}
       />

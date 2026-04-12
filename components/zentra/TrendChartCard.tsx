@@ -48,7 +48,9 @@ function getChangeLabel(change: number): string {
   return "0%";
 }
 
-export function TrendChartCard({ series }: TrendChartCardProps) {
+export const TrendChartCard = React.memo(function TrendChartCard({
+  series,
+}: TrendChartCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const stroke = getSeriesColor(series, palette);
@@ -60,17 +62,23 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
   );
   const innerWidth = Math.max(chartWidth - CHART_INSET_X * 2, 0);
   const innerHeight = chartHeight - CHART_INSET_Y * 2;
-  const coordinates =
-    innerWidth > 0
-      ? buildChartCoordinates(series.points, innerWidth, innerHeight).map(
-          (coordinate) => ({
-            ...coordinate,
-            x: coordinate.x + CHART_INSET_X,
-            y: coordinate.y + CHART_INSET_Y,
-          }),
-        )
-      : [];
-  const polyline = buildPolylinePoints(coordinates);
+  const coordinates = React.useMemo(
+    () =>
+      innerWidth > 0
+        ? buildChartCoordinates(series.points, innerWidth, innerHeight).map(
+            (coordinate) => ({
+              ...coordinate,
+              x: coordinate.x + CHART_INSET_X,
+              y: coordinate.y + CHART_INSET_Y,
+            }),
+          )
+        : [],
+    [series.points, innerWidth, innerHeight],
+  );
+  const polyline = React.useMemo(
+    () => buildPolylinePoints(coordinates),
+    [coordinates],
+  );
   const selectedPoint =
     series.points[
       Math.max(0, Math.min(selectedIndex, series.points.length - 1))
@@ -205,7 +213,9 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
         </Text>
       </View>
       {series.coverageLabel ? (
-        <Text style={[styles.coverageLabel, { color: palette.mutedForeground }]}>
+        <Text
+          style={[styles.coverageLabel, { color: palette.mutedForeground }]}
+        >
           {series.coverageLabel}
         </Text>
       ) : null}
@@ -226,7 +236,7 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
       </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   eyebrow: {

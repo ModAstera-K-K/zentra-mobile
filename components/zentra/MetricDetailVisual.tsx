@@ -99,31 +99,42 @@ function LineVisual({
   const hasNormalizedX = visual.points.some(
     (point) => point.normalizedX != null,
   );
-  const normalizedXValues = hasNormalizedX
-    ? visual.points.map((point) => point.normalizedX)
-    : undefined;
-  const coordinates =
-    innerWidth > 0
-      ? buildChartCoordinates(
-          visual.points.map((point) => ({
-            label: point.label,
-            value: point.value,
-          })),
-          innerWidth,
-          innerHeight,
-          normalizedXValues,
-        ).map((coordinate) => ({
-          x: coordinate.x + CHART_INSET_X,
-          y: coordinate.y + CHART_INSET_Y,
-        }))
-      : [];
+  const normalizedXValues = React.useMemo(
+    () =>
+      hasNormalizedX
+        ? visual.points.map((point) => point.normalizedX)
+        : undefined,
+    [hasNormalizedX, visual.points],
+  );
+  const coordinates = React.useMemo(
+    () =>
+      innerWidth > 0
+        ? buildChartCoordinates(
+            visual.points.map((point) => ({
+              label: point.label,
+              value: point.value,
+            })),
+            innerWidth,
+            innerHeight,
+            normalizedXValues,
+          ).map((coordinate) => ({
+            x: coordinate.x + CHART_INSET_X,
+            y: coordinate.y + CHART_INSET_Y,
+          }))
+        : [],
+    [visual.points, innerWidth, innerHeight, normalizedXValues],
+  );
   const selectedPoint =
     visual.points[clampIndex(selectedIndex, visual.points.length - 1)];
   const selectedCoordinate =
     coordinates[clampIndex(selectedIndex, coordinates.length - 1)];
-  const polylineSegments = hasNormalizedX
-    ? buildGappedPolylineSegments(visual.points, coordinates)
-    : [buildPolylinePoints(coordinates)];
+  const polylineSegments = React.useMemo(
+    () =>
+      hasNormalizedX
+        ? buildGappedPolylineSegments(visual.points, coordinates)
+        : [buildPolylinePoints(coordinates)],
+    [hasNormalizedX, visual.points, coordinates],
+  );
 
   React.useEffect(() => {
     setSelectedIndex(Math.max(visual.points.length - 1, 0));
@@ -264,7 +275,10 @@ function DistributionVisual({
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
-  const maxValue = Math.max(...visual.bars.map((bar) => bar.value), 1);
+  const maxValue = React.useMemo(
+    () => Math.max(...visual.bars.map((bar) => bar.value), 1),
+    [visual.bars],
+  );
 
   return (
     <View style={styles.visualBlock}>
@@ -321,12 +335,16 @@ function HeatmapVisual({
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
-  const groupedRows = visual.cells.reduce<Record<string, typeof visual.cells>>(
-    (result, cell) => {
-      result[cell.dayLabel] = [...(result[cell.dayLabel] ?? []), cell];
-      return result;
-    },
-    {},
+  const groupedRows = React.useMemo(
+    () =>
+      visual.cells.reduce<Record<string, typeof visual.cells>>(
+        (result, cell) => {
+          result[cell.dayLabel] = [...(result[cell.dayLabel] ?? []), cell];
+          return result;
+        },
+        {},
+      ),
+    [visual],
   );
 
   return (

@@ -1,16 +1,30 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
 import type {
   CollectorKey,
   CollectorState,
   DataMode,
   LocationRetentionPreference,
-} from '@/types/zentra';
-import { createInitialCollectors } from '@/utils/mock-data';
-import { loadPersistedAppState, savePersistedAppState } from '@/utils/app-storage';
-import { DEFAULT_LOCATION_RETENTION } from '@/utils/location-retention';
+} from "@/types/zentra";
+import { createInitialCollectors } from "@/utils/mock-data";
+import {
+  loadPersistedAppState,
+  savePersistedAppState,
+} from "@/utils/app-storage";
+import { DEFAULT_LOCATION_RETENTION } from "@/utils/location-retention";
 
 type CollectorStateMap = Record<CollectorKey, CollectorState>;
+
+function createInitialAppState() {
+  return {
+    hasCompletedOnboarding: false,
+    lastExportedAt: null as string | null,
+    dataMode: "live" as DataMode,
+    locationRetentionPreference: DEFAULT_LOCATION_RETENTION,
+    collectors: createInitialCollectors(),
+    collectorRetryToken: 0,
+  };
+}
 
 interface AppState {
   isHydrated: boolean;
@@ -24,7 +38,9 @@ interface AppState {
   completeOnboarding: () => Promise<void>;
   setCollectorEnabled: (key: CollectorKey, enabled: boolean) => Promise<void>;
   setDataMode: (mode: DataMode) => Promise<void>;
-  setLocationRetentionPreference: (preference: LocationRetentionPreference) => Promise<void>;
+  setLocationRetentionPreference: (
+    preference: LocationRetentionPreference,
+  ) => Promise<void>;
   clearAllData: () => Promise<void>;
   noteExport: (timestamp: string) => Promise<void>;
   retryCollectors: () => Promise<void>;
@@ -49,7 +65,10 @@ function mergeCollectorsWithDefaults(
   };
 }
 
-function buildUpdatedCollector(collector: CollectorState, enabled: boolean): CollectorState {
+function buildUpdatedCollector(
+  collector: CollectorState,
+  enabled: boolean,
+): CollectorState {
   return {
     ...collector,
     enabled,
@@ -58,12 +77,7 @@ function buildUpdatedCollector(collector: CollectorState, enabled: boolean): Col
 
 export const useAppStore = create<AppState>((set, get) => ({
   isHydrated: false,
-  hasCompletedOnboarding: false,
-  lastExportedAt: null,
-  dataMode: 'live',
-  locationRetentionPreference: DEFAULT_LOCATION_RETENTION,
-  collectors: createInitialCollectors(),
-  collectorRetryToken: 0,
+  ...createInitialAppState(),
 
   bootstrap: async () => {
     if (get().isHydrated) {
@@ -76,8 +90,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       isHydrated: true,
       hasCompletedOnboarding: persisted?.hasCompletedOnboarding ?? false,
       lastExportedAt: persisted?.lastExportedAt ?? null,
-      dataMode: persisted?.dataMode ?? 'live',
-      locationRetentionPreference: persisted?.locationRetentionPreference ?? DEFAULT_LOCATION_RETENTION,
+      dataMode: persisted?.dataMode ?? "live",
+      locationRetentionPreference:
+        persisted?.locationRetentionPreference ?? DEFAULT_LOCATION_RETENTION,
       collectors: mergeCollectorsWithDefaults(persisted?.collectors),
     });
   },
@@ -108,7 +123,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearAllData: async () => {
-    set({ lastExportedAt: null });
+    set({
+      isHydrated: true,
+      ...createInitialAppState(),
+    });
     await persistState(get());
   },
 

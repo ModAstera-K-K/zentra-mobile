@@ -42,8 +42,6 @@
     <dict>
       <key>NSAllowsArbitraryLoads</key>
       <false/>
-      <key>NSAllowsLocalNetworking</key>
-      <true/>
     </dict>
     <key>NSHealthShareUsageDescription</key>
     <string>Allow Zentra to read your Apple Health records so it can import steps, sleep, heart rate, and workouts locally on this device.</string>

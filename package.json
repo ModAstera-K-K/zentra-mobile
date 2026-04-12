@@ -1,8 +1,18 @@
 {
   "name": "zentra",
+  "description": "Local-first mobile app for collecting and reviewing on-device health and behavioral signals.",
   "main": "expo-router/entry",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ModAstera-K-K/zentra-mobile.git"
+  },
+  "homepage": "https://github.com/ModAstera-K-K/zentra-mobile",
+  "bugs": {
+    "url": "https://github.com/ModAstera-K-K/zentra-mobile/issues"
+  },
   "scripts": {
     "start": "node ./scripts/start-dev-client.mjs",
     "android": "node ./scripts/run-android-dev.mjs",
@@ -12,7 +22,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "check:no-network": "node ./scripts/check-no-network.mjs"
+    "check:no-network": "node ./scripts/check-no-network.mjs",
+    "check:privacy": "node ./scripts/check-no-network.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",

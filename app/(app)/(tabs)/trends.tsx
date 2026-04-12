@@ -1,6 +1,8 @@
 import React from "react";
 import {
+  FlatList,
   InteractionManager,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -12,10 +14,10 @@ import { EmptyState } from "@/components/zentra/EmptyState";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { TrendChartCard } from "@/components/zentra/TrendChartCard";
 import { Chip } from "@/components/ui/Chip";
-import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
-import type { TrendRange, TrendSeries } from "@/types/zentra";
+import type { TrendRange, TrendSeries, TrendSeriesGroup } from "@/types/zentra";
 import {
   formatDateRangeLabel,
   getDateRangeForTrendRange,
@@ -26,11 +28,14 @@ import {
 import {
   getDailyAggregatesForRange,
   getEventsForRange,
-  recomputeDailyAggregatesForRange,
 } from "@/utils/event-repository";
 import { buildLiveTrendSeries, groupTrendSeries } from "@/utils/live-trends";
 import { buildTrendSeries, createDemoCollectors } from "@/utils/mock-data";
 import { useShallow } from "zustand/react/shallow";
+
+type TrendListItem =
+  | { type: "groupHeader"; key: string; group: TrendSeriesGroup }
+  | { type: "chart"; key: string; series: TrendSeries };
 
 const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
   { label: "7D", value: "7d" },
@@ -116,7 +121,6 @@ export default function TrendsScreen() {
       setIsLoadingLiveData(true);
 
       try {
-        await recomputeDailyAggregatesForRange(rangeStart, rangeEnd);
         const [aggregates, trendEvents] = await Promise.all([
           getDailyAggregatesForRange(rangeStart, rangeEnd),
           getEventsForRange(rangeStart, rangeEnd),
@@ -156,98 +160,144 @@ export default function TrendsScreen() {
     repository.lastUpdatedAt,
   ]);
 
-  return (
-    <ScreenShell subtitle="How your days connect" title="Trends">
-      <View style={styles.rangeRow}>
-        {RANGE_OPTIONS.map((option) => (
-          <Chip
-            key={option.value}
-            active={option.value === range}
-            label={option.label}
-            onPress={() => setRange(option.value)}
-          />
-        ))}
-      </View>
+  const flatItems: TrendListItem[] = React.useMemo(() => {
+    const items: TrendListItem[] = [];
+    for (const group of groups) {
+      items.push({ type: "groupHeader", key: `header-${group.key}`, group });
+      for (const entry of group.series) {
+        if (!hiddenSeriesKeys.has(entry.key)) {
+          items.push({ type: "chart", key: entry.key, series: entry });
+        }
+      }
+    }
+    return items;
+  }, [groups, hiddenSeriesKeys]);
 
-      <Text style={[styles.helper, { color: palette.mutedForeground }]}>
-        {formatDateRangeLabel(rangeStart, rangeEnd)}
-      </Text>
+  const isAndroid = Platform.OS === "android";
 
-      {range === "custom" ? (
-        <DateRangePickerRow
-          end={customRange.end}
-          onChange={setCustomRange}
-          start={customRange.start}
-        />
-      ) : null}
-
-      {isDemoMode || hasLiveTrendData ? (
-        <>
-          {groups.map((group) => (
-            <View key={group.key} style={styles.groupBlock}>
-              <Text
-                style={[styles.groupLabel, { color: palette.textSecondary }]}
-              >
-                {group.label}
-              </Text>
-              {group.series.length > 1 ? (
-                <View style={styles.seriesToggleRow}>
-                  {group.series.map((entry) => (
-                    <Pressable
-                      key={entry.key}
-                      onPress={() =>
-                        setHiddenSeriesKeys((current) => {
-                          const next = new Set(current);
-                          if (next.has(entry.key)) {
-                            next.delete(entry.key);
-                          } else {
-                            next.add(entry.key);
-                          }
-                          return next;
-                        })
-                      }
+  const renderItem = React.useCallback(
+    ({ item }: { item: TrendListItem }) => {
+      if (item.type === "groupHeader") {
+        return (
+          <View style={styles.groupBlock}>
+            <Text style={[styles.groupLabel, { color: palette.textSecondary }]}>
+              {item.group.label}
+            </Text>
+            {item.group.series.length > 1 ? (
+              <View style={styles.seriesToggleRow}>
+                {item.group.series.map((entry) => (
+                  <Pressable
+                    key={entry.key}
+                    onPress={() =>
+                      setHiddenSeriesKeys((current) => {
+                        const next = new Set(current);
+                        if (next.has(entry.key)) {
+                          next.delete(entry.key);
+                        } else {
+                          next.add(entry.key);
+                        }
+                        return next;
+                      })
+                    }
+                    style={[
+                      styles.seriesToggle,
+                      {
+                        borderColor: palette.border,
+                        opacity: hiddenSeriesKeys.has(entry.key) ? 0.4 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.seriesToggle,
-                        {
-                          borderColor: palette.border,
-                          opacity: hiddenSeriesKeys.has(entry.key) ? 0.4 : 1,
-                        },
+                        styles.seriesToggleLabel,
+                        { color: palette.textSecondary },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.seriesToggleLabel,
-                          { color: palette.textSecondary },
-                        ]}
-                      >
-                        {entry.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
-              {group.series
-                .filter((entry) => !hiddenSeriesKeys.has(entry.key))
-                .map((entry) => (
-                  <View key={entry.key} style={styles.sectionBlock}>
-                    <TrendChartCard series={entry} />
-                  </View>
+                      {entry.label}
+                    </Text>
+                  </Pressable>
                 ))}
-            </View>
+              </View>
+            ) : null}
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.sectionBlock}>
+          <TrendChartCard series={item.series} />
+        </View>
+      );
+    },
+    [palette, hiddenSeriesKeys],
+  );
+
+  const listHeader = React.useMemo(
+    () => (
+      <>
+        <View style={styles.rangeRow}>
+          {RANGE_OPTIONS.map((option) => (
+            <Chip
+              key={option.value}
+              active={option.value === range}
+              label={option.label}
+              onPress={() => setRange(option.value)}
+            />
           ))}
-        </>
-      ) : (
-        <EmptyState
-          body={emptyBody}
-          iconName="analytics-outline"
-          title={emptyTitle}
+        </View>
+
+        <Text style={[styles.helper, { color: palette.mutedForeground }]}>
+          {formatDateRangeLabel(rangeStart, rangeEnd)}
+        </Text>
+
+        {range === "custom" ? (
+          <DateRangePickerRow
+            end={customRange.end}
+            onChange={setCustomRange}
+            start={customRange.start}
+          />
+        ) : null}
+      </>
+    ),
+    [range, palette, rangeStart, rangeEnd, customRange],
+  );
+
+  return (
+    <ScreenShell
+      scrollable={false}
+      subtitle="How your days connect"
+      title="Trends"
+    >
+      {isDemoMode || hasLiveTrendData ? (
+        <FlatList
+          contentContainerStyle={{
+            paddingBottom: isAndroid ? 0 : Layout.tabBarHeight + Spacing["4xl"],
+          }}
+          data={flatItems}
+          keyExtractor={(item) => item.key}
+          ListHeaderComponent={listHeader}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          style={styles.list}
         />
+      ) : (
+        <>
+          {listHeader}
+          <EmptyState
+            body={emptyBody}
+            iconName="analytics-outline"
+            title={emptyTitle}
+          />
+        </>
       )}
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
+  list: {
+    flex: 1,
+  },
   groupBlock: {
     marginBottom: Spacing.md,
   },

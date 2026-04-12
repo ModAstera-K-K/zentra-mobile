@@ -18,9 +18,12 @@ function getGroupedCells(cells: HeatmapCell[]): Record<string, HeatmapCell[]> {
   }, {});
 }
 
-export function HeatmapCard({ cells }: HeatmapCardProps) {
+export const HeatmapCard = React.memo(function HeatmapCard({
+  cells,
+}: HeatmapCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const grouped = React.useMemo(() => getGroupedCells(cells), [cells]);
 
   if (!cells.length) {
     return (
@@ -31,8 +34,6 @@ export function HeatmapCard({ cells }: HeatmapCardProps) {
       />
     );
   }
-
-  const grouped = getGroupedCells(cells);
 
   return (
     <Card>
@@ -67,7 +68,7 @@ export function HeatmapCard({ cells }: HeatmapCardProps) {
       </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   eyebrow: {

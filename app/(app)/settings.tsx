@@ -23,7 +23,7 @@ import {
   getDataModeIcon,
   getThemePreferenceIcon,
 } from "@/constants/iconography";
-import { Colors, Fonts, FontSizes, IconSizes, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   useAppearanceStore,
@@ -74,7 +74,10 @@ const LOCATION_RETENTION_OPTIONS: LocationRetentionPreference[] = [
   "24h",
   "30d",
 ];
-const QUICK_ACTION_ICONS: Record<CollectorQuickActionType, keyof typeof Ionicons.glyphMap> = {
+const QUICK_ACTION_ICONS: Record<
+  CollectorQuickActionType,
+  keyof typeof Ionicons.glyphMap
+> = {
   request_activity: "key-outline",
   open_app_settings: "settings-outline",
   open_usage_access: "phone-portrait-outline",
@@ -224,16 +227,21 @@ export default function SettingsScreen() {
   function confirmDelete(): void {
     Alert.alert(
       "Wipe everything?",
-      "This removes all your captured signals and export history from this device. It can't be undone.",
+      "This removes captured signals, exports, collector settings, onboarding state, and local preferences from this device. OS-level permissions remain granted until you revoke them in system settings.",
       [
         { style: "cancel", text: "Cancel" },
         {
           style: "destructive",
           text: "Delete",
           onPress: () => {
-            void clearAllData();
-            void clearCapturedData();
-            void clearRepositoryData();
+            void (async () => {
+              await Promise.all([
+                clearAllData(),
+                clearCapturedData(),
+                clearRepositoryData(),
+                setThemePreference("system"),
+              ]);
+            })();
           },
         },
       ],
@@ -508,10 +516,18 @@ export default function SettingsScreen() {
           Data controls
         </Text>
         <View style={styles.actionRow}>
-          <Button leadingIconName={getActionIcon("delete")} onPress={confirmDelete} variant="outline">
+          <Button
+            leadingIconName={getActionIcon("delete")}
+            onPress={confirmDelete}
+            variant="outline"
+          >
             Delete all data
           </Button>
-          <Button leadingIconName={getActionIcon("retry")} onPress={() => void retryCollectors()} variant="outline">
+          <Button
+            leadingIconName={getActionIcon("retry")}
+            onPress={() => void retryCollectors()}
+            variant="outline"
+          >
             Retry signals
           </Button>
         </View>

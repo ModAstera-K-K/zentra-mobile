@@ -438,63 +438,70 @@ export async function appendEventsForCollector(
     const importedRecordCount =
       collectorKey === "healthConnect" ? events.length : null;
 
-    for (const event of events) {
-      await database.runAsync(
-        `INSERT OR IGNORE INTO events (
-          id,
-          timestamp_start,
-          timestamp_end,
-          data_type,
-          source,
-          value_numeric,
-          value_text,
-          value_json,
-          unit,
-          confidence,
-          metadata,
-          schema_version,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        event.id,
-        event.timestampStart,
-        event.timestampEnd,
-        event.dataType,
-        event.source,
-        event.valueNumeric ?? null,
-        event.valueText ?? null,
-        event.valueJson ?? null,
-        event.unit,
-        event.confidence,
-        JSON.stringify(event.metadata),
-        event.schemaVersion,
-        event.createdAt,
-      );
-    }
+    await database.execAsync("BEGIN");
+    try {
+      for (const event of events) {
+        await database.runAsync(
+          `INSERT OR IGNORE INTO events (
+            id,
+            timestamp_start,
+            timestamp_end,
+            data_type,
+            source,
+            value_numeric,
+            value_text,
+            value_json,
+            unit,
+            confidence,
+            metadata,
+            schema_version,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          event.id,
+          event.timestampStart,
+          event.timestampEnd,
+          event.dataType,
+          event.source,
+          event.valueNumeric ?? null,
+          event.valueText ?? null,
+          event.valueJson ?? null,
+          event.unit,
+          event.confidence,
+          JSON.stringify(event.metadata),
+          event.schemaVersion,
+          event.createdAt,
+        );
+      }
 
-    await database.runAsync(
-      `INSERT INTO collector_diagnostics (
-        id,
-        collector_key,
-        status,
-        message,
-        event_count,
-        consecutive_failures,
-        recorded_at,
-        last_successful_sync_at,
-        imported_record_count,
-        time_since_last_good_run_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      createDiagnosticId(collectorKey),
-      collectorKey,
-      "success",
-      successMessage,
-      events.length,
-      0,
-      timestamp,
-      timestamp,
-      importedRecordCount,
-      0,
-    );
+      await database.runAsync(
+        `INSERT INTO collector_diagnostics (
+          id,
+          collector_key,
+          status,
+          message,
+          event_count,
+          consecutive_failures,
+          recorded_at,
+          last_successful_sync_at,
+          imported_record_count,
+          time_since_last_good_run_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        createDiagnosticId(collectorKey),
+        collectorKey,
+        "success",
+        successMessage,
+        events.length,
+        0,
+        timestamp,
+        timestamp,
+        importedRecordCount,
+        0,
+      );
+      await database.execAsync("COMMIT");
+    } catch (error) {
+      await database.execAsync("ROLLBACK");
+      throw error;
+    }
 
     for (const date of affectedDates) {
       await rebuildAggregateForDate(database, date);
@@ -513,37 +520,44 @@ export async function seedRepositoryEvents(
     const database = await getLocalDatabase();
     const affectedDates = getLocalDatesForEvents(events);
 
-    for (const event of events) {
-      await database.runAsync(
-        `INSERT OR IGNORE INTO events (
-          id,
-          timestamp_start,
-          timestamp_end,
-          data_type,
-          source,
-          value_numeric,
-          value_text,
-          value_json,
-          unit,
-          confidence,
-          metadata,
-          schema_version,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        event.id,
-        event.timestampStart,
-        event.timestampEnd,
-        event.dataType,
-        event.source,
-        event.valueNumeric ?? null,
-        event.valueText ?? null,
-        event.valueJson ?? null,
-        event.unit,
-        event.confidence,
-        JSON.stringify(event.metadata),
-        event.schemaVersion,
-        event.createdAt,
-      );
+    await database.execAsync("BEGIN");
+    try {
+      for (const event of events) {
+        await database.runAsync(
+          `INSERT OR IGNORE INTO events (
+            id,
+            timestamp_start,
+            timestamp_end,
+            data_type,
+            source,
+            value_numeric,
+            value_text,
+            value_json,
+            unit,
+            confidence,
+            metadata,
+            schema_version,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          event.id,
+          event.timestampStart,
+          event.timestampEnd,
+          event.dataType,
+          event.source,
+          event.valueNumeric ?? null,
+          event.valueText ?? null,
+          event.valueJson ?? null,
+          event.unit,
+          event.confidence,
+          JSON.stringify(event.metadata),
+          event.schemaVersion,
+          event.createdAt,
+        );
+      }
+      await database.execAsync("COMMIT");
+    } catch (error) {
+      await database.execAsync("ROLLBACK");
+      throw error;
     }
 
     for (const date of affectedDates) {

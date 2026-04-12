@@ -1,21 +1,27 @@
-import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import React from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { StyleSheet, Text, View } from "react-native";
 
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Toggle } from '@/components/ui/Toggle';
-import type { AppIconName } from '@/constants/iconography';
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Toggle } from "@/components/ui/Toggle";
+import type { AppIconName } from "@/constants/iconography";
 import {
   getCollectorIcon,
   getPermissionStatusIcon,
   getPermissionStatusIconColor,
-} from '@/constants/iconography';
-import { Colors, Fonts, FontSizes, IconSizes, Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { CollectorState } from '@/types/zentra';
-import { buildCollectorTelemetryItems } from '@/utils/collector-telemetry';
-import { formatCollectorPermissionStatusLabel } from '@/utils/collector-permission-status';
+} from "@/constants/iconography";
+import {
+  Colors,
+  Fonts,
+  FontSizes,
+  IconSizes,
+  Spacing,
+} from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import type { CollectorState } from "@/types/zentra";
+import { buildCollectorTelemetryItems } from "@/utils/collector-telemetry";
+import { formatCollectorPermissionStatusLabel } from "@/utils/collector-permission-status";
 
 interface CollectorToggleCardProps {
   actionDisabled?: boolean;
@@ -28,12 +34,12 @@ interface CollectorToggleCardProps {
   onValueChange: (value: boolean) => void;
 }
 
-export function CollectorToggleCard({
+export const CollectorToggleCard = React.memo(function CollectorToggleCard({
   actionDisabled = false,
   actionHelperText,
   actionIconName,
   actionLabel,
-  actionPendingLabel = 'Working…',
+  actionPendingLabel = "Working…",
   collector,
   onActionPress,
   onValueChange,
@@ -55,7 +61,9 @@ export function CollectorToggleCard({
               name={getCollectorIcon(collector.key)}
               size={IconSizes.compact}
             />
-            <Text style={[styles.title, { color: palette.foreground }]}>{collector.label}</Text>
+            <Text style={[styles.title, { color: palette.foreground }]}>
+              {collector.label}
+            </Text>
           </View>
           <Text style={[styles.description, { color: palette.textSecondary }]}>
             {collector.description}
@@ -80,7 +88,10 @@ export function CollectorToggleCard({
         </View>
         <View style={styles.metaItem}>
           <Ionicons
-            color={getPermissionStatusIconColor(collector.permissionStatus, palette)}
+            color={getPermissionStatusIconColor(
+              collector.permissionStatus,
+              palette,
+            )}
             name={getPermissionStatusIcon(collector.permissionStatus)}
             size={IconSizes.inline}
           />
@@ -120,10 +131,17 @@ export function CollectorToggleCard({
                 },
               ]}
             >
-              <Text style={[styles.telemetryLabel, { color: palette.mutedForeground }]}>
+              <Text
+                style={[
+                  styles.telemetryLabel,
+                  { color: palette.mutedForeground },
+                ]}
+              >
                 {item.label}
               </Text>
-              <Text style={[styles.telemetryValue, { color: palette.foreground }]}>
+              <Text
+                style={[styles.telemetryValue, { color: palette.foreground }]}
+              >
                 {item.value}
               </Text>
             </View>
@@ -133,7 +151,9 @@ export function CollectorToggleCard({
       {actionLabel && onActionPress ? (
         <View style={styles.actionBlock}>
           {actionHelperText ? (
-            <Text style={[styles.actionHelper, { color: palette.textSecondary }]}>
+            <Text
+              style={[styles.actionHelper, { color: palette.textSecondary }]}
+            >
               {actionHelperText}
             </Text>
           ) : null}
@@ -151,13 +171,13 @@ export function CollectorToggleCard({
       ) : null}
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   header: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: Spacing.md,
   },
   copy: {
@@ -166,8 +186,8 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.md,
   },
   titleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: Spacing.sm,
   },
   title: {
@@ -180,31 +200,31 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: Spacing.sm,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   metaItem: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: Spacing.xs,
   },
   meta: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   source: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
   },
   sourceRow: {
-    alignItems: 'center',
+    alignItems: "center",
     columnGap: Spacing.xs,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginTop: Spacing.sm,
   },
   telemetryItem: {
@@ -219,11 +239,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 0.9,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   telemetryRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: Spacing.sm,
     marginTop: Spacing.md,
   },
@@ -241,7 +261,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   actionButton: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     minHeight: 40,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
