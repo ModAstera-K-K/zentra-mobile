@@ -28,4 +28,4 @@ jobs:
           pod install
 
       - name: Validate iOS project builds
-        run: xcodebuild -workspace ios/Zentra.xcworkspace -scheme Zentra -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 15' build
+        run: xcodebuild -workspace ios/Zentra.xcworkspace -scheme Zentra -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
