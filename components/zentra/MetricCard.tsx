@@ -21,7 +21,7 @@ import type { DashboardMetric } from '@/types/zentra';
 
 interface MetricCardProps {
   metric: DashboardMetric;
-  onPress?: () => void;
+  onPress?: (metric: DashboardMetric) => void;
 }
 
 function getToneColor(metric: DashboardMetric, palette: AppPalette): string {
@@ -37,7 +37,7 @@ function getToneColor(metric: DashboardMetric, palette: AppPalette): string {
   }
 }
 
-export function MetricCard({ metric, onPress }: MetricCardProps) {
+export const MetricCard = React.memo(function MetricCard({ metric, onPress }: MetricCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const accent = getToneColor(metric, palette);
@@ -45,9 +45,10 @@ export function MetricCard({ metric, onPress }: MetricCardProps) {
   const iconName = isMetricIconKey(metric.key)
     ? getMetricIcon(metric.key)
     : 'ellipse-outline';
+  const handlePress = React.useCallback(() => onPress?.(metric), [metric, onPress]);
 
   return (
-    <Card onPress={onPress} style={styles.card}>
+    <Card onPress={handlePress} style={styles.card}>
       <View style={styles.header}>
         <View style={styles.labelRow}>
           <Ionicons color={iconColor} name={iconName} size={IconSizes.compact} />
@@ -64,7 +65,7 @@ export function MetricCard({ metric, onPress }: MetricCardProps) {
       </Text>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

@@ -28,7 +28,7 @@ interface CollectorToggleCardProps {
   onValueChange: (value: boolean) => void;
 }
 
-export function CollectorToggleCard({
+export const CollectorToggleCard = React.memo(function CollectorToggleCard({
   actionDisabled = false,
   actionHelperText,
   actionIconName,
@@ -151,7 +151,7 @@ export function CollectorToggleCard({
       ) : null}
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   header: {

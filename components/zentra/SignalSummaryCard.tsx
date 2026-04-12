@@ -17,7 +17,7 @@ interface SignalSummaryCardProps {
   onSelectMetric?: (metric: TodaySummaryMetric) => void;
 }
 
-export function SignalSummaryCard({ metrics, onSelectMetric }: SignalSummaryCardProps) {
+export const SignalSummaryCard = React.memo(function SignalSummaryCard({ metrics, onSelectMetric }: SignalSummaryCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 
@@ -79,7 +79,7 @@ export function SignalSummaryCard({ metrics, onSelectMetric }: SignalSummaryCard
       </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   dot: {

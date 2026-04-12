@@ -10,7 +10,7 @@ interface SleepEstimateCardProps {
   sleepEstimate: SleepEstimate;
 }
 
-export function SleepEstimateCard({ sleepEstimate }: SleepEstimateCardProps) {
+export const SleepEstimateCard = React.memo(function SleepEstimateCard({ sleepEstimate }: SleepEstimateCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 
@@ -85,7 +85,7 @@ export function SleepEstimateCard({ sleepEstimate }: SleepEstimateCardProps) {
       </Text>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   eyebrowRow: {

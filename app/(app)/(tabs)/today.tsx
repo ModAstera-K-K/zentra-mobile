@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ActivityIndicator,
+  AppState,
   InteractionManager,
   StyleSheet,
   Text,
@@ -22,6 +23,9 @@ import { Card } from "@/components/ui/Card";
 import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
+import type {
+  DashboardMetric,
+} from "@/types/zentra";
 import type {
   TodayDetailPayload,
   TodayRecentSignalRow,
@@ -75,6 +79,9 @@ export default function TodayScreen() {
       latestSleepEvent: state.latestSleepEvent,
       diagnostics: state.diagnostics,
     })),
+  );
+  const refreshTodayData = useRepositoryStore(
+    (state) => state.refreshTodayData,
   );
   const signals = useSignalStore(
     useShallow((state) => ({
@@ -153,6 +160,30 @@ export default function TodayScreen() {
       interaction.cancel();
     };
   }, [isDemoMode, repository.isHydrated, repository.lastUpdatedAt]);
+
+  // Heartbeat: refresh dashboard on a 30-second interval and when the app
+  // returns to the foreground so cards stay current even if a collector
+  // callback was missed.
+  React.useEffect(() => {
+    if (isDemoMode || !repository.isHydrated) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      void refreshTodayData();
+    }, 30_000);
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void refreshTodayData();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [isDemoMode, repository.isHydrated, refreshTodayData]);
 
   const metrics = React.useMemo(
     () =>
@@ -249,7 +280,9 @@ export default function TodayScreen() {
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
-  }, []);
+    // Re-derive when the repository refreshes so the anchor advances at midnight
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repository.lastUpdatedAt]);
   const demoPatternEvents = React.useMemo(
     () => buildDemoTimelineEvents(demoCollectors),
     [demoCollectors],
@@ -269,27 +302,40 @@ export default function TodayScreen() {
     [patternSourceEvents, todayAnchor],
   );
 
-  function handleSelectMetric(metric: (typeof metrics)[number]): void {
-    setSelectedDetail(
-      buildTodayMetricDetailPayload(metric, {
-        todayAggregate: repository.todayAggregate,
-        todayEvents: repository.todayEvents,
-        todaySnapshot: repository.todaySnapshot,
-      }),
-    );
-  }
+  const handleSelectMetric = React.useCallback(
+    (metric: DashboardMetric) => {
+      setSelectedDetail(
+        buildTodayMetricDetailPayload(metric, {
+          todayAggregate: repository.todayAggregate,
+          todayEvents: repository.todayEvents,
+          todaySnapshot: repository.todaySnapshot,
+        }),
+      );
+    },
+    [repository.todayAggregate, repository.todayEvents, repository.todaySnapshot],
+  );
 
-  function handleSelectSecondaryMetric(
-    metric: (typeof secondaryMetrics)[number],
-  ): void {
-    setSelectedDetail(
-      buildTodayMetricDetailPayload(metric, {
-        todayAggregate: repository.todayAggregate,
-        todayEvents: repository.todayEvents,
-        todaySnapshot: repository.todaySnapshot,
-      }),
-    );
-  }
+  const handleSelectSecondaryMetric = React.useCallback(
+    (metric: (typeof secondaryMetrics)[number]) => {
+      setSelectedDetail(
+        buildTodayMetricDetailPayload(metric, {
+          todayAggregate: repository.todayAggregate,
+          todayEvents: repository.todayEvents,
+          todaySnapshot: repository.todaySnapshot,
+        }),
+      );
+    },
+    [repository.todayAggregate, repository.todayEvents, repository.todaySnapshot],
+  );
+
+  const handleSelectRecentSignal = React.useCallback(
+    (row: TodayRecentSignalRow) => {
+      setSelectedDetail(
+        buildRecentSignalDetailPayload(row.event, repository.todayEvents),
+      );
+    },
+    [repository.todayEvents],
+  );
 
   const introTitle = isDemoMode
     ? "Welcome"
@@ -378,7 +424,7 @@ export default function TodayScreen() {
               <View key={metric.key} style={styles.metricCell}>
                 <MetricCard
                   metric={metric}
-                  onPress={() => handleSelectMetric(metric)}
+                  onPress={handleSelectMetric}
                 />
               </View>
             ))}
@@ -399,14 +445,7 @@ export default function TodayScreen() {
           </View>
           <View style={styles.sectionBlock}>
             <RecentSignalFeed
-              onSelectRow={(row) =>
-                setSelectedDetail(
-                  buildRecentSignalDetailPayload(
-                    row.event,
-                    repository.todayEvents,
-                  ),
-                )
-              }
+              onSelectRow={handleSelectRecentSignal}
               rows={recentSignals}
             />
           </View>

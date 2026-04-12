@@ -17,7 +17,7 @@ interface RecentSignalFeedProps {
   rows: TodayRecentSignalRow[];
 }
 
-export function RecentSignalFeed({ onSelectRow, rows }: RecentSignalFeedProps) {
+export const RecentSignalFeed = React.memo(function RecentSignalFeed({ onSelectRow, rows }: RecentSignalFeedProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 
@@ -83,7 +83,7 @@ export function RecentSignalFeed({ onSelectRow, rows }: RecentSignalFeedProps) {
       )}
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   column: {

@@ -1,0 +1,26 @@
+name: DCO
+
+on:
+  pull_request:
+
+jobs:
+  signoff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Signed-off-by lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          commits=$(git rev-list ${BASE_SHA}..${HEAD_SHA})
+          for commit in $commits; do
+            git log -1 --pretty=%B "$commit" | grep -q '^Signed-off-by: ' || {
+              echo "Missing Signed-off-by in commit $commit"
+              exit 1
+            }
+          done

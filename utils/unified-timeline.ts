@@ -618,7 +618,47 @@ export function buildMonthlyActivityPattern(
   // Start 3 weeks before that Monday = 4 weeks total
   const gridStart = shiftISODate(currentWeekMonday, -21);
 
+  // Partition events by date once (O(events)) instead of scanning all events per day (O(28 × events))
+  const gridStartMs = parseISODate(gridStart).getTime();
+  const gridEndMs = parseISODate(shiftISODate(gridStart, 28)).getTime();
+  const eventsByDate = new Map<string, ZentraEventRecord[]>();
+
+  for (const event of events) {
+    const startMs = new Date(event.timestampStart).getTime();
+    const endMs =
+      event.timestampEnd > event.timestampStart
+        ? new Date(event.timestampEnd).getTime()
+        : startMs;
+
+    if (endMs < gridStartMs || startMs >= gridEndMs) {
+      continue;
+    }
+
+    // An event can span multiple days; add it to each day it touches
+    const firstDay = Math.max(
+      0,
+      Math.floor((startMs - gridStartMs) / 86_400_000),
+    );
+    const lastDay = Math.min(
+      27,
+      Math.floor((Math.min(endMs, gridEndMs - 1) - gridStartMs) / 86_400_000),
+    );
+    for (let d = firstDay; d <= lastDay; d++) {
+      const dateKey = shiftISODate(gridStart, d);
+      let bucket = eventsByDate.get(dateKey);
+      if (!bucket) {
+        bucket = [];
+        eventsByDate.set(dateKey, bucket);
+      }
+      bucket.push(event);
+    }
+  }
+
   const cells: Omit<ActivityPatternCell, "intensity">[] = [];
+  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 
   for (let offset = 0; offset < 28; offset += 1) {
     const currentDate = shiftISODate(gridStart, offset);
@@ -642,8 +682,9 @@ export function buildMonthlyActivityPattern(
         startTimestamp: current.toISOString(),
       });
     } else {
+      const dayEvents = eventsByDate.get(currentDate) ?? [];
       const timeline = buildUnifiedDailyTimeline(
-        events,
+        dayEvents,
         currentDate,
         resolution,
       );
@@ -656,10 +697,7 @@ export function buildMonthlyActivityPattern(
           next,
           summary,
           String(current.getDate()),
-          new Intl.DateTimeFormat("en-US", {
-            month: "short",
-            day: "numeric",
-          }).format(current),
+          dateFormatter.format(current),
         ),
         placeholder: false,
       });

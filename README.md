@@ -1,137 +1,126 @@
-
 # Zentra
 
-### Your life, clearly seen. Your data, fully yours
+**A private vault for your phone's health signals.**  
+**Nothing leaves the device.**
 
-Zentra brings together the quiet signals of your day—movement, rest, focus, and digital habits—into one calm, private space.
-No noise. No tracking. No hidden systems watching you. Just clarity.
+Zentra passively collects the behavioral and health signals your phone already generates, normalizes them into a single local schema, shows them back through a calm dashboard, and lets you export the raw data when you want it.
 
----
+The current codebase is an Expo / React Native app with native platform modules under `modules/zentra-native-signals`. It is local-first, account-free, and built around auditable privacy constraints.
 
-## A calmer way to understand your life
+## What Zentra is
 
-Most tools collect your data. Zentra gives it back to you.
+Zentra is a local-first mobile app for reviewing personal device and health signals such as:
 
-Every step you take, every moment of rest, every pattern in your day—Zentra organizes it into a simple, beautiful timeline you can actually understand.
+- Steps and movement context
+- Sleep and rest signals
+- Screen time / app usage summaries
+- Device state signals
+- Health Connect / HealthKit imports where supported
+- Optional location-derived mobility patterns
 
-No dashboards built for advertisers. No metrics designed to keep you hooked. Just your life, presented with care.
+It stores data on-device, presents it in Today and Trends views, and supports export from the app.
 
----
+## What Zentra does not do
 
-## Built on a simple principle: your data belongs to you
+- No cloud sync
+- No account system
+- No analytics or telemetry SDKs
+- No ads
+- No social feed, coaching, streaks, or engagement loops
+- No medical diagnosis or treatment claims
 
-Zentra is designed from the ground up with privacy as a default, not a feature.
+## Privacy model
 
-- **Stored on your device** — your data never leaves unless you choose
-- **No external tracking** — no hidden analytics, no third-party sharing
-- **Full export control** — download your data anytime, in your format
+The repository is structured so privacy claims can be audited:
 
-You don’t need to trust us with your data. Because we don’t take it.
+- Android blocks `android.permission.INTERNET` in `app.json`
+- AndroidManifest removes `INTERNET` from the final manifest
+- The repository includes a no-network check script
+- Export is explicit and user-triggered
 
----
+See `docs/privacy.md` for what is enforced today versus what is planned later.
 
-## See patterns you didn’t know existed
+## Current release scope
 
-Zentra doesn’t just collect data—it reveals rhythm.
+This repository is being prepared for its first public open-source release.
 
-- When your energy peaks
-- How your routines actually evolve
-- Where your time really goes
-- How rest, movement, and focus connect
+What is true today:
 
-Over time, these signals become something more: a clearer understanding of yourself.
+- Source is intended for public release under GPL-3.0
+- Android and iOS package identifiers remain `com.modastera.zentra`
+- The app runs as an Expo / React Native project with native modules
+- The project has local-only architecture goals and no intentional network path
 
----
+What is not claimed yet:
 
-## Designed to feel calm, not clinical
+- Reproducible builds
+- F-Droid publication
+- App Store release availability
+- Public binary verification workflow
 
-Zentra is not a medical dashboard. It’s not a fitness tracker. It’s not another productivity tool.
+## Project structure
 
-It’s a quiet, intentional space—somewhere between a journal and an instrument—where your daily life becomes something you can reflect on, not just measure.
-
----
-
-## Product Vision & Principles
-
-**Zentra** is a privacy-first Android app that passively collects multi-modal signals from your phone, normalizes them into a single schema, presents them through a calm, instrument-grade dashboard, and lets you export the raw data on demand. **The MVP runs entirely on-device with no external communication.**
-
-**Product Principles:**
-
-1. **Local-first.** No network calls in the MVP. The phone is the database.
-2. **User owns the data.** Export must be trivial, complete, and machine-readable.
-3. **ML-ready from day one.** The schema is designed so future feature engineering and biomarker pipelines can be built without migration.
-4. **Honest about inference.** Every record carries a confidence score and a clear source label. Inferred data is never presented as measured data.
-5. **Permission minimalism.** The app works with whatever the user grants and degrades gracefully—zero permissions still produces a functional shell.
-6. **Calm by design.** The UI is a vault, not a feed. No streaks, no nags, no gamification.
-
----
-
-## Features
-
-- Modular design system for consistent UI
-- Health/activity tracking and visualization
-- Trend charts, heatmaps, and completeness metrics
-- Extensible component architecture
-- Expo-powered development for fast iteration
-
-## Folder Structure
-
-```
-design-system/           # Shared UI design system
-app/                     # Main Expo app entry and screens
-  (app)/                 # App-specific layouts and screens
-  (auth)/                # Authentication flows
-  (tabs)/                # Tabbed navigation screens
-components/              # Reusable UI and Zentra-specific components
-constants/               # Theme and global constants
-hooks/                   # Custom React hooks
-stores/                  # State management (Zustand, etc.)
-types/                   # TypeScript types
-utils/                   # Utility functions
+```text
+zentra/
+├── app/                          Expo Router screens and layouts
+├── assets/                       Branding and static assets
+├── components/                   Reusable UI and Zentra-specific views
+├── constants/                    Theme, branding, iconography
+├── hooks/                        App hooks and bootstrap flows
+├── modules/zentra-native-signals/ Native signal collection module
+├── stores/                       Zustand stores
+├── types/                        Shared TypeScript types
+├── utils/                        Repository, collectors, transforms, exports
+├── android/                      Android native project
+├── ios/                          iOS native project
+├── scripts/                      Local guardrails and development scripts
+└── docs/                         Public project documentation
 ```
 
-## Getting Started
+## Build from source
 
-### Prerequisites
+Requirements:
 
-- Node.js >= 18.x
-- Yarn or npm
-- Expo CLI (`npm install -g expo-cli`)
+- Node.js 18+
+- npm
+- Xcode for iOS development
+- Android Studio / Android SDK for Android development
 
-### Installation
+Install dependencies:
 
-1. Clone the repository:
+```bash
+npm install
+```
 
-   ```sh
-   git clone <repo-url>
-   cd zentra
-   ```
+Run development builds:
 
-2. Install dependencies:
+```bash
+npm run android
+npm run ios
+```
 
-   ```sh
-   yarn install
-   # or
-   npm install
-   ```
+Checks:
 
-3. Start the Expo development server:
-
-   ```sh
-   yarn start
-   # or
-   npm run start
-   ```
-
-### Running on Device/Simulator
-
-- Use the Expo Go app or your preferred iOS/Android simulator.
-- Scan the QR code from the terminal or Expo DevTools.
+```bash
+npm run lint
+npm run typecheck
+npm run check:no-network
+```
 
 ## Contributing
 
-Pull requests are welcome! Please open an issue first to discuss major changes. Follow the existing code style and add tests where appropriate.
+Contributions are welcome, but the repo has hard privacy constraints. Read `CONTRIBUTING.md` before opening a pull request.
+
+Every commit must be signed off with the DCO:
+
+```bash
+git commit -s -m "fix: describe change"
+```
+
+## Governance
+
+Zentra is maintained by ModAstera. Public documentation is intentionally neutral in tone, but project stewardship and release decisions remain maintainer-led. See `ROADMAP.md` and `SECURITY.md` for operational details.
 
 ## License
 
-[MIT](LICENSE)
+Zentra is licensed under **GPL-3.0**. See `LICENSE` and `docs/license-decision.md`.
