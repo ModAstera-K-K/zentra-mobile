@@ -2,7 +2,7 @@
 
 Please do not report security issues through public GitHub issues.
 
-Report vulnerabilities to: <security@modastera.com>
+Report vulnerabilities to: <info@modastera.com>
 
 Target response time:
 

@@ -1,76 +1,77 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
 const root = process.cwd();
-const packageJsonPath = path.join(root, 'package.json');
-const appJsonPath = path.join(root, 'app.json');
-const manifestPath = path.join(root, 'android/app/src/main/AndroidManifest.xml');
-const iosInfoPlistPath = path.join(root, 'ios/Zentra/Info.plist');
+const packageJsonPath = path.join(root, "package.json");
+const appJsonPath = path.join(root, "app.json");
+const manifestPath = path.join(
+  root,
+  "android/app/src/main/AndroidManifest.xml",
+);
+const iosInfoPlistPath = path.join(root, "ios/Zentra/Info.plist");
 
 const blockedDependencies = [
-  'axios',
-  'apollo-client',
-  '@apollo/client',
-  'got',
-  'superagent',
-  'ky',
-  'swr',
-  '@tanstack/react-query',
-  'firebase',
-  '@react-native-firebase/app',
-  '@react-native-firebase/analytics',
-  '@sentry/react-native',
-  'posthog-react-native',
-  'mixpanel-react-native',
-  'segment',
-  'amplitude-js',
+  "axios",
+  "apollo-client",
+  "@apollo/client",
+  "got",
+  "superagent",
+  "ky",
+  "swr",
+  "@tanstack/react-query",
+  "firebase",
+  "@react-native-firebase/app",
+  "@react-native-firebase/analytics",
+  "@sentry/react-native",
+  "posthog-react-native",
+  "mixpanel-react-native",
+  "segment",
+  "amplitude-js",
 ];
 
 const blockedSourcePatterns = [
-  'fetch(',
-  'XMLHttpRequest',
-  'WebSocket(',
-  'EventSource(',
-  'navigator.sendBeacon',
-  'URLSession',
-  'OkHttpClient',
-  'Retrofit.Builder',
-  'java.net.',
-  'Socket(',
-  'NSURLSession',
+  "fetch(",
+  "XMLHttpRequest",
+  "WebSocket(",
+  "EventSource(",
+  "navigator.sendBeacon",
+  "URLSession",
+  "OkHttpClient",
+  "Retrofit.Builder",
+  "java.net.",
+  "Socket(",
+  "NSURLSession",
 ];
 
 const sourceExtensions = new Set([
-  '.ts',
-  '.tsx',
-  '.js',
-  '.jsx',
-  '.mjs',
-  '.cjs',
-  '.kt',
-  '.kts',
-  '.swift',
-  '.java',
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".kt",
+  ".kts",
+  ".swift",
+  ".java",
 ]);
 
 const ignoredDirectories = new Set([
-  '.git',
-  '.expo',
-  'node_modules',
-  'android/build',
-  'android/app/build',
-  'ios/build',
-  'ios/Pods',
-  'dist',
-  'build',
+  ".git",
+  ".expo",
+  "node_modules",
+  "android/build",
+  "android/app/build",
+  "ios/build",
+  "ios/Pods",
+  "dist",
+  "build",
 ]);
 
-const ignoredFiles = new Set([
-  'scripts/check-no-network.mjs',
-]);
+const ignoredFiles = new Set(["scripts/check-no-network.mjs"]);
 
 function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 function walk(directoryPath, files = []) {
@@ -81,7 +82,10 @@ function walk(directoryPath, files = []) {
     const relativePath = path.relative(root, absolutePath);
 
     if (entry.isDirectory()) {
-      if (ignoredDirectories.has(relativePath) || ignoredDirectories.has(entry.name)) {
+      if (
+        ignoredDirectories.has(relativePath) ||
+        ignoredDirectories.has(entry.name)
+      ) {
         continue;
       }
       walk(absolutePath, files);
@@ -104,7 +108,7 @@ function scanSourceFiles() {
   const matches = [];
 
   for (const filePath of walk(root)) {
-    const contents = fs.readFileSync(filePath, 'utf8');
+    const contents = fs.readFileSync(filePath, "utf8");
     for (const pattern of blockedSourcePatterns) {
       if (contents.includes(pattern)) {
         matches.push(`${path.relative(root, filePath)} -> ${pattern}`);
@@ -118,42 +122,52 @@ function scanSourceFiles() {
 function main() {
   const packageJson = readJson(packageJsonPath);
   const appJson = readJson(appJsonPath);
-  const manifest = fs.readFileSync(manifestPath, 'utf8');
+  const manifest = fs.readFileSync(manifestPath, "utf8");
   const iosInfoPlist = fs.existsSync(iosInfoPlistPath)
-    ? fs.readFileSync(iosInfoPlistPath, 'utf8')
-    : '';
+    ? fs.readFileSync(iosInfoPlistPath, "utf8")
+    : "";
   const dependencies = {
     ...(packageJson.dependencies ?? {}),
     ...(packageJson.devDependencies ?? {}),
   };
 
-  const presentBlockedDependencies = blockedDependencies.filter((dependency) => dependency in dependencies);
+  const presentBlockedDependencies = blockedDependencies.filter(
+    (dependency) => dependency in dependencies,
+  );
 
   if (presentBlockedDependencies.length) {
-    throw new Error(`Blocked network dependencies detected: ${presentBlockedDependencies.join(', ')}`);
+    throw new Error(
+      `Blocked network dependencies detected: ${presentBlockedDependencies.join(", ")}`,
+    );
   }
 
   const blockedPermissions = appJson.expo?.android?.blockedPermissions ?? [];
 
-  if (!blockedPermissions.includes('android.permission.INTERNET')) {
-    throw new Error('app.json must block android.permission.INTERNET');
+  if (!blockedPermissions.includes("android.permission.INTERNET")) {
+    throw new Error("app.json must block android.permission.INTERNET");
   }
 
   if (!manifest.includes('android.permission.INTERNET" tools:node="remove"')) {
-    throw new Error('AndroidManifest.xml must remove android.permission.INTERNET');
+    throw new Error(
+      "AndroidManifest.xml must remove android.permission.INTERNET",
+    );
   }
 
-  if (iosInfoPlist.includes('NSAllowsLocalNetworking')) {
-    throw new Error('ios/Zentra/Info.plist must not allow local networking in the public configuration');
+  if (iosInfoPlist.includes("NSAllowsLocalNetworking")) {
+    throw new Error(
+      "ios/Zentra/Info.plist must not allow local networking in the public configuration",
+    );
   }
 
   const sourceMatches = scanSourceFiles();
 
   if (sourceMatches.length) {
-    throw new Error(`Blocked network or telemetry APIs detected:\n${sourceMatches.join('\n')}`);
+    throw new Error(
+      `Blocked network or telemetry APIs detected:\n${sourceMatches.join("\n")}`,
+    );
   }
 
-  console.log('No-network guardrail check passed.');
+  console.log("No-network guardrail check passed.");
 }
 
 main();

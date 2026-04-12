@@ -23,12 +23,4 @@ Included:
 - F-Droid packaging
 - Additional release automation
 - Expanded privacy audit surface
-
-## Explicitly out of scope for initial release
-
-- Cloud sync
-- Accounts
-- Analytics or telemetry
-- Notifications, streaks, gamification
-- App Store launch claims before the workflow exists
-- Reproducible-build claims before verification exists
+- iOS release artifact (TestFlight or App Store)

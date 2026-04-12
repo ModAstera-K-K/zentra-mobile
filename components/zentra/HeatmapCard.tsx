@@ -18,7 +18,9 @@ function getGroupedCells(cells: HeatmapCell[]): Record<string, HeatmapCell[]> {
   }, {});
 }
 
-export const HeatmapCard = React.memo(function HeatmapCard({ cells }: HeatmapCardProps) {
+export const HeatmapCard = React.memo(function HeatmapCard({
+  cells,
+}: HeatmapCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 

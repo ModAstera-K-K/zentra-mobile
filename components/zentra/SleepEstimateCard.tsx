@@ -10,7 +10,9 @@ interface SleepEstimateCardProps {
   sleepEstimate: SleepEstimate;
 }
 
-export const SleepEstimateCard = React.memo(function SleepEstimateCard({ sleepEstimate }: SleepEstimateCardProps) {
+export const SleepEstimateCard = React.memo(function SleepEstimateCard({
+  sleepEstimate,
+}: SleepEstimateCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
 

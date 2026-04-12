@@ -20,7 +20,8 @@ jobs:
           commits=$(git rev-list ${BASE_SHA}..${HEAD_SHA})
           for commit in $commits; do
             git log -1 --pretty=%B "$commit" | grep -q '^Signed-off-by: ' || {
-              echo "Missing Signed-off-by in commit $commit"
+              subject=$(git log -1 --pretty=%s "$commit")
+              echo "Missing Signed-off-by in commit $commit: $subject"
               exit 1
             }
           done
