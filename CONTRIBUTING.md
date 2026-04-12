@@ -54,6 +54,18 @@ npm run typecheck
 npm run check:no-network
 ```
 
+## Running tests
+
+```bash
+npm test
+```
+
+The test suite covers utility functions and data transforms. Native module tests require a connected device or emulator.
+
+## Good first issues
+
+Issues labelled [`good first issue`](https://github.com/modastera/zentra/labels/good%20first%20issue) are a good starting point if you're new to the codebase.
+
 ## Pull requests
 
 - Open PRs against `main`
@@ -70,7 +82,7 @@ Every commit must be signed off:
 git commit -s -m "fix: describe change"
 ```
 
-By signing off, you certify the Developer Certificate of Origin 1.1 and contribute the code under GPL-3.0. You also grant ModAstera the right to redistribute contributions under additional terms where necessary for platform distribution, including the App Store.
+By signing off, you certify the [Developer Certificate of Origin 1.1](https://developercertificate.org) and contribute the code under GPL-3.0. You also grant ModAstera the right to redistribute contributions under additional terms where necessary for platform distribution, including the App Store.
 
 ## Security issues
 
