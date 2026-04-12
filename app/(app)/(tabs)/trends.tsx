@@ -26,7 +26,6 @@ import {
 import {
   getDailyAggregatesForRange,
   getEventsForRange,
-  recomputeDailyAggregatesForRange,
 } from "@/utils/event-repository";
 import { buildLiveTrendSeries, groupTrendSeries } from "@/utils/live-trends";
 import { buildTrendSeries, createDemoCollectors } from "@/utils/mock-data";
@@ -116,7 +115,6 @@ export default function TrendsScreen() {
       setIsLoadingLiveData(true);
 
       try {
-        await recomputeDailyAggregatesForRange(rangeStart, rangeEnd);
         const [aggregates, trendEvents] = await Promise.all([
           getDailyAggregatesForRange(rangeStart, rangeEnd),
           getEventsForRange(rangeStart, rangeEnd),
