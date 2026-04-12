@@ -29,10 +29,7 @@ import {
   getDailyAggregatesForRange,
   getEventsForRange,
 } from "@/utils/event-repository";
-import {
-  buildLiveTrendSeries,
-  groupTrendSeries,
-} from "@/utils/live-trends";
+import { buildLiveTrendSeries, groupTrendSeries } from "@/utils/live-trends";
 import { buildTrendSeries, createDemoCollectors } from "@/utils/mock-data";
 import { useShallow } from "zustand/react/shallow";
 import type { TrendSeriesGroup } from "@/types/zentra";
@@ -184,9 +181,7 @@ export default function TrendsScreen() {
       if (item.type === "groupHeader") {
         return (
           <View style={styles.groupBlock}>
-            <Text
-              style={[styles.groupLabel, { color: palette.textSecondary }]}
-            >
+            <Text style={[styles.groupLabel, { color: palette.textSecondary }]}>
               {item.group.label}
             </Text>
             {item.group.series.length > 1 ? (
@@ -269,7 +264,11 @@ export default function TrendsScreen() {
   );
 
   return (
-    <ScreenShell scrollable={false} subtitle="How your days connect" title="Trends">
+    <ScreenShell
+      scrollable={false}
+      subtitle="How your days connect"
+      title="Trends"
+    >
       {isDemoMode || hasLiveTrendData ? (
         <FlatList
           contentContainerStyle={{

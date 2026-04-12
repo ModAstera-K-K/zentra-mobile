@@ -23,9 +23,7 @@ import { Card } from "@/components/ui/Card";
 import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
-import type {
-  DashboardMetric,
-} from "@/types/zentra";
+import type { DashboardMetric } from "@/types/zentra";
 import type {
   TodayDetailPayload,
   TodayRecentSignalRow,
@@ -312,7 +310,11 @@ export default function TodayScreen() {
         }),
       );
     },
-    [repository.todayAggregate, repository.todayEvents, repository.todaySnapshot],
+    [
+      repository.todayAggregate,
+      repository.todayEvents,
+      repository.todaySnapshot,
+    ],
   );
 
   const handleSelectSecondaryMetric = React.useCallback(
@@ -325,7 +327,11 @@ export default function TodayScreen() {
         }),
       );
     },
-    [repository.todayAggregate, repository.todayEvents, repository.todaySnapshot],
+    [
+      repository.todayAggregate,
+      repository.todayEvents,
+      repository.todaySnapshot,
+    ],
   );
 
   const handleSelectRecentSignal = React.useCallback(
@@ -422,10 +428,7 @@ export default function TodayScreen() {
           <View style={styles.metricGrid}>
             {metrics.map((metric) => (
               <View key={metric.key} style={styles.metricCell}>
-                <MetricCard
-                  metric={metric}
-                  onPress={handleSelectMetric}
-                />
+                <MetricCard metric={metric} onPress={handleSelectMetric} />
               </View>
             ))}
           </View>

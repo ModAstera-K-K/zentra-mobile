@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
-import { BorderRadius, Colors, IconSizes, Layout } from "@/constants/theme";
+import { Colors, IconSizes, Layout } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 function TabBarIcon({
@@ -36,30 +36,30 @@ export default function TabLayout() {
         freezeOnBlur: true,
         headerShown: false,
         tabBarActiveTintColor: palette.primary,
-        tabBarActiveBackgroundColor: isAndroid ? "transparent" : palette.halo,
+        tabBarActiveBackgroundColor: "transparent",
         tabBarInactiveTintColor: palette.mutedForeground,
         sceneStyle: {
           backgroundColor: palette.background,
         },
         tabBarStyle: {
-          backgroundColor: isAndroid ? palette.card : palette.elevated,
+          backgroundColor: palette.card,
           borderColor: palette.border,
-          borderRadius: isAndroid ? 0 : BorderRadius.xl,
+          borderRadius: 0,
           borderTopColor: palette.border,
           borderTopWidth: 1,
-          bottom: isAndroid ? 0 : Layout.tabBarOffset,
+          bottom: 0,
           elevation: 0,
           height: isAndroid ? 84 : Layout.tabBarHeight,
-          left: isAndroid ? 0 : Layout.tabBarOffset,
+          left: 0,
           paddingBottom: 10,
-          paddingHorizontal: isAndroid ? 0 : 8,
+          paddingHorizontal: 0,
           paddingTop: 10,
-          position: isAndroid ? "relative" : "absolute",
-          right: isAndroid ? 0 : Layout.tabBarOffset,
+          position: "relative",
+          right: 0,
         },
         tabBarItemStyle: {
-          borderRadius: isAndroid ? 0 : BorderRadius.lg,
-          marginHorizontal: isAndroid ? 0 : 2,
+          borderRadius: 0,
+          marginHorizontal: 0,
         },
         tabBarLabelStyle: {
           fontFamily: "JetBrainsMonoRegular",

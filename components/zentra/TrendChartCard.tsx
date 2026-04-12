@@ -48,7 +48,9 @@ function getChangeLabel(change: number): string {
   return "0%";
 }
 
-export const TrendChartCard = React.memo(function TrendChartCard({ series }: TrendChartCardProps) {
+export const TrendChartCard = React.memo(function TrendChartCard({
+  series,
+}: TrendChartCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const stroke = getSeriesColor(series, palette);
@@ -211,7 +213,9 @@ export const TrendChartCard = React.memo(function TrendChartCard({ series }: Tre
         </Text>
       </View>
       {series.coverageLabel ? (
-        <Text style={[styles.coverageLabel, { color: palette.mutedForeground }]}>
+        <Text
+          style={[styles.coverageLabel, { color: palette.mutedForeground }]}
+        >
           {series.coverageLabel}
         </Text>
       ) : null}

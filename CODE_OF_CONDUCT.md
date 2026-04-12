@@ -24,4 +24,4 @@ Examples of unacceptable behavior include:
 
 Project maintainers are responsible for clarifying and enforcing standards of acceptable behavior.
 
-To report conduct issues, contact: <conduct@modastera.com>
+To report conduct issues, contact: <info@modastera.com>

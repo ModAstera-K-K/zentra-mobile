@@ -1,5 +1,10 @@
 # Zentra
 
+[![CI](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ci.yml/badge.svg)](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ci.yml)
+[![Android Build Validation](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/android-build.yml/badge.svg)](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/android-build.yml)
+[![iOS Build Validation](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ios-build.yml/badge.svg)](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ios-build.yml)
+[![Android Release](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/release-android.yml/badge.svg)](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/release-android.yml)
+
 **A private vault for your phone's health signals.**  
 **Nothing leaves the device.**
 
@@ -37,6 +42,7 @@ The repository is structured so privacy claims can be audited:
 - AndroidManifest removes `INTERNET` from the final manifest
 - The repository includes a no-network check script
 - Export is explicit and user-triggered
+- The in-app wipe action clears local repository data and persisted local preferences
 
 See `docs/privacy.md` for what is enforced today versus what is planned later.
 
@@ -57,6 +63,23 @@ What is not claimed yet:
 - F-Droid publication
 - App Store release availability
 - Public binary verification workflow
+
+## Platform support
+
+The current codebase does not claim full collector parity across Android and iOS. This is the public support surface the repository can honestly describe today.
+
+| Capability | Android | iOS | Notes |
+| --- | --- | --- | --- |
+| Today and Trends views | Yes | Yes | Shared Expo / React Native UI |
+| Local export | Yes | Yes | User-triggered export only |
+| Live step / motion signals | Yes | Partial | Depends on platform sensor availability |
+| Device state signals | Yes | Yes | Battery and local device-state surfaces |
+| Location-derived mobility | Yes | Yes | Optional and permission-gated |
+| Health records import | Health Connect | Apple Health / HealthKit | Platform-native health integration |
+| App usage / screen time collector | Yes | No public support claimed | Android-specific surface in current repo |
+| Ambient light collector | Yes | No public support claimed | Android-specific hardware path |
+| Motion context / activity recognition | Yes | No public support claimed | Android-first implementation |
+| Sleep inference | Yes | Yes | Presented as inferred data |
 
 ## Project structure
 
@@ -107,6 +130,8 @@ npm run typecheck
 npm run check:no-network
 ```
 
+For signed Android APK releases and GitHub Releases publishing, see `docs/android-release.md`.
+
 ## Contributing
 
 Contributions are welcome, but the repo has hard privacy constraints. Read `CONTRIBUTING.md` before opening a pull request.
@@ -124,3 +149,5 @@ Zentra is maintained by ModAstera. Public documentation is intentionally neutral
 ## License
 
 Zentra is licensed under **GPL-3.0**. See `LICENSE` and `docs/license-decision.md`.
+
+Versioning and release policy are documented in `docs/versioning.md` and `CHANGELOG.md`.

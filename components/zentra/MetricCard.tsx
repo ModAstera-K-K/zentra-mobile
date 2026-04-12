@@ -1,13 +1,13 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
-import { Card } from '@/components/ui/Card';
+import { Card } from "@/components/ui/Card";
 import {
   getMetricIcon,
   getMetricIconColor,
   isMetricIconKey,
-} from '@/constants/iconography';
+} from "@/constants/iconography";
 import {
   Colors,
   Fonts,
@@ -15,9 +15,9 @@ import {
   IconSizes,
   Spacing,
   type AppPalette,
-} from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { DashboardMetric } from '@/types/zentra';
+} from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import type { DashboardMetric } from "@/types/zentra";
 
 interface MetricCardProps {
   metric: DashboardMetric;
@@ -26,39 +26,49 @@ interface MetricCardProps {
 
 function getToneColor(metric: DashboardMetric, palette: AppPalette): string {
   switch (metric.tone) {
-    case 'physical':
+    case "physical":
       return palette.signalPhysical;
-    case 'human':
+    case "human":
       return palette.signalHuman;
-    case 'cool':
+    case "cool":
       return palette.signalCool;
     default:
       return palette.primary;
   }
 }
 
-export const MetricCard = React.memo(function MetricCard({ metric, onPress }: MetricCardProps) {
+export const MetricCard = React.memo(function MetricCard({
+  metric,
+  onPress,
+}: MetricCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const accent = getToneColor(metric, palette);
   const iconColor = getMetricIconColor(metric.tone, palette);
   const iconName = isMetricIconKey(metric.key)
     ? getMetricIcon(metric.key)
-    : 'ellipse-outline';
-  const handlePress = React.useCallback(() => onPress?.(metric), [metric, onPress]);
+    : "ellipse-outline";
+  const handlePress = React.useCallback(
+    () => onPress?.(metric),
+    [metric, onPress],
+  );
 
   return (
     <Card onPress={handlePress} style={styles.card}>
       <View style={styles.header}>
         <View style={styles.labelRow}>
-          <Ionicons color={iconColor} name={iconName} size={IconSizes.compact} />
-          <Text style={[styles.label, { color: palette.textSecondary }]}>{metric.label}</Text>
+          <Ionicons
+            color={iconColor}
+            name={iconName}
+            size={IconSizes.compact}
+          />
+          <Text style={[styles.label, { color: palette.textSecondary }]}>
+            {metric.label}
+          </Text>
         </View>
         <View style={[styles.accent, { backgroundColor: accent }]} />
       </View>
-      <Text style={[styles.value, { color: accent }]}>
-        {metric.value}
-      </Text>
+      <Text style={[styles.value, { color: accent }]}>{metric.value}</Text>
       <View style={[styles.rule, { backgroundColor: palette.border }]} />
       <Text style={[styles.detail, { color: palette.textSecondary }]}>
         {metric.detail}
@@ -69,18 +79,18 @@ export const MetricCard = React.memo(function MetricCard({ metric, onPress }: Me
 
 const styles = StyleSheet.create({
   card: {
-    height: '100%',
+    height: "100%",
     gap: Spacing.sm,
-    paddingBottom: Spacing['2xl'],
+    paddingBottom: Spacing["2xl"],
   },
   header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   labelRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     flexShrink: 1,
     gap: Spacing.sm,
     minWidth: 0,
@@ -96,11 +106,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   value: {
     fontFamily: Fonts.monoMedium,
-    fontSize: FontSizes['2xl'],
+    fontSize: FontSizes["2xl"],
     marginTop: Spacing.xs,
   },
   rule: {
@@ -111,6 +121,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
-    marginTop: 'auto',
+    marginTop: "auto",
   },
 });
