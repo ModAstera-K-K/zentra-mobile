@@ -278,6 +278,7 @@ export default function TrendsScreen() {
           ListHeaderComponent={listHeader}
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
+          style={styles.list}
         />
       ) : (
         <>
@@ -294,6 +295,9 @@ export default function TrendsScreen() {
 }
 
 const styles = StyleSheet.create({
+  list: {
+    flex: 1,
+  },
   groupBlock: {
     marginBottom: Spacing.md,
   },

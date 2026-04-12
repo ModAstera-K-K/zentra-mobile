@@ -621,6 +621,7 @@ export function buildMonthlyActivityPattern(
   // Partition events by date once (O(events)) instead of scanning all events per day (O(28 × events))
   const gridStartMs = parseISODate(gridStart).getTime();
   const gridEndMs = parseISODate(shiftISODate(gridStart, 28)).getTime();
+  const gridLastDate = shiftISODate(gridStart, 27);
   const eventsByDate = new Map<string, ZentraEventRecord[]>();
 
   for (const event of events) {
@@ -634,23 +635,23 @@ export function buildMonthlyActivityPattern(
       continue;
     }
 
-    // An event can span multiple days; add it to each day it touches
-    const firstDay = Math.max(
-      0,
-      Math.floor((startMs - gridStartMs) / 86_400_000),
-    );
-    const lastDay = Math.min(
-      27,
-      Math.floor((Math.min(endMs, gridEndMs - 1) - gridStartMs) / 86_400_000),
-    );
-    for (let d = firstDay; d <= lastDay; d++) {
-      const dateKey = shiftISODate(gridStart, d);
+    // Use local ISO date keys instead of fixed 24h ms offsets so DST days do not shift buckets.
+    const boundedEndMs = Math.min(endMs, gridEndMs - 1);
+    let dateKey = toISODate(new Date(Math.max(startMs, gridStartMs)));
+    const lastDateKey = toISODate(new Date(boundedEndMs));
+
+    if (dateKey < gridStart) {
+      dateKey = gridStart;
+    }
+
+    while (dateKey <= lastDateKey && dateKey <= gridLastDate) {
       let bucket = eventsByDate.get(dateKey);
       if (!bucket) {
         bucket = [];
         eventsByDate.set(dateKey, bucket);
       }
       bucket.push(event);
+      dateKey = shiftISODate(dateKey, 1);
     }
   }
 

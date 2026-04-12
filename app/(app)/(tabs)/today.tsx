@@ -167,18 +167,58 @@ export default function TodayScreen() {
       return;
     }
 
-    const interval = setInterval(() => {
-      void refreshTodayData();
-    }, 30_000);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let isRefreshing = false;
+
+    async function runRefresh(): Promise<void> {
+      if (isRefreshing) {
+        return;
+      }
+
+      isRefreshing = true;
+
+      try {
+        await refreshTodayData();
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    function startInterval(): void {
+      if (interval) {
+        return;
+      }
+
+      interval = setInterval(() => {
+        void runRefresh();
+      }, 30_000);
+    }
+
+    function stopInterval(): void {
+      if (!interval) {
+        return;
+      }
+
+      clearInterval(interval);
+      interval = null;
+    }
+
+    if (AppState.currentState === "active") {
+      startInterval();
+    }
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        void refreshTodayData();
+        startInterval();
+        void runRefresh();
+        return;
       }
+
+      stopInterval();
     });
 
     return () => {
-      clearInterval(interval);
+      stopInterval();
       subscription.remove();
     };
   }, [isDemoMode, repository.isHydrated, refreshTodayData]);
