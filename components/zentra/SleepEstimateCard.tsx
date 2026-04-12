@@ -16,9 +16,39 @@ export function SleepEstimateCard({ sleepEstimate }: SleepEstimateCardProps) {
 
   return (
     <Card elevated>
-      <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-        Last night's rest
-      </Text>
+      <View style={styles.eyebrowRow}>
+        <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+          Last night's rest
+        </Text>
+        {sleepEstimate.available ? (
+          <View
+            style={[
+              styles.sourceBadge,
+              {
+                backgroundColor: sleepEstimate.isImported
+                  ? palette.signalHuman + "18"
+                  : palette.mutedForeground + "14",
+                borderColor: sleepEstimate.isImported
+                  ? palette.signalHuman + "30"
+                  : palette.border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.sourceLabel,
+                {
+                  color: sleepEstimate.isImported
+                    ? palette.signalHuman
+                    : palette.mutedForeground,
+                },
+              ]}
+            >
+              {sleepEstimate.isImported ? "Imported" : "Inferred"}
+            </Text>
+          </View>
+        ) : null}
+      </View>
       <View style={styles.row}>
         <View>
           <Text style={[styles.label, { color: palette.mutedForeground }]}>
@@ -50,7 +80,7 @@ export function SleepEstimateCard({ sleepEstimate }: SleepEstimateCardProps) {
       </Text>
       <Text style={[styles.meta, { color: palette.mutedForeground }]}>
         {sleepEstimate.available
-          ? `${Math.round(sleepEstimate.confidence * 100)}% confident`
+          ? `${Math.round(sleepEstimate.confidence * 100)}% confident · ${sleepEstimate.sourceLabel}`
           : "Unavailable in this build"}
       </Text>
     </Card>
@@ -58,11 +88,28 @@ export function SleepEstimateCard({ sleepEstimate }: SleepEstimateCardProps) {
 }
 
 const styles = StyleSheet.create({
+  eyebrowRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: Spacing.lg,
+  },
   eyebrow: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.4,
-    marginBottom: Spacing.lg,
+    textTransform: "uppercase",
+  },
+  sourceBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+  },
+  sourceLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 1.1,
     textTransform: "uppercase",
   },
   row: {

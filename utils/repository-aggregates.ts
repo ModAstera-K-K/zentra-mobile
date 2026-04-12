@@ -67,23 +67,31 @@ export function computeActiveMinutes(events: ZentraEventRecord[]): number {
       left.timestampStart.localeCompare(right.timestampStart),
     );
 
-  if (!activityEvents.length) {
-    return 0;
+  if (activityEvents.length) {
+    // Check if events use transition metadata (live data)
+    const hasTransitions = activityEvents.some(
+      (event) =>
+        event.metadata.transition === "enter" ||
+        event.metadata.transition === "exit",
+    );
+
+    if (hasTransitions) {
+      return computeActiveMinutesFromTransitions(activityEvents);
+    }
+
+    // Fall back to duration from timestampStart/End for non-transition events (demo data)
+    return computeActiveMinutesFromDurations(activityEvents);
   }
 
-  // Check if events use transition metadata (live data)
-  const hasTransitions = activityEvents.some(
-    (event) =>
-      event.metadata.transition === "enter" ||
-      event.metadata.transition === "exit",
-  );
-
-  if (hasTransitions) {
-    return computeActiveMinutesFromTransitions(activityEvents);
+  // When the Activity Transition API delivers no events, estimate active
+  // minutes from motion_context classifications (accelerometer/gyroscope)
+  // or from step cadence as a last resort.
+  const motionMinutes = computeActiveMinutesFromMotionContext(events);
+  if (motionMinutes > 0) {
+    return motionMinutes;
   }
 
-  // Fall back to duration from timestampStart/End for non-transition events (demo data)
-  return computeActiveMinutesFromDurations(activityEvents);
+  return computeActiveMinutesFromStepCadence(events);
 }
 
 function computeActiveMinutesFromTransitions(
@@ -135,6 +143,56 @@ function computeActiveMinutesFromDurations(
   }
 
   return Math.round(totalMs / 60_000);
+}
+
+/** Each non-sedentary motion_context window (~60 s) counts as 1 active minute. */
+function computeActiveMinutesFromMotionContext(
+  events: ZentraEventRecord[],
+): number {
+  const MOTION_WINDOW_MINUTES = 1;
+  return (
+    events.filter(
+      (event) =>
+        event.dataType === "motion_context" && event.valueText !== "sedentary",
+    ).length * MOTION_WINDOW_MINUTES
+  );
+}
+
+/**
+ * Estimate active minutes from step cadence: group step events into
+ * 1-minute bins and count bins where at least one step delta > 0.
+ */
+function computeActiveMinutesFromStepCadence(
+  events: ZentraEventRecord[],
+): number {
+  const stepEvents = events
+    .filter(
+      (event) =>
+        event.dataType === "steps" &&
+        event.source === "sensor" &&
+        typeof event.valueNumeric === "number",
+    )
+    .sort((left, right) =>
+      left.timestampStart.localeCompare(right.timestampStart),
+    );
+
+  if (stepEvents.length < 2) {
+    return 0;
+  }
+
+  const activeBins = new Set<number>();
+  for (let i = 1; i < stepEvents.length; i++) {
+    const current = Math.round(stepEvents[i].valueNumeric ?? 0);
+    const previous = Math.round(stepEvents[i - 1].valueNumeric ?? 0);
+    if (current > previous) {
+      const minuteBin = Math.floor(
+        new Date(stepEvents[i].timestampStart).getTime() / 60_000,
+      );
+      activeBins.add(minuteBin);
+    }
+  }
+
+  return activeBins.size;
 }
 
 function toRadians(value: number): number {
@@ -205,12 +263,37 @@ function calculateMobilityRadius(samples: LocationSample[]): number | null {
   return Math.max(...samples.map((sample) => distanceMeters(origin, sample)));
 }
 
+function calculateDistanceTravelled(samples: LocationSample[]): number {
+  if (samples.length < 2) {
+    return 0;
+  }
+
+  let totalDistance = 0;
+
+  for (let index = 1; index < samples.length; index += 1) {
+    totalDistance += distanceMeters(samples[index - 1], samples[index]);
+  }
+
+  return Math.round(totalDistance);
+}
+
 function countTopActivity(events: ZentraEventRecord[]): string | null {
-  const counts = events.reduce<Record<string, number>>((result, event) => {
-    if (event.dataType !== "activity" || !event.valueText) {
+  const activityEvents = events.filter(
+    (event) => event.dataType === "activity" && event.valueText,
+  );
+
+  // Fall back to motion_context labels when no activity transitions exist
+  const source =
+    activityEvents.length > 0
+      ? activityEvents
+      : events.filter(
+          (event) => event.dataType === "motion_context" && event.valueText,
+        );
+
+  const counts = source.reduce<Record<string, number>>((result, event) => {
+    if (!event.valueText) {
       return result;
     }
-
     result[event.valueText] = (result[event.valueText] ?? 0) + 1;
     return result;
   }, {});
@@ -258,7 +341,7 @@ export function buildDailyAggregateRecord(
     date,
     stepsTotal,
     activeMinutes: computeActiveMinutes(events),
-    distanceMeters: 0,
+    distanceMeters: calculateDistanceTravelled(locationSamples),
     screenTimeSeconds: events
       .filter(
         (event) =>

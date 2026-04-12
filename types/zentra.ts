@@ -8,7 +8,8 @@ export type CollectorKey =
   | "healthConnect"
   | "location"
   | "sleep"
-  | "ambientLight";
+  | "ambientLight"
+  | "motionContext";
 
 export type PermissionStatus =
   | "granted"
@@ -38,7 +39,9 @@ export type EventDataType =
   | "sleep_inferred"
   | "heart_rate"
   | "exercise_session"
-  | "ambient_light";
+  | "ambient_light"
+  | "motion_context"
+  | "connectivity_state";
 export type EventSource =
   | "sensor"
   | "health_connect"
@@ -57,6 +60,11 @@ export interface CollectorState {
   health: CollectorHealth;
   lastRunLabel: string;
   sourceLabel: string;
+  diagnosticMessage?: string | null;
+  eventCount?: number | null;
+  importedRecordCount?: number | null;
+  lastSuccessfulSyncAt?: string | null;
+  timeSinceLastGoodRunMs?: number | null;
 }
 
 export interface DashboardMetric {
@@ -85,6 +93,8 @@ export interface SleepEstimate {
   confidence: number;
   available: boolean;
   detail: string;
+  sourceLabel: string;
+  isImported: boolean;
 }
 
 export interface TrendPoint {
@@ -101,9 +111,16 @@ export interface TrendSeries {
   change: number;
   variability: number;
   group?: TrendSeriesGroupKey;
+  coverageLabel?: string;
+  sourceLabel?: string;
 }
 
-export type TrendSeriesGroupKey = "body" | "device" | "environment" | "quality";
+export type TrendSeriesGroupKey =
+  | "body"
+  | "device"
+  | "health"
+  | "environment"
+  | "quality";
 
 export interface TrendSeriesGroup {
   key: TrendSeriesGroupKey;
@@ -226,6 +243,9 @@ export interface CollectorDiagnosticRecord {
   eventCount: number;
   consecutiveFailures: number;
   recordedAt: string;
+  lastSuccessfulSyncAt: string | null;
+  importedRecordCount: number | null;
+  timeSinceLastGoodRunMs: number | null;
 }
 
 export interface SignalStoreState {

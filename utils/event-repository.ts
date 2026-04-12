@@ -1,4 +1,4 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
+import type { SQLiteDatabase } from "expo-sqlite";
 
 import type {
   CollectorDiagnosticRecord,
@@ -6,22 +6,22 @@ import type {
   DailyAggregateRecord,
   TodayLiveSnapshot,
   ZentraEventRecord,
-} from '@/types/zentra';
-import { getLocalDatabase } from '@/utils/local-database';
+} from "@/types/zentra";
+import { getLocalDatabase } from "@/utils/local-database";
 import {
   buildDailyAggregateRecord,
   buildTodaySnapshot,
   getLocalDatesForEvents,
   getRangeBounds,
-} from '@/utils/repository-aggregates';
-import { parseISODate, shiftISODate } from '@/utils/dates';
+} from "@/utils/repository-aggregates";
+import { parseISODate, shiftISODate } from "@/utils/dates";
 
 interface EventRow {
   id: string;
   timestamp_start: string;
   timestamp_end: string;
-  data_type: ZentraEventRecord['dataType'];
-  source: ZentraEventRecord['source'];
+  data_type: ZentraEventRecord["dataType"];
+  source: ZentraEventRecord["source"];
   value_numeric: number | null;
   value_text: string | null;
   value_json: string | null;
@@ -49,18 +49,24 @@ interface AggregateRow {
 interface DiagnosticRow {
   id: string;
   collector_key: CollectorKey;
-  status: 'success' | 'failure';
+  status: "success" | "failure";
   message: string | null;
   event_count: number;
   consecutive_failures: number;
   recorded_at: string;
+  last_successful_sync_at?: string | null;
+  imported_record_count?: number | null;
+  time_since_last_good_run_ms?: number | null;
 }
 
 let writeQueue: Promise<void> = Promise.resolve();
 
 function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
   const nextTask = writeQueue.then(task, task);
-  writeQueue = nextTask.then(() => undefined, () => undefined);
+  writeQueue = nextTask.then(
+    () => undefined,
+    () => undefined,
+  );
   return nextTask;
 }
 
@@ -68,9 +74,9 @@ function createDiagnosticId(collectorKey: CollectorKey): string {
   return `${collectorKey}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function parseMetadata(metadata: string): ZentraEventRecord['metadata'] {
+function parseMetadata(metadata: string): ZentraEventRecord["metadata"] {
   try {
-    return JSON.parse(metadata) as ZentraEventRecord['metadata'];
+    return JSON.parse(metadata) as ZentraEventRecord["metadata"];
   } catch {
     return {};
   }
@@ -119,6 +125,9 @@ function mapDiagnosticRow(row: DiagnosticRow): CollectorDiagnosticRecord {
     eventCount: row.event_count,
     consecutiveFailures: row.consecutive_failures,
     recordedAt: row.recorded_at,
+    lastSuccessfulSyncAt: row.last_successful_sync_at ?? null,
+    importedRecordCount: row.imported_record_count ?? null,
+    timeSinceLastGoodRunMs: row.time_since_last_good_run_ms ?? null,
   };
 }
 
@@ -138,7 +147,10 @@ async function getEventsBetweenWithDatabase(
   return rows.map(mapEventRow);
 }
 
-async function getEventsBetween(startIso: string, endExclusiveIso: string): Promise<ZentraEventRecord[]> {
+async function getEventsBetween(
+  startIso: string,
+  endExclusiveIso: string,
+): Promise<ZentraEventRecord[]> {
   const database = await getLocalDatabase();
   return getEventsBetweenWithDatabase(database, startIso, endExclusiveIso);
 }
@@ -148,18 +160,24 @@ async function rebuildAggregateForDate(
   date: string,
 ): Promise<void> {
   const { startIso, endExclusiveIso } = getRangeBounds(date, date);
-  const events = await getEventsBetweenWithDatabase(database, startIso, endExclusiveIso);
-
-  await database.runAsync('DELETE FROM daily_aggregates WHERE date = ?', date);
+  const events = await getEventsBetweenWithDatabase(
+    database,
+    startIso,
+    endExclusiveIso,
+  );
 
   if (!events.length) {
+    await database.runAsync(
+      "DELETE FROM daily_aggregates WHERE date = ?",
+      date,
+    );
     return;
   }
 
   const aggregate = buildDailyAggregateRecord(date, events);
 
   await database.runAsync(
-    `INSERT INTO daily_aggregates (
+    `INSERT OR REPLACE INTO daily_aggregates (
       date,
       steps_total,
       active_minutes,
@@ -202,6 +220,31 @@ async function getLastConsecutiveFailures(
   return row?.consecutive_failures ?? 0;
 }
 
+async function getLatestSuccessMetadata(
+  database: SQLiteDatabase,
+  collectorKey: CollectorKey,
+): Promise<{
+  importedRecordCount: number | null;
+  recordedAt: string | null;
+}> {
+  const row = await database.getFirstAsync<{
+    imported_record_count: number | null;
+    recorded_at: string | null;
+  }>(
+    `SELECT imported_record_count, recorded_at
+      FROM collector_diagnostics
+      WHERE collector_key = ? AND status = 'success'
+      ORDER BY recorded_at DESC
+      LIMIT 1`,
+    collectorKey,
+  );
+
+  return {
+    importedRecordCount: row?.imported_record_count ?? null,
+    recordedAt: row?.recorded_at ?? null,
+  };
+}
+
 async function getLatestCollectorDiagnostic(
   collectorKey: CollectorKey,
 ): Promise<CollectorDiagnosticRecord | null> {
@@ -224,7 +267,9 @@ export async function initializeEventRepository(): Promise<void> {
 
 export async function getStoredEventCount(): Promise<number> {
   const database = await getLocalDatabase();
-  const row = await database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM events');
+  const row = await database.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM events",
+  );
   return row?.count ?? 0;
 }
 
@@ -235,6 +280,9 @@ export async function logCollectorSuccess(
 ): Promise<void> {
   await enqueueWrite(async () => {
     const database = await getLocalDatabase();
+    const timestamp = new Date().toISOString();
+    const importedRecordCount =
+      collectorKey === "healthConnect" ? eventCount : null;
     await database.runAsync(
       `INSERT INTO collector_diagnostics (
         id,
@@ -243,15 +291,21 @@ export async function logCollectorSuccess(
         message,
         event_count,
         consecutive_failures,
-        recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        recorded_at,
+        last_successful_sync_at,
+        imported_record_count,
+        time_since_last_good_run_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       createDiagnosticId(collectorKey),
       collectorKey,
-      'success',
+      "success",
       message,
       eventCount,
       0,
-      new Date().toISOString(),
+      timestamp,
+      timestamp,
+      importedRecordCount,
+      0,
     );
   });
 }
@@ -262,7 +316,19 @@ export async function logCollectorFailure(
 ): Promise<void> {
   await enqueueWrite(async () => {
     const database = await getLocalDatabase();
-    const previousFailures = await getLastConsecutiveFailures(database, collectorKey);
+    const previousFailures = await getLastConsecutiveFailures(
+      database,
+      collectorKey,
+    );
+    const lastSuccess = await getLatestSuccessMetadata(database, collectorKey);
+    const timestamp = new Date().toISOString();
+    const timeSinceLastGoodRunMs = lastSuccess.recordedAt
+      ? Math.max(
+          0,
+          new Date(timestamp).getTime() -
+            new Date(lastSuccess.recordedAt).getTime(),
+        )
+      : null;
 
     await database.runAsync(
       `INSERT INTO collector_diagnostics (
@@ -272,15 +338,21 @@ export async function logCollectorFailure(
         message,
         event_count,
         consecutive_failures,
-        recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        recorded_at,
+        last_successful_sync_at,
+        imported_record_count,
+        time_since_last_good_run_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       createDiagnosticId(collectorKey),
       collectorKey,
-      'failure',
+      "failure",
       message,
       0,
       previousFailures + 1,
-      new Date().toISOString(),
+      timestamp,
+      lastSuccess.recordedAt,
+      lastSuccess.importedRecordCount,
+      timeSinceLastGoodRunMs,
     );
   });
 }
@@ -302,11 +374,26 @@ export async function ensureCollectorFailureState(
 
     const latestDiagnostic = row ? mapDiagnosticRow(row) : null;
 
-    if (latestDiagnostic?.status === 'failure' && latestDiagnostic.message === message) {
+    if (
+      latestDiagnostic?.status === "failure" &&
+      latestDiagnostic.message === message
+    ) {
       return;
     }
 
-    const previousFailures = await getLastConsecutiveFailures(database, collectorKey);
+    const previousFailures = await getLastConsecutiveFailures(
+      database,
+      collectorKey,
+    );
+    const lastSuccess = await getLatestSuccessMetadata(database, collectorKey);
+    const timestamp = new Date().toISOString();
+    const timeSinceLastGoodRunMs = lastSuccess.recordedAt
+      ? Math.max(
+          0,
+          new Date(timestamp).getTime() -
+            new Date(lastSuccess.recordedAt).getTime(),
+        )
+      : null;
 
     await database.runAsync(
       `INSERT INTO collector_diagnostics (
@@ -316,15 +403,21 @@ export async function ensureCollectorFailureState(
         message,
         event_count,
         consecutive_failures,
-        recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        recorded_at,
+        last_successful_sync_at,
+        imported_record_count,
+        time_since_last_good_run_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       createDiagnosticId(collectorKey),
       collectorKey,
-      'failure',
+      "failure",
       message,
       0,
       previousFailures + 1,
-      new Date().toISOString(),
+      timestamp,
+      lastSuccess.recordedAt,
+      lastSuccess.importedRecordCount,
+      timeSinceLastGoodRunMs,
     );
   });
 }
@@ -341,6 +434,9 @@ export async function appendEventsForCollector(
   await enqueueWrite(async () => {
     const database = await getLocalDatabase();
     const affectedDates = getLocalDatesForEvents(events);
+    const timestamp = new Date().toISOString();
+    const importedRecordCount =
+      collectorKey === "healthConnect" ? events.length : null;
 
     for (const event of events) {
       await database.runAsync(
@@ -383,15 +479,21 @@ export async function appendEventsForCollector(
         message,
         event_count,
         consecutive_failures,
-        recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        recorded_at,
+        last_successful_sync_at,
+        imported_record_count,
+        time_since_last_good_run_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       createDiagnosticId(collectorKey),
       collectorKey,
-      'success',
+      "success",
       successMessage,
       events.length,
       0,
-      new Date().toISOString(),
+      timestamp,
+      timestamp,
+      importedRecordCount,
+      0,
     );
 
     for (const date of affectedDates) {
@@ -403,7 +505,7 @@ export async function appendEventsForCollector(
 export async function seedRepositoryEvents(
   events: ZentraEventRecord[],
 ): Promise<void> {
-  if (!events.length || await getStoredEventCount() > 0) {
+  if (!events.length || (await getStoredEventCount()) > 0) {
     return;
   }
 
@@ -455,12 +557,17 @@ export async function getTodayLiveSnapshot(): Promise<TodayLiveSnapshot> {
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const events = await getEventsBetween(today.toISOString(), tomorrow.toISOString());
+  const events = await getEventsBetween(
+    today.toISOString(),
+    tomorrow.toISOString(),
+  );
 
   return buildTodaySnapshot(events);
 }
 
-export async function getLatestCollectorDiagnostics(): Promise<CollectorDiagnosticRecord[]> {
+export async function getLatestCollectorDiagnostics(): Promise<
+  CollectorDiagnosticRecord[]
+> {
   const database = await getLocalDatabase();
   const rows = await database.getAllAsync<DiagnosticRow>(
     `SELECT diagnostics.*
@@ -478,7 +585,9 @@ export async function getLatestCollectorDiagnostics(): Promise<CollectorDiagnost
   return rows.map(mapDiagnosticRow);
 }
 
-export async function getCollectorDiagnosticsHistory(limit = 50): Promise<CollectorDiagnosticRecord[]> {
+export async function getCollectorDiagnosticsHistory(
+  limit = 50,
+): Promise<CollectorDiagnosticRecord[]> {
   const database = await getLocalDatabase();
   const rows = await database.getAllAsync<DiagnosticRow>(
     `SELECT *
@@ -525,7 +634,9 @@ export async function getDailyAggregatesForRange(
   return rows.map(mapAggregateRow);
 }
 
-export async function getDailyAggregateForDate(date: string): Promise<DailyAggregateRecord | null> {
+export async function getDailyAggregateForDate(
+  date: string,
+): Promise<DailyAggregateRecord | null> {
   const database = await getLocalDatabase();
   const row = await database.getFirstAsync<AggregateRow>(
     `SELECT * FROM daily_aggregates
@@ -554,9 +665,9 @@ export async function clearRepositoryData(): Promise<void> {
   await enqueueWrite(async () => {
     const database = await getLocalDatabase();
 
-    await database.runAsync('DELETE FROM events');
-    await database.runAsync('DELETE FROM daily_aggregates');
-    await database.runAsync('DELETE FROM collector_diagnostics');
+    await database.runAsync("DELETE FROM events");
+    await database.runAsync("DELETE FROM daily_aggregates");
+    await database.runAsync("DELETE FROM collector_diagnostics");
   });
 }
 
@@ -584,7 +695,7 @@ export async function getEventsForRange(
 }
 
 export async function getLatestEventByType(
-  dataType: ZentraEventRecord['dataType'],
+  dataType: ZentraEventRecord["dataType"],
 ): Promise<ZentraEventRecord | null> {
   const database = await getLocalDatabase();
   const row = await database.getFirstAsync<EventRow>(
@@ -598,7 +709,9 @@ export async function getLatestEventByType(
   return row ? mapEventRow(row) : null;
 }
 
-export async function pruneLocationEventsBefore(cutoffIso: string): Promise<number> {
+export async function pruneLocationEventsBefore(
+  cutoffIso: string,
+): Promise<number> {
   return enqueueWrite(async () => {
     const database = await getLocalDatabase();
     const countRow = await database.getFirstAsync<{ count: number }>(

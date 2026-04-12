@@ -1,12 +1,18 @@
-import React from 'react';
-import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Line, Polyline } from 'react-native-svg';
+import React from "react";
+import { LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
+import Svg, { Circle, Line, Polyline } from "react-native-svg";
 
-import { Colors, Fonts, FontSizes, Spacing, type AppPalette } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { MetricTone } from '@/types/zentra';
-import { buildChartCoordinates, buildPolylinePoints } from '@/utils/charts';
-import type { TodayDetailVisual } from '@/utils/today-visualization';
+import {
+  Colors,
+  Fonts,
+  FontSizes,
+  Spacing,
+  type AppPalette,
+} from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import type { MetricTone } from "@/types/zentra";
+import { buildChartCoordinates, buildPolylinePoints } from "@/utils/charts";
+import type { TodayDetailVisual } from "@/utils/today-visualization";
 
 interface MetricDetailVisualProps {
   tone: MetricTone;
@@ -19,11 +25,11 @@ const CHART_INSET_Y = 14;
 
 function getToneColor(tone: MetricTone, palette: AppPalette): string {
   switch (tone) {
-    case 'physical':
+    case "physical":
       return palette.signalPhysical;
-    case 'human':
+    case "human":
       return palette.signalHuman;
-    case 'cool':
+    case "cool":
       return palette.signalCool;
     default:
       return palette.primary;
@@ -38,26 +44,86 @@ function clampIndex(value: number, max: number): number {
   return Math.max(0, Math.min(value, max));
 }
 
-function LineVisual({ accent, visual }: { accent: string; visual: Extract<TodayDetailVisual, { type: 'line' }> }) {
+/** Gap threshold in normalizedX units (~1 hour on a 24h axis). */
+const GAP_THRESHOLD = 1 / 24;
+
+/**
+ * Split coordinates into separate polyline segments wherever two
+ * consecutive points have a normalizedX gap larger than GAP_THRESHOLD.
+ */
+function buildGappedPolylineSegments(
+  points: { normalizedX?: number }[],
+  coordinates: { x: number; y: number }[],
+): string[] {
+  if (!coordinates.length) {
+    return [];
+  }
+  const segments: string[] = [];
+  let current: string[] = [formatCoordinate(coordinates[0])];
+
+  for (let i = 1; i < coordinates.length; i++) {
+    const prevNX = points[i - 1].normalizedX ?? 0;
+    const curNX = points[i].normalizedX ?? 0;
+    if (curNX - prevNX > GAP_THRESHOLD) {
+      segments.push(current.join(" "));
+      current = [];
+    }
+    current.push(formatCoordinate(coordinates[i]));
+  }
+
+  if (current.length) {
+    segments.push(current.join(" "));
+  }
+  return segments;
+}
+
+function formatCoordinate(c: { x: number; y: number }): string {
+  return `${c.x},${c.y}`;
+}
+
+function LineVisual({
+  accent,
+  visual,
+}: {
+  accent: string;
+  visual: Extract<TodayDetailVisual, { type: "line" }>;
+}) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const [chartWidth, setChartWidth] = React.useState(0);
-  const [selectedIndex, setSelectedIndex] = React.useState(Math.max(visual.points.length - 1, 0));
-  const innerWidth = Math.max(chartWidth - (CHART_INSET_X * 2), 0);
-  const innerHeight = CHART_HEIGHT - (CHART_INSET_Y * 2);
-  const coordinates = innerWidth > 0
-    ? buildChartCoordinates(
-      visual.points.map((point) => ({ label: point.label, value: point.value })),
-      innerWidth,
-      innerHeight,
-    ).map((coordinate) => ({
-      x: coordinate.x + CHART_INSET_X,
-      y: coordinate.y + CHART_INSET_Y,
-    }))
-    : [];
-  const selectedPoint = visual.points[clampIndex(selectedIndex, visual.points.length - 1)];
-  const selectedCoordinate = coordinates[clampIndex(selectedIndex, coordinates.length - 1)];
-  const polyline = buildPolylinePoints(coordinates);
+  const [selectedIndex, setSelectedIndex] = React.useState(
+    Math.max(visual.points.length - 1, 0),
+  );
+  const innerWidth = Math.max(chartWidth - CHART_INSET_X * 2, 0);
+  const innerHeight = CHART_HEIGHT - CHART_INSET_Y * 2;
+  const hasNormalizedX = visual.points.some(
+    (point) => point.normalizedX != null,
+  );
+  const normalizedXValues = hasNormalizedX
+    ? visual.points.map((point) => point.normalizedX)
+    : undefined;
+  const coordinates =
+    innerWidth > 0
+      ? buildChartCoordinates(
+          visual.points.map((point) => ({
+            label: point.label,
+            value: point.value,
+          })),
+          innerWidth,
+          innerHeight,
+          normalizedXValues,
+        ).map((coordinate) => ({
+          x: coordinate.x + CHART_INSET_X,
+          y: coordinate.y + CHART_INSET_Y,
+        }))
+      : [];
+  const selectedPoint =
+    visual.points[clampIndex(selectedIndex, visual.points.length - 1)];
+  const selectedCoordinate =
+    coordinates[clampIndex(selectedIndex, coordinates.length - 1)];
+  const polylineSegments = hasNormalizedX
+    ? buildGappedPolylineSegments(visual.points, coordinates)
+    : [buildPolylinePoints(coordinates)];
 
   React.useEffect(() => {
     setSelectedIndex(Math.max(visual.points.length - 1, 0));
@@ -72,7 +138,26 @@ function LineVisual({ accent, visual }: { accent: string; visual: Extract<TodayD
       return;
     }
 
-    const relativeX = Math.max(0, Math.min(locationX - CHART_INSET_X, innerWidth));
+    if (hasNormalizedX) {
+      // Find nearest point by x coordinate
+      const adjustedX = locationX;
+      let nearest = 0;
+      let minDist = Infinity;
+      for (let i = 0; i < coordinates.length; i++) {
+        const dist = Math.abs(coordinates[i].x - adjustedX);
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = i;
+        }
+      }
+      setSelectedIndex(clampIndex(nearest, visual.points.length - 1));
+      return;
+    }
+
+    const relativeX = Math.max(
+      0,
+      Math.min(locationX - CHART_INSET_X, innerWidth),
+    );
     const step = innerWidth / (visual.points.length - 1);
     const nextIndex = Math.round(relativeX / step);
     setSelectedIndex(clampIndex(nextIndex, visual.points.length - 1));
@@ -82,26 +167,41 @@ function LineVisual({ accent, visual }: { accent: string; visual: Extract<TodayD
     <View style={styles.visualBlock}>
       <View style={styles.visualHeader}>
         <Text style={[styles.visualValue, { color: accent }]}>
-          {selectedPoint?.valueLabel ?? visual.points.at(-1)?.valueLabel ?? '--'}
+          {selectedPoint?.valueLabel ??
+            visual.points.at(-1)?.valueLabel ??
+            "--"}
         </Text>
         <Text style={[styles.visualCaption, { color: palette.textSecondary }]}>
-          {selectedPoint?.label ?? visual.points.at(-1)?.label ?? ''}
+          {selectedPoint?.label ?? visual.points.at(-1)?.label ?? ""}
         </Text>
       </View>
       <View
         onLayout={handleLayout}
         onMoveShouldSetResponder={() => true}
-        onResponderGrant={(event) => updateSelection(event.nativeEvent.locationX)}
-        onResponderMove={(event) => updateSelection(event.nativeEvent.locationX)}
+        onResponderGrant={(event) =>
+          updateSelection(event.nativeEvent.locationX)
+        }
+        onResponderMove={(event) =>
+          updateSelection(event.nativeEvent.locationX)
+        }
         onStartShouldSetResponder={() => true}
-        style={[styles.chartFrame, { backgroundColor: palette.card, borderColor: palette.border }]}
+        style={[
+          styles.chartFrame,
+          { backgroundColor: palette.card, borderColor: palette.border },
+        ]}
       >
-        <Svg height={CHART_HEIGHT} width="100%" viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT}`}>
+        <Svg
+          height={CHART_HEIGHT}
+          width="100%"
+          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT}`}
+        >
           {buildGridYPositions().map((yPosition) => (
             <Line
               key={`grid-${yPosition}`}
               stroke={palette.border}
-              strokeDasharray={yPosition === CHART_HEIGHT / 2 ? '3 6' : undefined}
+              strokeDasharray={
+                yPosition === CHART_HEIGHT / 2 ? "3 6" : undefined
+              }
               strokeWidth={1}
               x1={CHART_INSET_X}
               x2={Math.max(chartWidth - CHART_INSET_X, CHART_INSET_X)}
@@ -120,16 +220,20 @@ function LineVisual({ accent, visual }: { accent: string; visual: Extract<TodayD
               y2={CHART_HEIGHT - CHART_INSET_Y}
             />
           ) : null}
-          <Polyline
-            fill="none"
-            points={polyline}
-            stroke={accent}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-          />
+          {polylineSegments.map((segment, segmentIndex) => (
+            <Polyline
+              key={`segment-${segmentIndex}`}
+              fill="none"
+              points={segment}
+              stroke={accent}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+            />
+          ))}
           {coordinates.map((coordinate, index) => {
-            const isSelected = index === clampIndex(selectedIndex, coordinates.length - 1);
+            const isSelected =
+              index === clampIndex(selectedIndex, coordinates.length - 1);
             return (
               <Circle
                 key={`${coordinate.x}-${coordinate.y}-${index}`}
@@ -144,12 +248,20 @@ function LineVisual({ accent, visual }: { accent: string; visual: Extract<TodayD
           })}
         </Svg>
       </View>
-      <Text style={[styles.annotation, { color: palette.textSecondary }]}>{visual.annotation}</Text>
+      <Text style={[styles.annotation, { color: palette.textSecondary }]}>
+        {visual.annotation}
+      </Text>
     </View>
   );
 }
 
-function DistributionVisual({ accent, visual }: { accent: string; visual: Extract<TodayDetailVisual, { type: 'distribution' }> }) {
+function DistributionVisual({
+  accent,
+  visual,
+}: {
+  accent: string;
+  visual: Extract<TodayDetailVisual, { type: "distribution" }>;
+}) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const maxValue = Math.max(...visual.bars.map((bar) => bar.value), 1);
@@ -158,14 +270,30 @@ function DistributionVisual({ accent, visual }: { accent: string; visual: Extrac
     <View style={styles.visualBlock}>
       <View style={styles.distributionList}>
         {visual.bars.map((bar, index) => (
-          <View key={`${bar.label}-${bar.value}-${index}`} style={styles.distributionRow}>
+          <View
+            key={`${bar.label}-${bar.value}-${index}`}
+            style={styles.distributionRow}
+          >
             <View style={styles.distributionHeader}>
-              <Text numberOfLines={1} style={[styles.distributionLabel, { color: palette.foreground }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.distributionLabel,
+                  { color: palette.foreground },
+                ]}
+              >
                 {bar.label}
               </Text>
-              <Text style={[styles.distributionValue, { color: accent }]}>{bar.valueLabel}</Text>
+              <Text style={[styles.distributionValue, { color: accent }]}>
+                {bar.valueLabel}
+              </Text>
             </View>
-            <View style={[styles.barTrack, { backgroundColor: palette.card, borderColor: palette.border }]}>
+            <View
+              style={[
+                styles.barTrack,
+                { backgroundColor: palette.card, borderColor: palette.border },
+              ]}
+            >
               <View
                 style={[
                   styles.barFill,
@@ -179,25 +307,38 @@ function DistributionVisual({ accent, visual }: { accent: string; visual: Extrac
           </View>
         ))}
       </View>
-      <Text style={[styles.annotation, { color: palette.textSecondary }]}>{visual.annotation}</Text>
+      <Text style={[styles.annotation, { color: palette.textSecondary }]}>
+        {visual.annotation}
+      </Text>
     </View>
   );
 }
 
-function HeatmapVisual({ visual }: { visual: Extract<TodayDetailVisual, { type: 'heatmap' }> }) {
+function HeatmapVisual({
+  visual,
+}: {
+  visual: Extract<TodayDetailVisual, { type: "heatmap" }>;
+}) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
-  const groupedRows = visual.cells.reduce<Record<string, typeof visual.cells>>((result, cell) => {
-    result[cell.dayLabel] = [...(result[cell.dayLabel] ?? []), cell];
-    return result;
-  }, {});
+  const groupedRows = visual.cells.reduce<Record<string, typeof visual.cells>>(
+    (result, cell) => {
+      result[cell.dayLabel] = [...(result[cell.dayLabel] ?? []), cell];
+      return result;
+    },
+    {},
+  );
 
   return (
     <View style={styles.visualBlock}>
       <View style={styles.heatmapGrid}>
         {Object.entries(groupedRows).map(([dayLabel, dayCells]) => (
           <View key={dayLabel} style={styles.heatmapRow}>
-            <Text style={[styles.heatmapLabel, { color: palette.textSecondary }]}>{dayLabel}</Text>
+            <Text
+              style={[styles.heatmapLabel, { color: palette.textSecondary }]}
+            >
+              {dayLabel}
+            </Text>
             <View style={styles.heatmapCells}>
               {dayCells.map((cell) => (
                 <View
@@ -205,9 +346,10 @@ function HeatmapVisual({ visual }: { visual: Extract<TodayDetailVisual, { type: 
                   style={[
                     styles.heatmapCell,
                     {
-                      backgroundColor: colorScheme === 'light'
-                        ? `rgba(47, 74, 58, ${0.12 + cell.value / 140})`
-                        : `rgba(69, 123, 117, ${0.14 + cell.value / 140})`,
+                      backgroundColor:
+                        colorScheme === "light"
+                          ? `rgba(47, 74, 58, ${0.12 + cell.value / 140})`
+                          : `rgba(69, 123, 117, ${0.14 + cell.value / 140})`,
                       borderColor: palette.border,
                     },
                   ]}
@@ -217,7 +359,9 @@ function HeatmapVisual({ visual }: { visual: Extract<TodayDetailVisual, { type: 
           </View>
         ))}
       </View>
-      <Text style={[styles.annotation, { color: palette.textSecondary }]}>{visual.annotation}</Text>
+      <Text style={[styles.annotation, { color: palette.textSecondary }]}>
+        {visual.annotation}
+      </Text>
     </View>
   );
 }
@@ -231,11 +375,11 @@ export function MetricDetailVisual({ tone, visual }: MetricDetailVisualProps) {
     return null;
   }
 
-  if (visual.type === 'line') {
+  if (visual.type === "line") {
     return <LineVisual accent={accent} visual={visual} />;
   }
 
-  if (visual.type === 'distribution') {
+  if (visual.type === "distribution") {
     return <DistributionVisual accent={accent} visual={visual} />;
   }
 
@@ -250,24 +394,24 @@ const styles = StyleSheet.create({
   },
   barFill: {
     borderRadius: 999,
-    height: '100%',
+    height: "100%",
   },
   barTrack: {
     borderRadius: 999,
     borderWidth: 1,
     height: 10,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   chartFrame: {
     borderRadius: 20,
     borderWidth: 1,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   distributionHeader: {
-    alignItems: 'baseline',
-    flexDirection: 'row',
+    alignItems: "baseline",
+    flexDirection: "row",
     gap: Spacing.md,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   distributionLabel: {
     flex: 1,
@@ -292,7 +436,7 @@ const styles = StyleSheet.create({
   },
   heatmapCells: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.xs,
   },
   heatmapGrid: {
@@ -304,8 +448,8 @@ const styles = StyleSheet.create({
     width: 28,
   },
   heatmapRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: Spacing.sm,
   },
   visualBlock: {
@@ -315,12 +459,12 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   visualHeader: {
-    alignItems: 'baseline',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "baseline",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   visualValue: {
     fontFamily: Fonts.monoMedium,

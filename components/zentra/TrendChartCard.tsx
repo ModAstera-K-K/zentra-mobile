@@ -1,5 +1,11 @@
 import React from "react";
-import { LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
+import {
+  LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import Svg, { Circle, Line, Polyline } from "react-native-svg";
 
 import { Card } from "@/components/ui/Card";
@@ -18,7 +24,8 @@ interface TrendChartCardProps {
   series: TrendSeries;
 }
 
-const CHART_HEIGHT = 108;
+const CHART_HEIGHT_COMPACT = 108;
+const CHART_HEIGHT_EXPANDED = 216;
 const CHART_INSET_X = 8;
 const CHART_INSET_Y = 10;
 
@@ -46,11 +53,13 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
   const palette = Colors[colorScheme];
   const stroke = getSeriesColor(series, palette);
   const [chartWidth, setChartWidth] = React.useState(0);
+  const [expanded, setExpanded] = React.useState(false);
+  const chartHeight = expanded ? CHART_HEIGHT_EXPANDED : CHART_HEIGHT_COMPACT;
   const [selectedIndex, setSelectedIndex] = React.useState(
     Math.max(series.points.length - 1, 0),
   );
   const innerWidth = Math.max(chartWidth - CHART_INSET_X * 2, 0);
-  const innerHeight = CHART_HEIGHT - CHART_INSET_Y * 2;
+  const innerHeight = chartHeight - CHART_INSET_Y * 2;
   const coordinates =
     innerWidth > 0
       ? buildChartCoordinates(series.points, innerWidth, innerHeight).map(
@@ -122,17 +131,17 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
         onStartShouldSetResponder={() => true}
       >
         <Svg
-          height={CHART_HEIGHT}
+          height={chartHeight}
           width="100%"
-          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT}`}
+          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${chartHeight}`}
         >
-          {[CHART_INSET_Y, CHART_HEIGHT / 2, CHART_HEIGHT - CHART_INSET_Y].map(
+          {[CHART_INSET_Y, chartHeight / 2, chartHeight - CHART_INSET_Y].map(
             (yPosition) => (
               <Line
                 key={`grid-${yPosition}`}
                 stroke={palette.border}
                 strokeDasharray={
-                  yPosition === CHART_HEIGHT / 2 ? "3 6" : undefined
+                  yPosition === chartHeight / 2 ? "3 6" : undefined
                 }
                 strokeWidth={1}
                 x1={CHART_INSET_X}
@@ -150,7 +159,7 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
               x1={selectedCoordinate.x}
               x2={selectedCoordinate.x}
               y1={CHART_INSET_Y}
-              y2={CHART_HEIGHT - CHART_INSET_Y}
+              y2={chartHeight - CHART_INSET_Y}
             />
           ) : null}
           <Polyline
@@ -183,14 +192,34 @@ export function TrendChartCard({ series }: TrendChartCardProps) {
         <Text style={[styles.submeta, { color: palette.textSecondary }]}>
           {getChangeLabel(series.change)} change
         </Text>
+        <Pressable
+          onPress={() => setExpanded((current) => !current)}
+          style={styles.expandToggle}
+        >
+          <Text style={[styles.submeta, { color: palette.mutedForeground }]}>
+            {expanded ? "Compact" : "Expand"}
+          </Text>
+        </Pressable>
         <Text style={[styles.submeta, { color: palette.textSecondary }]}>
           {series.variability}% variability
         </Text>
       </View>
+      {series.coverageLabel ? (
+        <Text style={[styles.coverageLabel, { color: palette.mutedForeground }]}>
+          {series.coverageLabel}
+        </Text>
+      ) : null}
       <View style={styles.labelsRow}>
         <Text style={[styles.caption, { color: palette.mutedForeground }]}>
           {series.points[0]?.label}
         </Text>
+        {series.sourceLabel ? (
+          <Text
+            style={[styles.sourceLabel, { color: palette.mutedForeground }]}
+          >
+            {series.sourceLabel}
+          </Text>
+        ) : null}
         <Text style={[styles.caption, { color: palette.mutedForeground }]}>
           {series.points.at(-1)?.label}
         </Text>
@@ -246,5 +275,21 @@ const styles = StyleSheet.create({
   caption: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
+  },
+  coverageLabel: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    lineHeight: 18,
+    marginBottom: Spacing.sm,
+  },
+  expandToggle: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  sourceLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
   },
 });

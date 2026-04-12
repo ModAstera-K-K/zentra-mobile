@@ -1,4 +1,8 @@
-import type { CollectorKey, LocationSample, PermissionStatus } from '@/types/zentra';
+import type {
+  CollectorKey,
+  LocationSample,
+  PermissionStatus,
+} from "@/types/zentra";
 
 export interface CollectorHandle {
   stop: () => void;
@@ -54,5 +58,9 @@ export interface AppUsageCollectorDeps {
 }
 
 export interface SleepCollectorDeps {
+  refreshRepository: () => Promise<void>;
+}
+
+export interface MotionContextCollectorDeps {
   refreshRepository: () => Promise<void>;
 }

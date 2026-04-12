@@ -17,6 +17,7 @@ import {
   startDeviceStateCollectorModule,
   startHealthConnectCollectorModule,
   startLocationCollectorModule,
+  startMotionContextCollectorModule,
   startSleepCollectorModule,
   startStepCollectorModule,
 } from '@/utils/collectors/registry';
@@ -301,6 +302,26 @@ export function useSignalBootstrap(): void {
     refreshRepository,
     setAmbientLightLux,
     setAmbientLightSupport,
+    collectorRetryToken,
+  ]);
+
+  useEffect(() => {
+    if (!isHydrated || !collectors.motionContext.enabled) {
+      return;
+    }
+
+    let handle: CollectorHandle | null = null;
+    void (async () => {
+      handle = await startMotionContextCollectorModule({ refreshRepository });
+    })();
+
+    return () => {
+      handle?.stop();
+    };
+  }, [
+    collectors.motionContext.enabled,
+    isHydrated,
+    refreshRepository,
     collectorRetryToken,
   ]);
 }

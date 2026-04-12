@@ -106,6 +106,18 @@ const BASE_COLLECTORS: CollectorStateMap = {
     lastRunLabel: "Off",
     sourceLabel: "Light Sensor",
   },
+  motionContext: {
+    key: "motionContext",
+    label: "Motion Context",
+    description:
+      "Sedentary blocks, burst activity, and device stability from accelerometer and gyroscope.",
+    permissionLabel: "Motion sensors",
+    enabled: false,
+    permissionStatus: "not_requested",
+    health: "idle",
+    lastRunLabel: "Off",
+    sourceLabel: "Accelerometer + Gyroscope",
+  },
 };
 
 const HOURS = [
@@ -331,6 +343,8 @@ export function buildSleepEstimate(
     detail: available
       ? "Inferred from charging, stillness, and screen-off windows."
       : "Enable device-state derived sleep to estimate rest.",
+    sourceLabel: available ? "Local inference" : "Waiting",
+    isImported: false,
   };
 }
 
@@ -374,6 +388,17 @@ export function buildTrendSeries(
       max: 96,
       phase: 2,
       ready: isCollectorReady(collectors, "activity"),
+    },
+    {
+      key: "distanceMeters",
+      label: "Distance",
+      unit: "km",
+      tone: "human" as const,
+      group: "body" as const,
+      min: 1,
+      max: 8,
+      phase: 3,
+      ready: isCollectorReady(collectors, "location"),
     },
     {
       key: "screen",
@@ -429,6 +454,13 @@ export function buildTrendSeries(
       unit: definition.unit,
       tone: definition.tone,
       group: definition.group,
+      coverageLabel: "Demo coverage",
+      sourceLabel:
+        definition.key === "distanceMeters"
+          ? "Foreground location"
+          : definition.group === "device"
+            ? "Usage Access"
+            : "Repository demo",
       points: labels.map((label, index) => ({
         label,
         value: buildWaveValue(

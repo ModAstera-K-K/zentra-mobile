@@ -14,6 +14,7 @@ import {
 import { Colors, Fonts, FontSizes, IconSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { CollectorState } from '@/types/zentra';
+import { buildCollectorTelemetryItems } from '@/utils/collector-telemetry';
 import { formatCollectorPermissionStatusLabel } from '@/utils/collector-permission-status';
 
 interface CollectorToggleCardProps {
@@ -39,6 +40,10 @@ export function CollectorToggleCard({
 }: CollectorToggleCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const telemetryItems = React.useMemo(
+    () => buildCollectorTelemetryItems(collector),
+    [collector],
+  );
 
   return (
     <Card>
@@ -102,6 +107,29 @@ export function CollectorToggleCard({
           {collector.lastRunLabel}
         </Text>
       </View>
+      {telemetryItems.length ? (
+        <View style={styles.telemetryRow}>
+          {telemetryItems.map((item) => (
+            <View
+              key={`${collector.key}-${item.key}`}
+              style={[
+                styles.telemetryItem,
+                {
+                  backgroundColor: palette.elevated,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Text style={[styles.telemetryLabel, { color: palette.mutedForeground }]}>
+                {item.label}
+              </Text>
+              <Text style={[styles.telemetryValue, { color: palette.foreground }]}>
+                {item.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
       {actionLabel && onActionPress ? (
         <View style={styles.actionBlock}>
           {actionHelperText ? (
@@ -178,6 +206,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginTop: Spacing.sm,
+  },
+  telemetryItem: {
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 2,
+    minWidth: 108,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+  },
+  telemetryLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  telemetryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  telemetryValue: {
+    fontFamily: Fonts.bodyMedium,
+    fontSize: FontSizes.sm,
   },
   actionBlock: {
     gap: Spacing.sm,

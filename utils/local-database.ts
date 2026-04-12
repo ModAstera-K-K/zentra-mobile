@@ -1,6 +1,6 @@
-import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
+import { openDatabaseAsync, type SQLiteDatabase } from "expo-sqlite";
 
-const DATABASE_NAME = 'zentra.db';
+const DATABASE_NAME = "zentra.db";
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -53,10 +53,29 @@ CREATE INDEX IF NOT EXISTS idx_collector_diagnostics_collector_recorded
   ON collector_diagnostics(collector_key, recorded_at DESC);
 `;
 
+const MIGRATIONS_SQL = [
+  `ALTER TABLE collector_diagnostics ADD COLUMN last_successful_sync_at TEXT`,
+  `ALTER TABLE collector_diagnostics ADD COLUMN imported_record_count INTEGER`,
+  `ALTER TABLE collector_diagnostics ADD COLUMN time_since_last_good_run_ms INTEGER`,
+];
+
 let databasePromise: Promise<SQLiteDatabase> | null = null;
 
-async function initializeDatabase(database: SQLiteDatabase): Promise<SQLiteDatabase> {
+async function runMigrations(database: SQLiteDatabase): Promise<void> {
+  for (const migration of MIGRATIONS_SQL) {
+    try {
+      await database.execAsync(migration);
+    } catch {
+      // Column already exists — safe to skip
+    }
+  }
+}
+
+async function initializeDatabase(
+  database: SQLiteDatabase,
+): Promise<SQLiteDatabase> {
   await database.execAsync(SCHEMA_SQL);
+  await runMigrations(database);
   return database;
 }
 

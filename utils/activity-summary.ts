@@ -1,4 +1,4 @@
-import type { ZentraEventRecord } from '@/types/zentra';
+import type { ZentraEventRecord } from "@/types/zentra";
 
 export interface ActivityCountSummary {
   count: number;
@@ -7,16 +7,24 @@ export interface ActivityCountSummary {
 
 export function formatActivityLabel(value: string | null | undefined): string {
   if (!value) {
-    return 'Unknown';
+    return "Unknown";
   }
 
   return value
-    .replace(/[_-]/g, ' ')
+    .replace(/[_-]/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-export function getActivityEvents(events: ZentraEventRecord[]): ZentraEventRecord[] {
-  return events.filter((event) => event.dataType === 'activity');
+export function getActivityEvents(
+  events: ZentraEventRecord[],
+): ZentraEventRecord[] {
+  const activityEvents = events.filter(
+    (event) => event.dataType === "activity",
+  );
+  // Fall back to motion_context events when no activity transitions exist
+  return activityEvents.length > 0
+    ? activityEvents
+    : events.filter((event) => event.dataType === "motion_context");
 }
 
 export function getLatestActivityEvent(
@@ -24,7 +32,9 @@ export function getLatestActivityEvent(
 ): ZentraEventRecord | null {
   const latest = getActivityEvents(events)
     .slice()
-    .sort((left, right) => right.timestampStart.localeCompare(left.timestampStart))[0];
+    .sort((left, right) =>
+      right.timestampStart.localeCompare(left.timestampStart),
+    )[0];
 
   return latest ?? null;
 }

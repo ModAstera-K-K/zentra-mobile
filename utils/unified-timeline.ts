@@ -155,12 +155,18 @@ function toOverlapWeight(
     event.timestampEnd > event.timestampStart
       ? event.timestampEnd
       : event.timestampStart;
-  const overlapMs = getOverlapMs(eventStart, eventEnd, bucket);
-  const durationMs = Math.max(
-    1,
-    new Date(eventEnd).getTime() - new Date(eventStart).getTime(),
-  );
+  const eventStartMs = new Date(eventStart).getTime();
+  const eventEndMs = new Date(eventEnd).getTime();
+  const durationMs = eventEndMs - eventStartMs;
 
+  // Point-in-time events (start === end): return 1 if the point falls inside the bucket
+  if (durationMs <= 0) {
+    const bucketStartMs = new Date(bucket.timestampStart).getTime();
+    const bucketEndMs = new Date(bucket.timestampEnd).getTime();
+    return eventStartMs >= bucketStartMs && eventStartMs < bucketEndMs ? 1 : 0;
+  }
+
+  const overlapMs = getOverlapMs(eventStart, eventEnd, bucket);
   return overlapMs / durationMs;
 }
 
@@ -234,12 +240,18 @@ function applyStepsEvent(
   sensorStepDeltas: Map<string, number>,
   weight: number,
 ): void {
+  let delta: number;
   if (event.source === "sensor") {
-    bucket.steps += Math.round((sensorStepDeltas.get(event.id) ?? 0) * weight);
-    return;
+    delta = Math.round((sensorStepDeltas.get(event.id) ?? 0) * weight);
+  } else {
+    delta = Math.round((event.valueNumeric ?? 0) * weight);
   }
 
-  bucket.steps += Math.round((event.valueNumeric ?? 0) * weight);
+  bucket.steps += delta;
+
+  if (delta > 0) {
+    bucket.movementScore += Math.max(1, Math.round(delta / 50));
+  }
 }
 
 function applyActivityEvent(

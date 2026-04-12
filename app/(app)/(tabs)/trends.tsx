@@ -1,5 +1,11 @@
 import React from "react";
-import { InteractionManager, StyleSheet, Text, View } from "react-native";
+import {
+  InteractionManager,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { DateRangePickerRow } from "@/components/zentra/DateRangePickerRow";
 import { EmptyState } from "@/components/zentra/EmptyState";
@@ -43,6 +49,9 @@ export default function TrendsScreen() {
   });
   const [liveSeries, setLiveSeries] = React.useState<TrendSeries[]>([]);
   const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
+  const [hiddenSeriesKeys, setHiddenSeriesKeys] = React.useState<Set<string>>(
+    new Set(),
+  );
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
   const repository = useRepositoryStore(
@@ -57,9 +66,7 @@ export default function TrendsScreen() {
     [collectors],
   );
   const rangeSelection =
-    range === "custom"
-      ? customRange
-      : getDateRangeForTrendRange(range);
+    range === "custom" ? customRange : getDateRangeForTrendRange(range);
   const validCustom =
     range === "custom" &&
     isValidISODate(customRange.start) &&
@@ -183,11 +190,49 @@ export default function TrendsScreen() {
               >
                 {group.label}
               </Text>
-              {group.series.map((entry) => (
-                <View key={entry.key} style={styles.sectionBlock}>
-                  <TrendChartCard series={entry} />
+              {group.series.length > 1 ? (
+                <View style={styles.seriesToggleRow}>
+                  {group.series.map((entry) => (
+                    <Pressable
+                      key={entry.key}
+                      onPress={() =>
+                        setHiddenSeriesKeys((current) => {
+                          const next = new Set(current);
+                          if (next.has(entry.key)) {
+                            next.delete(entry.key);
+                          } else {
+                            next.add(entry.key);
+                          }
+                          return next;
+                        })
+                      }
+                      style={[
+                        styles.seriesToggle,
+                        {
+                          borderColor: palette.border,
+                          opacity: hiddenSeriesKeys.has(entry.key) ? 0.4 : 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.seriesToggleLabel,
+                          { color: palette.textSecondary },
+                        ]}
+                      >
+                        {entry.label}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
-              ))}
+              ) : null}
+              {group.series
+                .filter((entry) => !hiddenSeriesKeys.has(entry.key))
+                .map((entry) => (
+                  <View key={entry.key} style={styles.sectionBlock}>
+                    <TrendChartCard series={entry} />
+                  </View>
+                ))}
             </View>
           ))}
         </>
@@ -227,5 +272,23 @@ const styles = StyleSheet.create({
   },
   sectionBlock: {
     marginBottom: Spacing.lg,
+  },
+  seriesToggleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  seriesToggle: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+  },
+  seriesToggleLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
   },
 });

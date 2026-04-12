@@ -18,6 +18,7 @@ import type {
   ZentraEventRecord,
 } from "@/types/zentra";
 import { getCurrentActivityLabel } from "@/utils/activity-summary";
+import { getCollectorTelemetryState } from "@/utils/collector-telemetry";
 import { deriveDiagnosticPermissionStatus } from "@/utils/collector-permission-status";
 import { formatBytes, formatMinutes, formatNumber } from "@/utils/format";
 import { computeCumulativeSteps } from "@/utils/repository-aggregates";
@@ -160,18 +161,18 @@ export function buildLiveDashboardMetrics(
       "Active Minutes",
       todayAggregate
         ? formatNumber(todayAggregate.activeMinutes)
-        : currentActivity
+        : collectors.activity.enabled || collectors.steps.enabled
           ? "0"
           : "Waiting",
-      collectors.activity.enabled
+      collectors.activity.enabled || collectors.steps.enabled
         ? currentActivity
           ? todayAggregate && todayAggregate.activeMinutes > 0
             ? `Current activity: ${currentActivity}. Total time spent in non-idle activities today.`
             : `Current activity: ${currentActivity}. Zentra is waiting for more activity data to build the day.`
           : todayAggregate && todayAggregate.activeMinutes > 0
             ? "Total time spent walking, running, or in other non-idle activities today."
-            : "Active minutes appear after your phone detects movement transitions."
-        : "Turn on Activity in Settings to start.",
+            : "Active minutes appear once movement is detected from sensors or steps."
+        : "Turn on Activity or Steps in Settings to start.",
       "physical",
       Boolean(currentActivity) ||
         Boolean(todayAggregate && todayAggregate.activeMinutes > 0),
@@ -221,11 +222,19 @@ export function buildLiveSleepEstimate(
       available: false,
       detail:
         "Sleep patterns show up once Zentra has screen-state history or health records to work with.",
+      sourceLabel: "Waiting",
+      isImported: false,
     };
   }
 
   const startDate = new Date(sleepEvent.timestampStart);
   const endDate = new Date(sleepEvent.timestampEnd);
+  const isImported = sleepEvent.source === "health_connect";
+  const sourceLabel = isImported
+    ? typeof sleepEvent.metadata.health_platform === "string"
+      ? sleepEvent.metadata.health_platform
+      : getHealthPlatformName()
+    : "Local inference";
 
   return {
     startLabel: new Intl.DateTimeFormat("en-US", {
@@ -239,14 +248,11 @@ export function buildLiveSleepEstimate(
     durationLabel: formatMinutes(Math.round(sleepEvent.valueNumeric)),
     confidence: sleepEvent.confidence,
     available: true,
-    detail:
-      sleepEvent.source === "health_connect"
-        ? `Pulled in from your ${
-            typeof sleepEvent.metadata.health_platform === "string"
-              ? sleepEvent.metadata.health_platform
-              : getHealthPlatformName()
-          } history.`
-        : "Inferred from screen, unlock, and charging patterns on your device.",
+    detail: isImported
+      ? `Pulled in from your ${sourceLabel} history.`
+      : "Inferred from screen, unlock, and charging patterns on your device.",
+    sourceLabel,
+    isImported,
   };
 }
 
@@ -279,6 +285,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.steps, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.steps),
       permissionStatus: collectors.steps.enabled
         ? signals.stepPermissionStatus
         : "not_requested",
@@ -298,6 +305,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.deviceState, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.deviceState),
       permissionStatus: "granted",
       health: collectors.deviceState.enabled
         ? diagnosticsByCollector.deviceState?.status === "success" ||
@@ -317,6 +325,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.location, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.location),
       permissionStatus: collectors.location.enabled
         ? signals.locationPermissionStatus
         : "not_requested",
@@ -338,6 +347,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.ambientLight, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.ambientLight),
       permissionStatus: Platform.OS === "ios" ? "unsupported" : "granted",
       health: !collectors.ambientLight.enabled
         ? "idle"
@@ -361,6 +371,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.activity, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.activity),
       permissionStatus: collectors.activity.enabled
         ? (permissionStatusByCollector.activity ??
           deriveDiagnosticPermissionStatus(
@@ -388,6 +399,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.appUsage, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.appUsage),
       permissionStatus:
         Platform.OS === "ios"
           ? "unsupported"
@@ -416,6 +428,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.healthConnect, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.healthConnect),
       permissionStatus: collectors.healthConnect.enabled
         ? (permissionStatusByCollector.healthConnect ??
           deriveDiagnosticPermissionStatus(
@@ -443,6 +456,7 @@ export function buildCollectorStatuses(
 
   items.push(
     buildCollectorClone(collectors.sleep, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.sleep),
       permissionStatus: collectors.sleep.enabled
         ? deriveDiagnosticPermissionStatus(
             diagnosticsByCollector.sleep,
@@ -462,6 +476,23 @@ export function buildCollectorStatuses(
             ? `${diagnosticsByCollector.sleep.message ?? "Waiting"} · ${formatTimestampLabel(diagnosticsByCollector.sleep.recordedAt)}`
             : "Sleep estimate available"
           : "Waiting for sleep data…"
+        : "Off",
+    }),
+  );
+
+  items.push(
+    buildCollectorClone(collectors.motionContext, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.motionContext),
+      permissionStatus: "granted",
+      health: !collectors.motionContext.enabled
+        ? "idle"
+        : diagnosticsByCollector.motionContext?.status === "success"
+          ? "healthy"
+          : "degraded",
+      lastRunLabel: collectors.motionContext.enabled
+        ? diagnosticsByCollector.motionContext
+          ? `${diagnosticsByCollector.motionContext.message ?? "Recorded"} · ${formatTimestampLabel(diagnosticsByCollector.motionContext.recordedAt)}`
+          : "Waiting for motion data…"
         : "Off",
     }),
   );

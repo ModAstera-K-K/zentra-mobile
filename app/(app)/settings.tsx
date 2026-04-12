@@ -42,6 +42,7 @@ import {
   getCollectorQuickAction,
   type CollectorQuickActionType,
 } from "@/utils/collector-actions";
+import { buildDiagnosticTelemetrySummary } from "@/utils/collector-telemetry";
 import { buildCollectorStatuses } from "@/utils/device-signals";
 import {
   getLocationRetentionDescription,
@@ -210,6 +211,14 @@ export default function SettingsScreen() {
       latestSleepEvent,
       signals,
     ],
+  );
+  const collectorLabelByKey = React.useMemo(
+    () =>
+      collectorStatuses.reduce<Record<string, string>>((result, collector) => {
+        result[collector.key] = collector.label;
+        return result;
+      }, {}),
+    [collectorStatuses],
   );
 
   function confirmDelete(): void {
@@ -556,11 +565,10 @@ export default function SettingsScreen() {
               <Text
                 style={[styles.diagnosticKey, { color: palette.foreground }]}
               >
-                {entry.collectorKey}
+                {collectorLabelByKey[entry.collectorKey] ?? entry.collectorKey}
               </Text>
               <Text style={[styles.detail, { color: palette.textSecondary }]}>
-                {entry.status} · {entry.message ?? "No message"} · failures{" "}
-                {entry.consecutiveFailures}
+                {buildDiagnosticTelemetrySummary(entry)}
               </Text>
             </View>
           ))}

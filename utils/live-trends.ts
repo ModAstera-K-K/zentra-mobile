@@ -75,6 +75,8 @@ function createTrendSeries(
   values: number[],
   dates: string[],
   group?: TrendSeriesGroupKey,
+  coverageLabel?: string,
+  sourceLabel?: string,
 ): TrendSeries | null {
   if (!values.some((value) => value > 0)) {
     return null;
@@ -91,8 +93,33 @@ function createTrendSeries(
     })),
     change: calculateChange(values[0] ?? 0, values.at(-1) ?? 0),
     variability: calculateVariability(values),
+    coverageLabel,
     group,
+    sourceLabel,
   };
+}
+
+function buildAverageCompletenessLabel(
+  aggregates: DailyAggregateRecord[],
+): string {
+  if (!aggregates.length) {
+    return "No coverage yet";
+  }
+
+  const averageCompleteness =
+    aggregates.reduce((total, record) => total + record.dataCompleteness, 0) /
+    aggregates.length;
+
+  return `${Math.round(averageCompleteness * 100)}% avg completeness`;
+}
+
+function buildDaysWithDataLabel(
+  values: number[],
+  dates: string[],
+  qualifier: string,
+): string {
+  const coveredDays = values.filter((value) => value > 0).length;
+  return `${coveredDays}/${dates.length} days ${qualifier}`;
 }
 
 export function buildLiveTrendSeries(
@@ -127,20 +154,53 @@ export function buildLiveTrendSeries(
     },
     {},
   );
+  const heartRateByDate = dates.reduce<Record<string, number[]>>(
+    (result, date) => {
+      result[date] = [];
+      return result;
+    },
+    {},
+  );
+  const exerciseByDate = dates.reduce<Record<string, number>>(
+    (result, date) => {
+      result[date] = 0;
+      return result;
+    },
+    {},
+  );
 
   events.forEach((event) => {
+    const dateKey = event.timestampStart.slice(0, 10);
+
     if (
-      event.dataType !== "ambient_light" ||
-      typeof event.valueNumeric !== "number"
+      event.dataType === "ambient_light" &&
+      typeof event.valueNumeric === "number"
     ) {
-      return;
+      if (!ambientByDate[dateKey]) {
+        ambientByDate[dateKey] = [];
+      }
+      ambientByDate[dateKey].push(event.valueNumeric);
     }
 
-    const dateKey = event.timestampStart.slice(0, 10);
-    if (!ambientByDate[dateKey]) {
-      ambientByDate[dateKey] = [];
+    if (
+      event.dataType === "heart_rate" &&
+      typeof event.valueNumeric === "number"
+    ) {
+      if (!heartRateByDate[dateKey]) {
+        heartRateByDate[dateKey] = [];
+      }
+      heartRateByDate[dateKey].push(event.valueNumeric);
     }
-    ambientByDate[dateKey].push(event.valueNumeric);
+
+    if (event.dataType === "exercise_session") {
+      if (exerciseByDate[dateKey] === undefined) {
+        exerciseByDate[dateKey] = 0;
+      }
+      exerciseByDate[dateKey] +=
+        typeof event.valueNumeric === "number"
+          ? Math.round(event.valueNumeric)
+          : 1;
+    }
   });
 
   const ambientValues = dates.map((date) => {
@@ -154,6 +214,20 @@ export function buildLiveTrendSeries(
     );
   });
 
+  const heartRateValues = dates.map((date) => {
+    const values = heartRateByDate[date] ?? [];
+    if (!values.length) {
+      return 0;
+    }
+
+    return Math.round(
+      values.reduce((total, value) => total + value, 0) / values.length,
+    );
+  });
+
+  const exerciseValues = dates.map((date) => exerciseByDate[date] ?? 0);
+  const completenessLabel = buildAverageCompletenessLabel(normalizedAggregates);
+
   const series = [
     createTrendSeries(
       "steps",
@@ -163,6 +237,8 @@ export function buildLiveTrendSeries(
       normalizedAggregates.map((record) => record.stepsTotal),
       dates,
       "body",
+      completenessLabel,
+      "Phone sensor",
     ),
     createTrendSeries(
       "activeMinutes",
@@ -172,6 +248,25 @@ export function buildLiveTrendSeries(
       normalizedAggregates.map((record) => record.activeMinutes),
       dates,
       "body",
+      completenessLabel,
+      "Activity recognition",
+    ),
+    createTrendSeries(
+      "distanceMeters",
+      "Distance",
+      "km",
+      "human",
+      normalizedAggregates.map((record) =>
+        Math.round(((record.distanceMeters ?? 0) / 1000) * 10) / 10,
+      ),
+      dates,
+      "body",
+      buildDaysWithDataLabel(
+        normalizedAggregates.map((record) => record.distanceMeters ?? 0),
+        dates,
+        "with distance",
+      ),
+      "Foreground location",
     ),
     createTrendSeries(
       "screenTime",
@@ -183,6 +278,8 @@ export function buildLiveTrendSeries(
       ),
       dates,
       "device",
+      completenessLabel,
+      "Usage Access",
     ),
     createTrendSeries(
       "unlockCount",
@@ -192,6 +289,8 @@ export function buildLiveTrendSeries(
       normalizedAggregates.map((record) => record.unlockCount),
       dates,
       "device",
+      completenessLabel,
+      "Usage Access",
     ),
     createTrendSeries(
       "sleepEstimate",
@@ -203,6 +302,8 @@ export function buildLiveTrendSeries(
       ),
       dates,
       "body",
+      completenessLabel,
+      "Local inference",
     ),
     createTrendSeries(
       "mobilityRadius",
@@ -214,6 +315,14 @@ export function buildLiveTrendSeries(
       ),
       dates,
       "body",
+      buildDaysWithDataLabel(
+        normalizedAggregates.map((record) =>
+          Math.round(record.mobilityRadiusMeters ?? 0),
+        ),
+        dates,
+        "with location",
+      ),
+      "Foreground location",
     ),
     createTrendSeries(
       "ambientLight",
@@ -223,6 +332,8 @@ export function buildLiveTrendSeries(
       ambientValues,
       dates,
       "environment",
+      buildDaysWithDataLabel(ambientValues, dates, "with sensor data"),
+      "Light sensor",
     ),
     createTrendSeries(
       "dataCompleteness",
@@ -234,6 +345,37 @@ export function buildLiveTrendSeries(
       ),
       dates,
       "quality",
+      `${Math.round(
+        (normalizedAggregates.reduce(
+          (total, record) => total + record.dataCompleteness,
+          0,
+        ) /
+          Math.max(normalizedAggregates.length, 1)) *
+          100,
+      )}% range average`,
+      "Repository aggregate",
+    ),
+    createTrendSeries(
+      "heartRate",
+      "Heart Rate",
+      "bpm",
+      "human",
+      heartRateValues,
+      dates,
+      "health",
+      buildDaysWithDataLabel(heartRateValues, dates, "with imports"),
+      "Health Connect",
+    ),
+    createTrendSeries(
+      "exerciseSessions",
+      "Exercise",
+      "min",
+      "physical",
+      exerciseValues,
+      dates,
+      "health",
+      buildDaysWithDataLabel(exerciseValues, dates, "with sessions"),
+      "Health Connect",
     ),
   ];
 
@@ -243,12 +385,14 @@ export function buildLiveTrendSeries(
 const GROUP_ORDER: TrendSeriesGroupKey[] = [
   "body",
   "device",
+  "health",
   "environment",
   "quality",
 ];
 const GROUP_LABELS: Record<TrendSeriesGroupKey, string> = {
   body: "Body & Movement",
   device: "Device Behavior",
+  health: "Health & Recovery",
   environment: "Environment",
   quality: "Data Quality",
 };
