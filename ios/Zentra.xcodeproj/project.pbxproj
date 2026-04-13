@@ -8,23 +8,23 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		3682576E61737CAC49DDF943 /* libPods-Zentra.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A261EEBB3F2FC302EC99FD1C /* libPods-Zentra.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		996F219F3E0A28093C16F374 /* libPods-Zentra.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 97304B894FD248287B60CD9D /* libPods-Zentra.a */; };
-		A65F3FB99944435898183058 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9C134A3DE620833D4CDCAE97 /* PrivacyInfo.xcprivacy */; };
-		B81F26DE47DD705F5168122F /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452082EF2741A3A587B938DC /* ExpoModulesProvider.swift */; };
+		84957B001F3936D5B1CC4E14 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 75583DA503920896960E91BF /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		CA4B3A1B1664A8F80409562A /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BFC2C201000118ACE780376 /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0BFC2C201000118ACE780376 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Zentra/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		0DCE9865694CF4BD71ABE15E /* Pods-Zentra.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Zentra.release.xcconfig"; path = "Target Support Files/Pods-Zentra/Pods-Zentra.release.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Zentra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zentra.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Zentra/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Zentra/Info.plist; sourceTree = "<group>"; };
-		1750E022CEE48CC92EF25642 /* Pods-Zentra.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Zentra.release.xcconfig"; path = "Target Support Files/Pods-Zentra/Pods-Zentra.release.xcconfig"; sourceTree = "<group>"; };
-		3225D93391DFD5B037D9549E /* Pods-Zentra.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Zentra.debug.xcconfig"; path = "Target Support Files/Pods-Zentra/Pods-Zentra.debug.xcconfig"; sourceTree = "<group>"; };
-		452082EF2741A3A587B938DC /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Zentra/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		97304B894FD248287B60CD9D /* libPods-Zentra.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Zentra.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		9C134A3DE620833D4CDCAE97 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Zentra/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		4CE5BDEEA2F1CE04E1B6F5C9 /* Pods-Zentra.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Zentra.debug.xcconfig"; path = "Target Support Files/Pods-Zentra/Pods-Zentra.debug.xcconfig"; sourceTree = "<group>"; };
+		75583DA503920896960E91BF /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Zentra/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A261EEBB3F2FC302EC99FD1C /* libPods-Zentra.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Zentra.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Zentra/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -37,21 +37,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				996F219F3E0A28093C16F374 /* libPods-Zentra.a in Frameworks */,
+				3682576E61737CAC49DDF943 /* libPods-Zentra.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		070E814267284309AF14C3F2 /* Zentra */ = {
-			isa = PBXGroup;
-			children = (
-				452082EF2741A3A587B938DC /* ExpoModulesProvider.swift */,
-			);
-			name = Zentra;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* Zentra */ = {
 			isa = PBXGroup;
 			children = (
@@ -61,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				9C134A3DE620833D4CDCAE97 /* PrivacyInfo.xcprivacy */,
+				75583DA503920896960E91BF /* PrivacyInfo.xcprivacy */,
 			);
 			name = Zentra;
 			sourceTree = "<group>";
@@ -70,9 +62,27 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				97304B894FD248287B60CD9D /* libPods-Zentra.a */,
+				A261EEBB3F2FC302EC99FD1C /* libPods-Zentra.a */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		2E3057600CFFD2BC64AD3A5A /* Zentra */ = {
+			isa = PBXGroup;
+			children = (
+				0BFC2C201000118ACE780376 /* ExpoModulesProvider.swift */,
+			);
+			name = Zentra;
+			sourceTree = "<group>";
+		};
+		440D0E9DD5FE3C0056B90B64 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				4CE5BDEEA2F1CE04E1B6F5C9 /* Pods-Zentra.debug.xcconfig */,
+				0DCE9865694CF4BD71ABE15E /* Pods-Zentra.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -89,8 +99,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				88794629C9A796EFAC844417 /* Pods */,
-				90CE705BBF1673A0299535E1 /* ExpoModulesProviders */,
+				440D0E9DD5FE3C0056B90B64 /* Pods */,
+				ABFA4D9B32D15301F9B1613F /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -105,20 +115,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		88794629C9A796EFAC844417 /* Pods */ = {
+		ABFA4D9B32D15301F9B1613F /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				3225D93391DFD5B037D9549E /* Pods-Zentra.debug.xcconfig */,
-				1750E022CEE48CC92EF25642 /* Pods-Zentra.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		90CE705BBF1673A0299535E1 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				070E814267284309AF14C3F2 /* Zentra */,
+				2E3057600CFFD2BC64AD3A5A /* Zentra */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Zentra" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				1BDA2C04D19F959F7A4642EE /* [Expo] Configure project */,
+				A23ADCE6CE2E58A23C94C602 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				2A34718F1304D7DAD58AC712 /* [CP] Embed Pods Frameworks */,
+				2D893AD5ED3116E51AEBDAA0 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				A65F3FB99944435898183058 /* PrivacyInfo.xcprivacy in Resources */,
+				84957B001F3936D5B1CC4E14 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,31 +242,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		1BDA2C04D19F959F7A4642EE /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/Zentra/Zentra.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Zentra/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Zentra/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Zentra/expo-configure-project.sh\"\n";
-		};
-		2A34718F1304D7DAD58AC712 /* [CP] Embed Pods Frameworks */ = {
+		2D893AD5ED3116E51AEBDAA0 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -320,6 +296,30 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Zentra/Pods-Zentra-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		A23ADCE6CE2E58A23C94C602 /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/Zentra/Zentra.entitlements",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Zentra/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Zentra/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Zentra/expo-configure-project.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -328,7 +328,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				B81F26DE47DD705F5168122F /* ExpoModulesProvider.swift in Sources */,
+				CA4B3A1B1664A8F80409562A /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -337,7 +337,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 3225D93391DFD5B037D9549E /* Pods-Zentra.debug.xcconfig */;
+			baseConfigurationReference = 4CE5BDEEA2F1CE04E1B6F5C9 /* Pods-Zentra.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -373,7 +373,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1750E022CEE48CC92EF25642 /* Pods-Zentra.release.xcconfig */;
+			baseConfigurationReference = 0DCE9865694CF4BD71ABE15E /* Pods-Zentra.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

@@ -12,6 +12,7 @@ export default {
     newArchEnabled: true,
     android: {
       package: IS_DEV ? "com.modastera.zentra.debug" : "com.modastera.zentra",
+      minSdkVersion: 26,
       adaptiveIcon: {
         foregroundImage: "./assets/branding/zentra-app-icon.png",
         backgroundColor: "#F2EDE4",
