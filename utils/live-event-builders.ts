@@ -207,6 +207,55 @@ function createAppUsageEvent(
   };
 }
 
+function getNextLocalMidnightTimestamp(timestamp: string): string {
+  const nextBoundary = new Date(timestamp);
+  nextBoundary.setHours(24, 0, 0, 0);
+  return nextBoundary.toISOString();
+}
+
+function createAppUsageEvents(
+  packageName: string,
+  className: string | null | undefined,
+  startTimestamp: string,
+  endTimestamp: string,
+): ZentraEventRecord[] {
+  const startMs = new Date(startTimestamp).getTime();
+  const endMs = new Date(endTimestamp).getTime();
+
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    endMs <= startMs
+  ) {
+    return [];
+  }
+
+  const events: ZentraEventRecord[] = [];
+  let segmentStart = startTimestamp;
+
+  while (new Date(segmentStart).getTime() < endMs) {
+    const nextMidnight = getNextLocalMidnightTimestamp(segmentStart);
+    const segmentEnd = Math.min(new Date(nextMidnight).getTime(), endMs);
+
+    events.push(
+      createAppUsageEvent(
+        packageName,
+        className,
+        segmentStart,
+        new Date(segmentEnd).toISOString(),
+      ),
+    );
+
+    if (segmentEnd >= endMs) {
+      break;
+    }
+
+    segmentStart = new Date(segmentEnd).toISOString();
+  }
+
+  return events;
+}
+
 function createScreenStateEvent(
   state: "interactive" | "non_interactive",
   timestamp: string,
@@ -251,7 +300,7 @@ export function createUsageDerivedEvents(usageEvents: NativeUsageEvent[]): {
           const resumedEvent = openSessions.get(key);
           if (resumedEvent && event.packageName) {
             appUsageEvents.push(
-              createAppUsageEvent(
+              ...createAppUsageEvents(
                 event.packageName,
                 event.className,
                 resumedEvent.timestamp,

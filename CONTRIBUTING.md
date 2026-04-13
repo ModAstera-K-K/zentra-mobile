@@ -46,6 +46,16 @@ npm run android
 npm run ios
 ```
 
+Run device-targeted builds:
+
+```bash
+npm run build-android-dev-device
+npm run build-android-release-device
+npm run build-ios-release-device
+```
+
+`build-android-release-device` expects the signing environment variables documented in `docs/android-release.md`. `build-ios-release-device` expects Xcode signing for a connected physical device to already be configured on your machine.
+
 Checks:
 
 ```bash
@@ -53,6 +63,20 @@ npm run lint
 npm run typecheck
 npm run check:no-network
 ```
+
+## Running tests
+
+There is currently no automated `npm test` script in this repository. Before opening a pull request, run:
+
+```bash
+npm run lint
+npm run typecheck
+npm run check:no-network
+```
+
+## Good first issues
+
+Issues labelled [`good first issue`](https://github.com/modastera/zentra/labels/good%20first%20issue) are a good starting point if you're new to the codebase.
 
 ## Pull requests
 
@@ -70,7 +94,7 @@ Every commit must be signed off:
 git commit -s -m "fix: describe change"
 ```
 
-By signing off, you certify the Developer Certificate of Origin 1.1 and contribute the code under GPL-3.0. You also grant ModAstera the right to redistribute contributions under additional terms where necessary for platform distribution, including the App Store.
+By signing off, you certify the [Developer Certificate of Origin 1.1](https://developercertificate.org) and contribute the code under GPL-3.0. You also grant ModAstera the right to redistribute contributions under additional terms where necessary for platform distribution, including the App Store.
 
 ## Security issues
 
