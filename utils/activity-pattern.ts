@@ -26,7 +26,7 @@ function formatHourDetail(start: Date, end: Date): string {
 }
 
 function getBucketIntensity(bucket: UnifiedTimelineBucket): number {
-  return Math.max(bucket.movementScore, bucket.restScore, bucket.screenScore);
+  return bucket.intensityScore;
 }
 
 function getNormalizedIntensity(
@@ -44,26 +44,24 @@ function getNormalizedIntensity(
 function getDominantKind(
   bucket: UnifiedTimelineBucket,
 ): ActivityPatternCell["dominantKind"] {
-  if (
-    bucket.movementScore >= bucket.screenScore &&
-    bucket.movementScore >= bucket.restScore
-  ) {
-    return bucket.movementScore > 0 ? "movement" : "rest";
-  }
-
-  if (bucket.screenScore >= bucket.restScore) {
-    return bucket.screenScore > 0 ? "screen" : "rest";
-  }
-
-  return "rest";
+  return bucket.intensityScore >= bucket.restCompositeScore &&
+    bucket.intensityScore > 0
+    ? "movement"
+    : "rest";
 }
 
 export function buildDayActivityPattern(
   events: ZentraEventRecord[],
   anchorDate: string,
   resolution: UnifiedTimelineResolution = "hour",
+  normalizationEvents: ZentraEventRecord[] = events,
 ): ActivityPatternCell[] {
-  const timeline = buildUnifiedDailyTimeline(events, anchorDate, resolution);
+  const timeline = buildUnifiedDailyTimeline(
+    events,
+    anchorDate,
+    resolution,
+    normalizationEvents,
+  );
   const maxValue = Math.max(0, ...timeline.map(getBucketIntensity));
 
   return timeline.map((bucket) => {
@@ -82,10 +80,12 @@ export function buildDayActivityPattern(
         maxValue,
         bucket.hasAnyData,
       ),
+      intensityScore: bucket.intensityScore,
       label: formatHourLabel(start),
-      movementScore: bucket.movementScore,
-      restScore: bucket.restScore,
-      screenScore: bucket.screenScore,
+      movementScore: bucket.intensityScore,
+      restCompositeScore: bucket.restCompositeScore,
+      restScore: bucket.restCompositeScore,
+      screenScore: 0,
       startTimestamp: bucket.timestampStart,
     };
   });
@@ -100,18 +100,35 @@ export function buildActivityPatternViews(
   monthCells: ActivityPatternCell[];
   yearCells: ActivityPatternCell[];
 } {
+  const normalizationEvents = events;
+
   return {
     dayCells:
       !activeGranularity || activeGranularity === "day"
-        ? buildDayActivityPattern(events, anchorDate, "hour")
+        ? buildDayActivityPattern(
+            events,
+            anchorDate,
+            "hour",
+            normalizationEvents,
+          )
         : [],
     monthCells:
       !activeGranularity || activeGranularity === "month"
-        ? buildMonthlyActivityPattern(events, anchorDate, "hour")
+        ? buildMonthlyActivityPattern(
+            events,
+            anchorDate,
+            "hour",
+            normalizationEvents,
+          )
         : [],
     yearCells:
       !activeGranularity || activeGranularity === "year"
-        ? buildYearlyActivityPattern(events, anchorDate, "hour")
+        ? buildYearlyActivityPattern(
+            events,
+            anchorDate,
+            "hour",
+            normalizationEvents,
+          )
         : [],
   };
 }

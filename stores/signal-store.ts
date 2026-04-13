@@ -1,7 +1,16 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
-import type { LocationSample, PermissionStatus, SignalStoreState } from '@/types/zentra';
-import { loadPersistedSignalState, savePersistedSignalState } from '@/utils/app-storage';
+import type {
+  LocationSample,
+  PermissionStatus,
+  SignalStoreState,
+} from "@/types/zentra";
+import {
+  loadPersistedSignalState,
+  savePersistedSignalState,
+} from "@/utils/app-storage";
+
+const SIGNAL_PERSIST_DEBOUNCE_MS = 1200;
 
 interface SignalState extends SignalStoreState {
   bootstrap: () => Promise<void>;
@@ -27,7 +36,7 @@ const EMPTY_SIGNAL_STATE: SignalStoreState = {
   isHydrated: false,
   stepCount: null,
   stepSupported: null,
-  stepPermissionStatus: 'not_requested',
+  stepPermissionStatus: "not_requested",
   stepLastUpdatedAt: null,
   batterySupported: null,
   batteryLevel: null,
@@ -35,7 +44,7 @@ const EMPTY_SIGNAL_STATE: SignalStoreState = {
   lowPowerMode: null,
   batteryLastUpdatedAt: null,
   locationSupported: null,
-  locationPermissionStatus: 'not_requested',
+  locationPermissionStatus: "not_requested",
   locationServicesEnabled: null,
   locationSamples: [],
   locationLastUpdatedAt: null,
@@ -44,8 +53,11 @@ const EMPTY_SIGNAL_STATE: SignalStoreState = {
   ambientLightLastUpdatedAt: null,
 };
 
-async function persistSignalState(state: SignalState): Promise<void> {
-  await savePersistedSignalState({
+let pendingPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistSequence: Promise<void> = Promise.resolve();
+
+function toPersistedSignalState(state: SignalStoreState): SignalStoreState {
+  return {
     isHydrated: state.isHydrated,
     stepCount: state.stepCount,
     stepSupported: state.stepSupported,
@@ -64,10 +76,43 @@ async function persistSignalState(state: SignalState): Promise<void> {
     ambientLightSupported: state.ambientLightSupported,
     ambientLightLux: state.ambientLightLux,
     ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
-  });
+  };
 }
 
-function withTimestamp<T extends object>(payload: T, key: string): T & Record<string, string> {
+async function persistSignalState(state: SignalState): Promise<void> {
+  const snapshot = toPersistedSignalState(state);
+  persistSequence = persistSequence.then(() =>
+    savePersistedSignalState(snapshot),
+  );
+  await persistSequence;
+}
+
+function schedulePersistSignalState(getState: () => SignalState): void {
+  if (pendingPersistTimer) {
+    clearTimeout(pendingPersistTimer);
+  }
+
+  pendingPersistTimer = setTimeout(() => {
+    pendingPersistTimer = null;
+    void persistSignalState(getState());
+  }, SIGNAL_PERSIST_DEBOUNCE_MS);
+}
+
+async function flushPersistedSignalState(
+  getState: () => SignalState,
+): Promise<void> {
+  if (pendingPersistTimer) {
+    clearTimeout(pendingPersistTimer);
+    pendingPersistTimer = null;
+  }
+
+  await persistSignalState(getState());
+}
+
+function withTimestamp<T extends object>(
+  payload: T,
+  key: string,
+): T & Record<string, string> {
   return {
     ...payload,
     [key]: new Date().toISOString(),
@@ -92,63 +137,77 @@ export const useSignalStore = create<SignalState>((set, get) => ({
 
   setStepSupport: async (stepSupported) => {
     set({ stepSupported });
-    await persistSignalState(get());
+    schedulePersistSignalState(get);
   },
 
   setStepPermissionStatus: async (stepPermissionStatus) => {
     set({ stepPermissionStatus });
-    await persistSignalState(get());
+    schedulePersistSignalState(get);
   },
 
   setStepCount: async (stepCount) => {
-    set(withTimestamp({ stepCount }, 'stepLastUpdatedAt'));
-    await persistSignalState(get());
+    set(withTimestamp({ stepCount }, "stepLastUpdatedAt"));
+    schedulePersistSignalState(get);
   },
 
   setBatterySupport: async (batterySupported) => {
     set({ batterySupported });
-    await persistSignalState(get());
+    schedulePersistSignalState(get);
   },
 
-  setBatterySnapshot: async ({ batteryLevel, batteryStateLabel, lowPowerMode }) => {
-    set((state) => withTimestamp({
-      batteryLevel: batteryLevel ?? state.batteryLevel,
-      batteryStateLabel: batteryStateLabel ?? state.batteryStateLabel,
-      lowPowerMode: lowPowerMode ?? state.lowPowerMode,
-    }, 'batteryLastUpdatedAt'));
-    await persistSignalState(get());
+  setBatterySnapshot: async ({
+    batteryLevel,
+    batteryStateLabel,
+    lowPowerMode,
+  }) => {
+    set((state) =>
+      withTimestamp(
+        {
+          batteryLevel: batteryLevel ?? state.batteryLevel,
+          batteryStateLabel: batteryStateLabel ?? state.batteryStateLabel,
+          lowPowerMode: lowPowerMode ?? state.lowPowerMode,
+        },
+        "batteryLastUpdatedAt",
+      ),
+    );
+    schedulePersistSignalState(get);
   },
 
   setLocationSupport: async (locationSupported) => {
     set({ locationSupported });
-    await persistSignalState(get());
+    schedulePersistSignalState(get);
   },
 
   setLocationPermissionStatus: async (locationPermissionStatus) => {
     set({ locationPermissionStatus });
-    await persistSignalState(get());
+    schedulePersistSignalState(get);
   },
 
   setLocationServicesEnabled: async (locationServicesEnabled) => {
     set({ locationServicesEnabled });
-    await persistSignalState(get());
+    schedulePersistSignalState(get);
   },
 
   addLocationSample: async (sample) => {
-    set((state) => withTimestamp({
-      locationSamples: [...state.locationSamples, sample].slice(-24),
-    }, 'locationLastUpdatedAt'));
-    await persistSignalState(get());
+    set((state) =>
+      withTimestamp(
+        {
+          locationSamples: [...state.locationSamples, sample].slice(-24),
+        },
+        "locationLastUpdatedAt",
+      ),
+    );
+    schedulePersistSignalState(get);
   },
 
   setAmbientLightSupport: async (ambientLightSupported) => {
     set({ ambientLightSupported });
-    await persistSignalState(get());
+    schedulePersistSignalState(get);
   },
 
   setAmbientLightLux: async (ambientLightLux) => {
-    set(withTimestamp({ ambientLightLux }, 'ambientLightLastUpdatedAt'));
-    await persistSignalState(get());
+    set(withTimestamp({ ambientLightLux }, "ambientLightLastUpdatedAt"));
+    schedulePersistSignalState(get);
   },
 
   clearCapturedData: async () => {
@@ -156,6 +215,6 @@ export const useSignalStore = create<SignalState>((set, get) => ({
       ...EMPTY_SIGNAL_STATE,
       isHydrated: true,
     });
-    await persistSignalState(get());
+    await flushPersistedSignalState(get);
   },
 }));

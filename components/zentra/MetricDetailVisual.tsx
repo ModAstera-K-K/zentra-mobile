@@ -10,14 +10,16 @@ import {
   type AppPalette,
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import type { MetricTone } from "@/types/zentra";
+import type { MetricTone, TrendDetailVisual } from "@/types/zentra";
 import { buildChartCoordinates, buildPolylinePoints } from "@/utils/charts";
 import type { TodayDetailVisual } from "@/utils/today-visualization";
 
 interface MetricDetailVisualProps {
   tone: MetricTone;
-  visual: TodayDetailVisual | null;
+  visual: TodayDetailVisual | TrendDetailVisual | null;
 }
+
+type DetailVisual = TodayDetailVisual | TrendDetailVisual;
 
 const CHART_HEIGHT = 148;
 const CHART_INSET_X = 12;
@@ -86,7 +88,7 @@ function LineVisual({
   visual,
 }: {
   accent: string;
-  visual: Extract<TodayDetailVisual, { type: "line" }>;
+  visual: Extract<DetailVisual, { type: "line" }>;
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -271,7 +273,7 @@ function DistributionVisual({
   visual,
 }: {
   accent: string;
-  visual: Extract<TodayDetailVisual, { type: "distribution" }>;
+  visual: Extract<DetailVisual, { type: "distribution" }>;
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -331,7 +333,7 @@ function DistributionVisual({
 function HeatmapVisual({
   visual,
 }: {
-  visual: Extract<TodayDetailVisual, { type: "heatmap" }>;
+  visual: Extract<DetailVisual, { type: "heatmap" }>;
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];

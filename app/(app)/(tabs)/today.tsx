@@ -2,6 +2,7 @@ import React from "react";
 import {
   ActivityIndicator,
   AppState,
+  FlatList,
   InteractionManager,
   StyleSheet,
   Text,
@@ -24,6 +25,7 @@ import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import type {
+  ActivityNormalizationWindow,
   ActivityPatternCell,
   DashboardMetric,
   PermissionStatus,
@@ -34,7 +36,8 @@ import type {
   TodayRecentSignalRow,
   TodaySummaryMetric,
 } from "@/utils/today-visualization";
-import { formatScreenDate, getDateRangeForTrendRange } from "@/utils/dates";
+import { getActivityNormalizationRange } from "@/utils/activity-intensity";
+import { formatScreenDate, shiftISODate } from "@/utils/dates";
 import {
   buildCollectorStatuses,
   buildLiveDashboardMetrics,
@@ -42,7 +45,11 @@ import {
 } from "@/utils/device-signals";
 import { buildActivityPatternDetailPayload } from "@/utils/activity-pattern-detail";
 import { buildDemoTimelineEvents } from "@/utils/demo-timeline-events";
-import { getEventsForRange } from "@/utils/event-repository";
+import {
+  getEventsForRange,
+  getRepositoryDateBounds,
+} from "@/utils/event-repository";
+import { useIsFocused } from "expo-router";
 import {
   buildMonthlyActivityPattern,
   buildUnifiedDailyTimeline,
@@ -62,15 +69,41 @@ import {
 } from "@/utils/mock-data";
 import { useShallow } from "zustand/react/shallow";
 
+function getActivityNormalizationLabel(
+  window: ActivityNormalizationWindow,
+): string {
+  switch (window) {
+    case "month":
+      return "rolling month";
+    case "all":
+      return "all-time history";
+    default:
+      return "rolling year";
+  }
+}
+
+type TodaySectionKey =
+  | "pattern"
+  | "metrics"
+  | "activityStrip"
+  | "secondaryMetrics"
+  | "sleep"
+  | "recentSignals"
+  | "completeness";
+
 export default function TodayScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const isFocused = useIsFocused();
   const collectors = useAppStore((state) => state.collectors);
+  const activityNormalizationWindow = useAppStore(
+    (state) => state.activityNormalizationWindow,
+  );
   const dataMode = useAppStore((state) => state.dataMode);
   const repository = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
-      lastUpdatedAt: state.lastUpdatedAt,
+      todayDataUpdatedAt: state.todayDataUpdatedAt,
       todaySnapshot: state.todaySnapshot,
       todayAggregate: state.todayAggregate,
       todayEvents: state.todayEvents,
@@ -112,10 +145,29 @@ export default function TodayScreen() {
     React.useState<PermissionStatus>("not_requested");
   const [selectedDetail, setSelectedDetail] =
     React.useState<TodayDetailPayload | null>(null);
-  const [overviewEvents, setOverviewEvents] = React.useState<
+  const [historicalPatternEvents, setHistoricalPatternEvents] = React.useState<
     ZentraEventRecord[]
   >([]);
   const [hasLoadedPattern, setHasLoadedPattern] = React.useState(false);
+
+  // Defer heavy section rendering until the tab-switch animation finishes so
+  // the shell + intro card paint immediately and the transition stays smooth.
+  const [isLayoutReady, setIsLayoutReady] = React.useState(false);
+  React.useEffect(() => {
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      setIsLayoutReady(true);
+    });
+    return () => interaction.cancel();
+  }, []);
+  const todayAnchor = React.useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+    // Re-derive when the repository refreshes so the anchor advances at midnight
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repository.todayDataUpdatedAt]);
 
   React.useEffect(() => {
     if (isDemoMode || !collectors.activity.enabled) {
@@ -129,19 +181,34 @@ export default function TodayScreen() {
   }, [collectors.activity.enabled, isDemoMode]);
 
   React.useEffect(() => {
-    if (isDemoMode || !repository.isHydrated) {
+    if (isDemoMode || !repository.isHydrated || !isFocused) {
       return;
     }
 
     let isCancelled = false;
-    const range = getDateRangeForTrendRange("7d");
 
-    async function loadOverviewEvents(): Promise<void> {
+    async function loadPatternHistoryEvents(): Promise<void> {
       try {
-        const events = await getEventsForRange(range.start, range.end);
+        const bounds = await getRepositoryDateBounds();
+        const range = getActivityNormalizationRange(
+          todayAnchor,
+          activityNormalizationWindow,
+          bounds?.start,
+        );
+        const historicalEnd = shiftISODate(todayAnchor, -1);
+
+        if (range.start > historicalEnd) {
+          if (!isCancelled) {
+            setHistoricalPatternEvents([]);
+            setHasLoadedPattern(true);
+          }
+          return;
+        }
+
+        const events = await getEventsForRange(range.start, historicalEnd);
 
         if (!isCancelled) {
-          setOverviewEvents(events);
+          setHistoricalPatternEvents(events);
           setHasLoadedPattern(true);
         }
       } catch {
@@ -150,20 +217,26 @@ export default function TodayScreen() {
     }
 
     const interaction = InteractionManager.runAfterInteractions(() => {
-      void loadOverviewEvents();
+      void loadPatternHistoryEvents();
     });
 
     return () => {
       isCancelled = true;
       interaction.cancel();
     };
-  }, [isDemoMode, repository.isHydrated, repository.lastUpdatedAt]);
+  }, [
+    isDemoMode,
+    isFocused,
+    repository.isHydrated,
+    todayAnchor,
+    activityNormalizationWindow,
+  ]);
 
   // Heartbeat: refresh dashboard on a 30-second interval and when the app
   // returns to the foreground so cards stay current even if a collector
   // callback was missed.
   React.useEffect(() => {
-    if (isDemoMode || !repository.isHydrated) {
+    if (isDemoMode || !repository.isHydrated || !isFocused) {
       return;
     }
 
@@ -221,7 +294,7 @@ export default function TodayScreen() {
       stopInterval();
       subscription.remove();
     };
-  }, [isDemoMode, repository.isHydrated, refreshTodayData]);
+  }, [isDemoMode, isFocused, repository.isHydrated, refreshTodayData]);
 
   const metrics = React.useMemo(
     () =>
@@ -312,32 +385,56 @@ export default function TodayScreen() {
       repository.todayEvents,
     ],
   );
-  const todayAnchor = React.useMemo(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-    // Re-derive when the repository refreshes so the anchor advances at midnight
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repository.lastUpdatedAt]);
   const demoPatternEvents = React.useMemo(
     () => buildDemoTimelineEvents(demoCollectors),
     [demoCollectors],
   );
-  const patternSourceEvents = isDemoMode ? demoPatternEvents : overviewEvents;
+  const patternSourceEvents = React.useMemo(
+    () =>
+      isDemoMode
+        ? demoPatternEvents
+        : [...historicalPatternEvents, ...(repository.todayEvents ?? [])],
+    [
+      isDemoMode,
+      demoPatternEvents,
+      historicalPatternEvents,
+      repository.todayEvents,
+    ],
+  );
   const dailyRhythmBuckets = React.useMemo(
     () =>
       buildUnifiedDailyTimeline(
         isDemoMode ? demoPatternEvents : (repository.todayEvents ?? []),
         todayAnchor,
         "hour",
+        patternSourceEvents,
       ),
-    [isDemoMode, demoPatternEvents, repository.todayEvents, todayAnchor],
+    [
+      isDemoMode,
+      demoPatternEvents,
+      repository.todayEvents,
+      todayAnchor,
+      patternSourceEvents,
+    ],
   );
   const monthCells = React.useMemo(
-    () => buildMonthlyActivityPattern(patternSourceEvents, todayAnchor, "hour"),
+    () =>
+      buildMonthlyActivityPattern(
+        patternSourceEvents,
+        todayAnchor,
+        "hour",
+        patternSourceEvents,
+      ),
     [patternSourceEvents, todayAnchor],
+  );
+
+  const handleSelectPatternCell = React.useCallback(
+    (cell: ActivityPatternCell) => {
+      setSelectedDetail(
+        buildActivityPatternDetailPayload(cell, patternSourceEvents),
+      );
+    },
+    [patternSourceEvents],
   );
 
   const handleSelectMetric = React.useCallback(
@@ -394,8 +491,137 @@ export default function TodayScreen() {
       ? "Your signals are coming in. Everything looks good."
       : "Nothing's running yet — head to Settings and turn on a collector to start.";
 
+  const sections = React.useMemo(() => {
+    const items: TodaySectionKey[] = [
+      "pattern",
+      "metrics",
+      "activityStrip",
+      "sleep",
+      "recentSignals",
+      "completeness",
+    ];
+
+    if (secondaryMetrics.length) {
+      items.splice(3, 0, "secondaryMetrics");
+    }
+
+    return items;
+  }, [secondaryMetrics.length]);
+
+  const renderSection = React.useCallback(
+    ({ item }: { item: TodaySectionKey }) => {
+      switch (item) {
+        case "pattern":
+          return (
+            <View style={styles.sectionBlock}>
+              {!hasLoadedPattern && !isDemoMode ? (
+                <Card>
+                  <View style={styles.patternLoading}>
+                    <ActivityIndicator
+                      color={palette.mutedForeground}
+                      size="small"
+                    />
+                    <Text
+                      style={[
+                        styles.patternLoadingText,
+                        { color: palette.textSecondary },
+                      ]}
+                    >
+                      Building your pattern…
+                    </Text>
+                  </View>
+                </Card>
+              ) : (
+                <ActivityPatternCard
+                  cells={monthCells}
+                  normalizationLabel={getActivityNormalizationLabel(
+                    activityNormalizationWindow,
+                  )}
+                  onSelectCell={handleSelectPatternCell}
+                />
+              )}
+            </View>
+          );
+        case "metrics":
+          return (
+            <View style={styles.metricGrid}>
+              {metrics.map((metric) => (
+                <View key={metric.key} style={styles.metricCell}>
+                  <MetricCard metric={metric} onPress={handleSelectMetric} />
+                </View>
+              ))}
+            </View>
+          );
+        case "activityStrip":
+          return (
+            <View style={styles.sectionBlock}>
+              <ActivityStrip buckets={dailyRhythmBuckets} />
+            </View>
+          );
+        case "secondaryMetrics":
+          return (
+            <View style={styles.sectionBlock}>
+              <SignalSummaryCard
+                metrics={secondaryMetrics}
+                onSelectMetric={handleSelectSecondaryMetric}
+              />
+            </View>
+          );
+        case "sleep":
+          return (
+            <View style={styles.sectionBlock}>
+              <SleepEstimateCard sleepEstimate={sleepEstimate} />
+            </View>
+          );
+        case "recentSignals":
+          return (
+            <View style={styles.sectionBlock}>
+              <RecentSignalFeed
+                onSelectRow={handleSelectRecentSignal}
+                rows={recentSignals}
+              />
+            </View>
+          );
+        case "completeness":
+          return (
+            <View style={styles.sectionBlock}>
+              <CompletenessCard
+                collectors={visibleCollectors}
+                summary={signalHealthSummary ?? undefined}
+              />
+            </View>
+          );
+        default:
+          return null;
+      }
+    },
+    [
+      activityNormalizationWindow,
+      dailyRhythmBuckets,
+      handleSelectMetric,
+      handleSelectPatternCell,
+      handleSelectRecentSignal,
+      handleSelectSecondaryMetric,
+      hasLoadedPattern,
+      isDemoMode,
+      metrics,
+      monthCells,
+      palette.mutedForeground,
+      palette.textSecondary,
+      recentSignals,
+      secondaryMetrics,
+      signalHealthSummary,
+      sleepEstimate,
+      visibleCollectors,
+    ],
+  );
+
   return (
-    <ScreenShell subtitle={formatScreenDate(new Date())} title="Today">
+    <ScreenShell
+      scrollable={false}
+      subtitle={formatScreenDate(new Date())}
+      title="Today"
+    >
       <View style={styles.introWrap}>
         <Card elevated style={styles.introCard}>
           <View style={styles.introHeader}>
@@ -431,74 +657,19 @@ export default function TodayScreen() {
           iconName="radio-outline"
           title="Nothing here yet"
         />
+      ) : !isLayoutReady ? (
+        <View style={styles.deferredLoading}>
+          <ActivityIndicator color={palette.mutedForeground} size="small" />
+        </View>
       ) : (
-        <>
-          <View style={styles.sectionBlock}>
-            {!hasLoadedPattern && !isDemoMode ? (
-              <Card>
-                <View style={styles.patternLoading}>
-                  <ActivityIndicator
-                    color={palette.mutedForeground}
-                    size="small"
-                  />
-                  <Text
-                    style={[
-                      styles.patternLoadingText,
-                      { color: palette.textSecondary },
-                    ]}
-                  >
-                    Building your pattern…
-                  </Text>
-                </View>
-              </Card>
-            ) : (
-              <ActivityPatternCard
-                cells={monthCells}
-                onSelectCell={(cell: ActivityPatternCell) =>
-                  setSelectedDetail(
-                    buildActivityPatternDetailPayload(
-                      cell,
-                      patternSourceEvents,
-                    ),
-                  )
-                }
-              />
-            )}
-          </View>
-          <View style={styles.metricGrid}>
-            {metrics.map((metric) => (
-              <View key={metric.key} style={styles.metricCell}>
-                <MetricCard metric={metric} onPress={handleSelectMetric} />
-              </View>
-            ))}
-          </View>
-          <View style={styles.sectionBlock}>
-            <ActivityStrip buckets={dailyRhythmBuckets} />
-          </View>
-          {secondaryMetrics.length ? (
-            <View style={styles.sectionBlock}>
-              <SignalSummaryCard
-                metrics={secondaryMetrics}
-                onSelectMetric={handleSelectSecondaryMetric}
-              />
-            </View>
-          ) : null}
-          <View style={styles.sectionBlock}>
-            <SleepEstimateCard sleepEstimate={sleepEstimate} />
-          </View>
-          <View style={styles.sectionBlock}>
-            <RecentSignalFeed
-              onSelectRow={handleSelectRecentSignal}
-              rows={recentSignals}
-            />
-          </View>
-          <View style={styles.sectionBlock}>
-            <CompletenessCard
-              collectors={visibleCollectors}
-              summary={signalHealthSummary ?? undefined}
-            />
-          </View>
-        </>
+        <FlatList
+          contentContainerStyle={styles.listContent}
+          data={sections}
+          keyExtractor={(item) => item}
+          renderItem={renderSection}
+          showsVerticalScrollIndicator={false}
+          style={styles.list}
+        />
       )}
       <DetailSheet
         onClose={() => setSelectedDetail(null)}
@@ -509,6 +680,11 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
+  deferredLoading: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
   introBody: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
@@ -546,6 +722,12 @@ const styles = StyleSheet.create({
   },
   introWrap: {
     marginBottom: Spacing.lg,
+  },
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: Spacing.sm,
   },
   metricGrid: {
     flexDirection: "row",

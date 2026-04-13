@@ -100,7 +100,9 @@ function buildPoints(
   }));
 }
 
-export function ActivityStrip({ buckets }: ActivityStripProps) {
+export const ActivityStrip = React.memo(function ActivityStrip({
+  buckets,
+}: ActivityStripProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const [mode, setMode] = React.useState<ActivityMode>("movement");
@@ -277,7 +279,7 @@ export function ActivityStrip({ buckets }: ActivityStripProps) {
       </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   eyebrow: {

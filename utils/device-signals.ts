@@ -324,6 +324,23 @@ export function buildCollectorStatuses(
   );
 
   items.push(
+    buildCollectorClone(collectors.connectivity, {
+      ...getCollectorTelemetryState(diagnosticsByCollector.connectivity),
+      permissionStatus: "granted",
+      health: collectors.connectivity.enabled
+        ? diagnosticsByCollector.connectivity?.status === "success"
+          ? "healthy"
+          : "idle"
+        : "idle",
+      lastRunLabel: collectors.connectivity.enabled
+        ? diagnosticsByCollector.connectivity
+          ? `${diagnosticsByCollector.connectivity.message ?? "Recorded"} · ${formatTimestampLabel(diagnosticsByCollector.connectivity.recordedAt)}`
+          : "Waiting for network changes…"
+        : "Off",
+    }),
+  );
+
+  items.push(
     buildCollectorClone(collectors.location, {
       ...getCollectorTelemetryState(diagnosticsByCollector.location),
       permissionStatus: collectors.location.enabled

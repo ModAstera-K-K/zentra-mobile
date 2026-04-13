@@ -32,6 +32,9 @@ const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
 interface RepositoryStoreState {
   isHydrated: boolean;
   lastUpdatedAt: string | null;
+  todayDataUpdatedAt: string | null;
+  diagnosticsUpdatedAt: string | null;
+  sleepUpdatedAt: string | null;
   todaySnapshot: TodayLiveSnapshot;
   todayAggregate: DailyAggregateRecord | null;
   todayEvents: ZentraEventRecord[];
@@ -49,6 +52,9 @@ interface RepositoryStoreState {
 export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   isHydrated: false,
   lastUpdatedAt: null,
+  todayDataUpdatedAt: null,
+  diagnosticsUpdatedAt: null,
+  sleepUpdatedAt: null,
   todaySnapshot: EMPTY_TODAY_SNAPSHOT,
   todayAggregate: null,
   todayEvents: [],
@@ -79,9 +85,14 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       getEventsForRange(todayDate, todayDate),
     ]);
 
+    const updatedAt = new Date().toISOString();
+
     set({
       isHydrated: true,
-      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedAt: updatedAt,
+      todayDataUpdatedAt: updatedAt,
+      diagnosticsUpdatedAt: updatedAt,
+      sleepUpdatedAt: updatedAt,
       todaySnapshot,
       todayAggregate,
       todayEvents,
@@ -110,9 +121,14 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       getEventsForRange(todayDate, todayDate),
     ]);
 
+    const updatedAt = new Date().toISOString();
+
     set({
       isHydrated: true,
-      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedAt: updatedAt,
+      todayDataUpdatedAt: updatedAt,
+      diagnosticsUpdatedAt: updatedAt,
+      sleepUpdatedAt: updatedAt,
       todaySnapshot,
       todayAggregate,
       todayEvents,
@@ -130,8 +146,11 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       getEventsForRange(todayDate, todayDate),
     ]);
 
+    const updatedAt = new Date().toISOString();
+
     set({
-      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedAt: updatedAt,
+      todayDataUpdatedAt: updatedAt,
       todaySnapshot,
       todayAggregate,
       todayEvents,
@@ -144,8 +163,11 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       getCollectorDiagnosticsHistory(),
     ]);
 
+    const updatedAt = new Date().toISOString();
+
     set({
-      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedAt: updatedAt,
+      diagnosticsUpdatedAt: updatedAt,
       diagnostics,
       diagnosticsHistory,
     });
@@ -158,8 +180,11 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       getDailyAggregateForDate(todayDate),
     ]);
 
+    const updatedAt = new Date().toISOString();
+
     set({
-      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedAt: updatedAt,
+      sleepUpdatedAt: updatedAt,
       latestSleepEvent,
       todayAggregate,
     });
@@ -167,9 +192,14 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
   clearRepositoryData: async () => {
     await clearRepositoryDataFromDb();
+    const updatedAt = new Date().toISOString();
+
     set({
       isHydrated: true,
-      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedAt: updatedAt,
+      todayDataUpdatedAt: updatedAt,
+      diagnosticsUpdatedAt: updatedAt,
+      sleepUpdatedAt: updatedAt,
       todaySnapshot: EMPTY_TODAY_SNAPSHOT,
       todayAggregate: null,
       todayEvents: [],

@@ -123,7 +123,9 @@ android {
     }
     buildTypes {
         debug {
+            applicationIdSuffix ".debug"
             signingConfig signingConfigs.debug
+            versionNameSuffix "-debug"
         }
         release {
             signingConfig releaseSigningConfigured ? signingConfigs.release : signingConfigs.debug

@@ -14,7 +14,7 @@ import {
   getLocalDatesForEvents,
   getRangeBounds,
 } from "@/utils/repository-aggregates";
-import { parseISODate, shiftISODate } from "@/utils/dates";
+import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
 
 interface EventRow {
   id: string;
@@ -59,15 +59,19 @@ interface DiagnosticRow {
   time_since_last_good_run_ms?: number | null;
 }
 
-let writeQueue: Promise<void> = Promise.resolve();
+let databaseOperationQueue: Promise<void> = Promise.resolve();
 
-function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
-  const nextTask = writeQueue.then(task, task);
-  writeQueue = nextTask.then(
+function enqueueDatabaseOperation<T>(task: () => Promise<T>): Promise<T> {
+  const nextTask = databaseOperationQueue.then(task, task);
+  databaseOperationQueue = nextTask.then(
     () => undefined,
     () => undefined,
   );
   return nextTask;
+}
+
+function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+  return enqueueDatabaseOperation(task);
 }
 
 function createDiagnosticId(collectorKey: CollectorKey): string {
@@ -160,18 +164,20 @@ async function getAggregateEventsForDateWithDatabase(
   date: string,
 ): Promise<ZentraEventRecord[]> {
   const { startIso, endExclusiveIso } = getRangeBounds(date, date);
-  const [dayEvents, overlappingAppUsageRows] = await Promise.all([
-    getEventsBetweenWithDatabase(database, startIso, endExclusiveIso),
-    database.getAllAsync<EventRow>(
-      `SELECT * FROM events
-        WHERE data_type = 'app_usage'
-        AND timestamp_start < ?
-        AND timestamp_end > ?
-        ORDER BY timestamp_start ASC`,
-      endExclusiveIso,
-      startIso,
-    ),
-  ]);
+  const dayEvents = await getEventsBetweenWithDatabase(
+    database,
+    startIso,
+    endExclusiveIso,
+  );
+  const overlappingAppUsageRows = await database.getAllAsync<EventRow>(
+    `SELECT * FROM events
+      WHERE data_type = 'app_usage'
+      AND timestamp_start < ?
+      AND timestamp_end > ?
+      ORDER BY timestamp_start ASC`,
+    endExclusiveIso,
+    startIso,
+  );
 
   const eventsById = new Map(dayEvents.map((event) => [event.id, event]));
 
@@ -286,15 +292,46 @@ async function getLatestCollectorDiagnostic(
 }
 
 export async function initializeEventRepository(): Promise<void> {
-  await getLocalDatabase();
+  await enqueueDatabaseOperation(async () => {
+    await getLocalDatabase();
+  });
 }
 
 export async function getStoredEventCount(): Promise<number> {
-  const database = await getLocalDatabase();
-  const row = await database.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM events",
-  );
-  return row?.count ?? 0;
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const row = await database.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM events",
+    );
+    return row?.count ?? 0;
+  });
+}
+
+export async function getRepositoryDateBounds(): Promise<{
+  end: string;
+  start: string;
+} | null> {
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const row = await database.getFirstAsync<{
+      max_timestamp_start: string | null;
+      min_timestamp_start: string | null;
+    }>(
+      `SELECT
+        MIN(timestamp_start) AS min_timestamp_start,
+        MAX(timestamp_start) AS max_timestamp_start
+        FROM events`,
+    );
+
+    if (!row?.min_timestamp_start || !row.max_timestamp_start) {
+      return null;
+    }
+
+    return {
+      end: toISODate(new Date(row.max_timestamp_start)),
+      start: toISODate(new Date(row.min_timestamp_start)),
+    };
+  });
 }
 
 export async function logCollectorSuccess(
@@ -591,118 +628,135 @@ export async function seedRepositoryEvents(
 }
 
 export async function getTodayLiveSnapshot(): Promise<TodayLiveSnapshot> {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const events = await getEventsBetween(
-    today.toISOString(),
-    tomorrow.toISOString(),
-  );
+  return enqueueDatabaseOperation(async () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const events = await getEventsBetween(
+      today.toISOString(),
+      tomorrow.toISOString(),
+    );
 
-  return buildTodaySnapshot(events);
+    return buildTodaySnapshot(events);
+  });
 }
 
 export async function getLatestCollectorDiagnostics(): Promise<
   CollectorDiagnosticRecord[]
 > {
-  const database = await getLocalDatabase();
-  const rows = await database.getAllAsync<DiagnosticRow>(
-    `SELECT diagnostics.*
-      FROM collector_diagnostics diagnostics
-      INNER JOIN (
-        SELECT collector_key, MAX(recorded_at) AS max_recorded_at
-        FROM collector_diagnostics
-        GROUP BY collector_key
-      ) latest
-      ON diagnostics.collector_key = latest.collector_key
-      AND diagnostics.recorded_at = latest.max_recorded_at
-      ORDER BY diagnostics.collector_key ASC`,
-  );
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<DiagnosticRow>(
+      `SELECT diagnostics.*
+        FROM collector_diagnostics diagnostics
+        INNER JOIN (
+          SELECT collector_key, MAX(recorded_at) AS max_recorded_at
+          FROM collector_diagnostics
+          GROUP BY collector_key
+        ) latest
+        ON diagnostics.collector_key = latest.collector_key
+        AND diagnostics.recorded_at = latest.max_recorded_at
+        ORDER BY diagnostics.collector_key ASC`,
+    );
 
-  return rows.map(mapDiagnosticRow);
+    return rows.map(mapDiagnosticRow);
+  });
 }
 
 export async function getCollectorDiagnosticsHistory(
   limit = 50,
 ): Promise<CollectorDiagnosticRecord[]> {
-  const database = await getLocalDatabase();
-  const rows = await database.getAllAsync<DiagnosticRow>(
-    `SELECT *
-      FROM collector_diagnostics
-      ORDER BY recorded_at DESC
-      LIMIT ?`,
-    limit,
-  );
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<DiagnosticRow>(
+      `SELECT *
+        FROM collector_diagnostics
+        ORDER BY recorded_at DESC
+        LIMIT ?`,
+      limit,
+    );
 
-  return rows.map(mapDiagnosticRow);
+    return rows.map(mapDiagnosticRow);
+  });
 }
 
 export async function getCollectorDiagnosticHistoryForKey(
   collectorKey: CollectorKey,
   limit = 20,
 ): Promise<CollectorDiagnosticRecord[]> {
-  const database = await getLocalDatabase();
-  const rows = await database.getAllAsync<DiagnosticRow>(
-    `SELECT *
-      FROM collector_diagnostics
-      WHERE collector_key = ?
-      ORDER BY recorded_at DESC
-      LIMIT ?`,
-    collectorKey,
-    limit,
-  );
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<DiagnosticRow>(
+      `SELECT *
+        FROM collector_diagnostics
+        WHERE collector_key = ?
+        ORDER BY recorded_at DESC
+        LIMIT ?`,
+      collectorKey,
+      limit,
+    );
 
-  return rows.map(mapDiagnosticRow);
+    return rows.map(mapDiagnosticRow);
+  });
 }
 
 export async function getDailyAggregatesForRange(
   start: string,
   end: string,
 ): Promise<DailyAggregateRecord[]> {
-  const database = await getLocalDatabase();
-  const rows = await database.getAllAsync<AggregateRow>(
-    `SELECT * FROM daily_aggregates
-      WHERE date >= ? AND date <= ?
-      ORDER BY date ASC`,
-    start,
-    end,
-  );
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const rows = await database.getAllAsync<AggregateRow>(
+      `SELECT * FROM daily_aggregates
+        WHERE date >= ? AND date <= ?
+        ORDER BY date ASC`,
+      start,
+      end,
+    );
 
-  return rows.map(mapAggregateRow);
+    return rows.map(mapAggregateRow);
+  });
 }
 
 export async function getDailyAggregateForDate(
   date: string,
 ): Promise<DailyAggregateRecord | null> {
-  const database = await getLocalDatabase();
-  const events = await getAggregateEventsForDateWithDatabase(database, date);
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const events = await getAggregateEventsForDateWithDatabase(database, date);
 
-  if (events.length) {
-    return buildDailyAggregateRecord(date, events);
-  }
+    if (events.length) {
+      return buildDailyAggregateRecord(date, events);
+    }
 
-  const row = await database.getFirstAsync<AggregateRow>(
-    `SELECT * FROM daily_aggregates
-      WHERE date = ?
-      LIMIT 1`,
-    date,
-  );
+    const row = await database.getFirstAsync<AggregateRow>(
+      `SELECT * FROM daily_aggregates
+        WHERE date = ?
+        LIMIT 1`,
+      date,
+    );
 
-  return row ? mapAggregateRow(row) : null;
+    return row ? mapAggregateRow(row) : null;
+  });
 }
 
 export async function getGroupedEventsForRange(
   start: string,
   end: string,
 ): Promise<Record<string, ZentraEventRecord[]>> {
-  const { startIso, endExclusiveIso } = getRangeBounds(start, end);
-  const events = await getEventsBetween(startIso, endExclusiveIso);
+  return enqueueDatabaseOperation(async () => {
+    const { startIso, endExclusiveIso } = getRangeBounds(start, end);
+    const events = await getEventsBetween(startIso, endExclusiveIso);
 
-  return events.reduce<Record<string, ZentraEventRecord[]>>((result, event) => {
-    result[event.dataType] = [...(result[event.dataType] ?? []), event];
-    return result;
-  }, {});
+    return events.reduce<Record<string, ZentraEventRecord[]>>(
+      (result, event) => {
+        result[event.dataType] = [...(result[event.dataType] ?? []), event];
+        return result;
+      },
+      {},
+    );
+  });
 }
 
 export async function clearRepositoryData(): Promise<void> {
@@ -734,23 +788,27 @@ export async function getEventsForRange(
   start: string,
   end: string,
 ): Promise<ZentraEventRecord[]> {
-  const { startIso, endExclusiveIso } = getRangeBounds(start, end);
-  return getEventsBetween(startIso, endExclusiveIso);
+  return enqueueDatabaseOperation(async () => {
+    const { startIso, endExclusiveIso } = getRangeBounds(start, end);
+    return getEventsBetween(startIso, endExclusiveIso);
+  });
 }
 
 export async function getLatestEventByType(
   dataType: ZentraEventRecord["dataType"],
 ): Promise<ZentraEventRecord | null> {
-  const database = await getLocalDatabase();
-  const row = await database.getFirstAsync<EventRow>(
-    `SELECT * FROM events
-      WHERE data_type = ?
-      ORDER BY timestamp_start DESC
-      LIMIT 1`,
-    dataType,
-  );
+  return enqueueDatabaseOperation(async () => {
+    const database = await getLocalDatabase();
+    const row = await database.getFirstAsync<EventRow>(
+      `SELECT * FROM events
+        WHERE data_type = ?
+        ORDER BY timestamp_start DESC
+        LIMIT 1`,
+      dataType,
+    );
 
-  return row ? mapEventRow(row) : null;
+    return row ? mapEventRow(row) : null;
+  });
 }
 
 export async function pruneLocationEventsBefore(

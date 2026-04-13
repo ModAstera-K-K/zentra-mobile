@@ -30,6 +30,7 @@ import {
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
+import { useIsFocused } from "expo-router";
 import type {
   ExportFormat,
   ExportMode,
@@ -80,13 +81,14 @@ const SECTION_ICONS = {
 export default function ExportScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const isFocused = useIsFocused();
   const noteExport = useAppStore((state) => state.noteExport);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
   const repositoryState = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
-      lastUpdatedAt: state.lastUpdatedAt,
+      todayDataUpdatedAt: state.todayDataUpdatedAt,
     })),
   );
   const [preset, setPreset] = React.useState<ExportPreset>("week");
@@ -125,7 +127,12 @@ export default function ExportScreen() {
     range.start <= range.end;
 
   React.useEffect(() => {
-    if (dataMode === "demo" || !repositoryState.isHydrated || !hasValidRange) {
+    if (
+      dataMode === "demo" ||
+      !repositoryState.isHydrated ||
+      !hasValidRange ||
+      !isFocused
+    ) {
       return;
     }
 
@@ -158,10 +165,11 @@ export default function ExportScreen() {
   }, [
     dataMode,
     hasValidRange,
+    isFocused,
     range.end,
     range.start,
     repositoryState.isHydrated,
-    repositoryState.lastUpdatedAt,
+    repositoryState.todayDataUpdatedAt,
   ]);
 
   React.useEffect(() => {

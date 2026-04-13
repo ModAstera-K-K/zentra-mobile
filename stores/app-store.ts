@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type {
+  ActivityNormalizationWindow,
   CollectorKey,
   CollectorState,
   DataMode,
@@ -17,6 +18,7 @@ type CollectorStateMap = Record<CollectorKey, CollectorState>;
 
 function createInitialAppState() {
   return {
+    activityNormalizationWindow: "year" as ActivityNormalizationWindow,
     hasCompletedOnboarding: false,
     lastExportedAt: null as string | null,
     dataMode: "live" as DataMode,
@@ -27,6 +29,7 @@ function createInitialAppState() {
 }
 
 interface AppState {
+  activityNormalizationWindow: ActivityNormalizationWindow;
   isHydrated: boolean;
   hasCompletedOnboarding: boolean;
   lastExportedAt: string | null;
@@ -41,6 +44,9 @@ interface AppState {
   setLocationRetentionPreference: (
     preference: LocationRetentionPreference,
   ) => Promise<void>;
+  setActivityNormalizationWindow: (
+    preference: ActivityNormalizationWindow,
+  ) => Promise<void>;
   clearAllData: () => Promise<void>;
   noteExport: (timestamp: string) => Promise<void>;
   retryCollectors: () => Promise<void>;
@@ -48,6 +54,7 @@ interface AppState {
 
 async function persistState(state: AppState): Promise<void> {
   await savePersistedAppState({
+    activityNormalizationWindow: state.activityNormalizationWindow,
     hasCompletedOnboarding: state.hasCompletedOnboarding,
     lastExportedAt: state.lastExportedAt,
     dataMode: state.dataMode,
@@ -88,6 +95,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       isHydrated: true,
+      activityNormalizationWindow:
+        persisted?.activityNormalizationWindow ?? "year",
       hasCompletedOnboarding: persisted?.hasCompletedOnboarding ?? false,
       lastExportedAt: persisted?.lastExportedAt ?? null,
       dataMode: persisted?.dataMode ?? "live",
@@ -119,6 +128,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setLocationRetentionPreference: async (locationRetentionPreference) => {
     set({ locationRetentionPreference });
+    await persistState(get());
+  },
+
+  setActivityNormalizationWindow: async (activityNormalizationWindow) => {
+    set({ activityNormalizationWindow });
     await persistState(get());
   },
 

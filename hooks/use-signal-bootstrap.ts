@@ -12,6 +12,7 @@ import {
   startActivityCollectorModule,
   startAmbientLightCollectorModule,
   startAppUsageCollectorModule,
+  startConnectivityCollectorModule,
   startDeviceStateCollectorModule,
   startHealthConnectCollectorModule,
   startLocationCollectorModule,
@@ -209,6 +210,28 @@ export function useSignalBootstrap(): void {
     isHydrated,
     setBatterySnapshot,
     setBatterySupport,
+    refreshTodayData,
+    collectorRetryToken,
+  ]);
+
+  useEffect(() => {
+    if (!isHydrated || !collectors.connectivity.enabled) {
+      return;
+    }
+
+    let handle: CollectorHandle | null = null;
+    void (async () => {
+      handle = await startConnectivityCollectorModule({
+        refreshRepository: refreshTodayData,
+      });
+    })();
+
+    return () => {
+      handle?.stop();
+    };
+  }, [
+    collectors.connectivity.enabled,
+    isHydrated,
     refreshTodayData,
     collectorRetryToken,
   ]);

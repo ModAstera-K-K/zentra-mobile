@@ -22,6 +22,7 @@ import { hexToRgba } from "@/utils/colors";
 
 interface ActivityPatternCardProps {
   cells: ActivityPatternCell[];
+  normalizationLabel?: string;
   onSelectCell: (cell: ActivityPatternCell) => void;
 }
 
@@ -46,17 +47,20 @@ function getIntensityColor(
     : hexToRgba(base, Math.min(alpha + 0.04, 0.88));
 }
 
-function PatternCell({
+const PatternCell = React.memo(function PatternCell({
   cell,
   size,
-  onPress,
+  onSelectCell,
 }: {
   cell: ActivityPatternCell;
   size: number;
-  onPress: () => void;
+  onSelectCell: (cell: ActivityPatternCell) => void;
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const handlePress = React.useCallback(() => {
+    onSelectCell(cell);
+  }, [cell, onSelectCell]);
 
   if (cell.placeholder) {
     return (
@@ -84,7 +88,7 @@ function PatternCell({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       style={[
         styles.patternCell,
         {
@@ -112,10 +116,11 @@ function PatternCell({
       </Text>
     </Pressable>
   );
-}
+});
 
-export function ActivityPatternCard({
+export const ActivityPatternCard = React.memo(function ActivityPatternCard({
   cells,
+  normalizationLabel,
   onSelectCell,
 }: ActivityPatternCardProps) {
   const colorScheme = useColorScheme();
@@ -172,18 +177,20 @@ export function ActivityPatternCard({
           <PatternCell
             key={cell.id}
             cell={cell}
-            onPress={() => onSelectCell(cell)}
+            onSelectCell={onSelectCell}
             size={cellSize}
           />
         ))}
       </View>
 
       <Text style={[styles.footer, { color: palette.textSecondary }]}>
-        Tap any square to inspect the selected day.
+        {normalizationLabel
+          ? `Intensity is normalized against your ${normalizationLabel}. Tap any square to inspect the selected day.`
+          : "Tap any square to inspect the selected day."}
       </Text>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   description: {
