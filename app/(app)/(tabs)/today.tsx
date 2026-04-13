@@ -149,16 +149,6 @@ export default function TodayScreen() {
     ZentraEventRecord[]
   >([]);
   const [hasLoadedPattern, setHasLoadedPattern] = React.useState(false);
-
-  // Defer heavy section rendering until the tab-switch animation finishes so
-  // the shell + intro card paint immediately and the transition stays smooth.
-  const [isLayoutReady, setIsLayoutReady] = React.useState(false);
-  React.useEffect(() => {
-    const interaction = InteractionManager.runAfterInteractions(() => {
-      setIsLayoutReady(true);
-    });
-    return () => interaction.cancel();
-  }, []);
   const todayAnchor = React.useMemo(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -657,10 +647,6 @@ export default function TodayScreen() {
           iconName="radio-outline"
           title="Nothing here yet"
         />
-      ) : !isLayoutReady ? (
-        <View style={styles.deferredLoading}>
-          <ActivityIndicator color={palette.mutedForeground} size="small" />
-        </View>
       ) : (
         <FlatList
           contentContainerStyle={styles.listContent}
@@ -680,11 +666,6 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  deferredLoading: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-  },
   introBody: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
