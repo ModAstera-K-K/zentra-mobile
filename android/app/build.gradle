@@ -90,7 +90,8 @@ android {
     namespace 'com.modastera.zentra'
     defaultConfig {
         applicationId 'com.modastera.zentra'
-        minSdkVersion rootProject.ext.minSdkVersion
+        // Health Connect's AndroidX client requires API 26+.
+        minSdkVersion 26
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"

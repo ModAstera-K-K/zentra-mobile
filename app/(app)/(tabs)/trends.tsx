@@ -18,7 +18,7 @@ import { Chip } from "@/components/ui/Chip";
 import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
-import { useIsFocused } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import type {
   TrendRange,
   TrendSeries,

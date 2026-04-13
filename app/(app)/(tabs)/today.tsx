@@ -49,7 +49,7 @@ import {
   getEventsForRange,
   getRepositoryDateBounds,
 } from "@/utils/event-repository";
-import { useIsFocused } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import {
   buildMonthlyActivityPattern,
   buildUnifiedDailyTimeline,
