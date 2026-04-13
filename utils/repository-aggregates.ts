@@ -4,7 +4,12 @@ import type {
   TodayLiveSnapshot,
   ZentraEventRecord,
 } from "@/types/zentra";
-import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import {
+  enumerateISODateRange,
+  parseISODate,
+  shiftISODate,
+  toISODate,
+} from "@/utils/dates";
 
 interface LocationPayload {
   latitude: number;
@@ -321,6 +326,38 @@ function getLocalDate(timestamp: string): string {
   return toISODate(new Date(timestamp));
 }
 
+function getScreenTimeSecondsWithinDate(
+  event: ZentraEventRecord,
+  date: string,
+): number {
+  if (
+    event.dataType !== "app_usage" ||
+    typeof event.valueNumeric !== "number"
+  ) {
+    return 0;
+  }
+
+  const startMs = new Date(event.timestampStart).getTime();
+  const endMs = new Date(event.timestampEnd).getTime();
+  const dateStartMs = parseISODate(date).getTime();
+  const dateEndMs = parseISODate(shiftISODate(date, 1)).getTime();
+
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    endMs <= startMs
+  ) {
+    return Math.max(0, Math.round(event.valueNumeric ?? 0));
+  }
+
+  const overlapMs = Math.max(
+    0,
+    Math.min(endMs, dateEndMs) - Math.max(startMs, dateStartMs),
+  );
+
+  return Math.round(overlapMs / 1000);
+}
+
 export function buildDailyAggregateRecord(
   date: string,
   events: ZentraEventRecord[],
@@ -342,13 +379,10 @@ export function buildDailyAggregateRecord(
     stepsTotal,
     activeMinutes: computeActiveMinutes(events),
     distanceMeters: calculateDistanceTravelled(locationSamples),
-    screenTimeSeconds: events
-      .filter(
-        (event) =>
-          event.dataType === "app_usage" &&
-          typeof event.valueNumeric === "number",
-      )
-      .reduce((total, event) => total + Math.round(event.valueNumeric ?? 0), 0),
+    screenTimeSeconds: events.reduce(
+      (total, event) => total + getScreenTimeSecondsWithinDate(event, date),
+      0,
+    ),
     unlockCount: events.filter((event) => event.dataType === "unlock_event")
       .length,
     sleepEstimateMinutes: sleepEvent?.valueNumeric
@@ -397,7 +431,14 @@ export function buildTodaySnapshot(
 
 export function getLocalDatesForEvents(events: ZentraEventRecord[]): string[] {
   return Array.from(
-    new Set(events.map((event) => getLocalDate(event.timestampStart))),
+    new Set(
+      events.flatMap((event) => {
+        const startDate = getLocalDate(event.timestampStart);
+        const endDate = getLocalDate(event.timestampEnd);
+
+        return enumerateISODateRange(startDate, endDate);
+      }),
+    ),
   );
 }
 

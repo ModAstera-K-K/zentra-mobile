@@ -45,7 +45,7 @@ export default function WelcomeScreen() {
           <View style={styles.heroHeader}>
             <PilotLight size={12} />
             <Text style={[styles.meta, { color: palette.textSecondary }]}>
-              Daylight observatory
+              Welcome to Zentra
             </Text>
           </View>
 

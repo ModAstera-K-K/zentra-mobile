@@ -46,6 +46,16 @@ npm run android
 npm run ios
 ```
 
+Run device-targeted builds:
+
+```bash
+npm run build-android-dev-device
+npm run build-android-release-device
+npm run build-ios-release-device
+```
+
+`build-android-release-device` expects the signing environment variables documented in `docs/android-release.md`. `build-ios-release-device` expects Xcode signing for a connected physical device to already be configured on your machine.
+
 Checks:
 
 ```bash
@@ -56,11 +66,13 @@ npm run check:no-network
 
 ## Running tests
 
-```bash
-npm test
-```
+There is currently no automated `npm test` script in this repository. Before opening a pull request, run:
 
-The test suite covers utility functions and data transforms. Native module tests require a connected device or emulator.
+```bash
+npm run lint
+npm run typecheck
+npm run check:no-network
+```
 
 ## Good first issues
 

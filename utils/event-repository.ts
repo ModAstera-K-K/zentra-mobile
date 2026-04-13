@@ -155,16 +155,40 @@ async function getEventsBetween(
   return getEventsBetweenWithDatabase(database, startIso, endExclusiveIso);
 }
 
+async function getAggregateEventsForDateWithDatabase(
+  database: SQLiteDatabase,
+  date: string,
+): Promise<ZentraEventRecord[]> {
+  const { startIso, endExclusiveIso } = getRangeBounds(date, date);
+  const [dayEvents, overlappingAppUsageRows] = await Promise.all([
+    getEventsBetweenWithDatabase(database, startIso, endExclusiveIso),
+    database.getAllAsync<EventRow>(
+      `SELECT * FROM events
+        WHERE data_type = 'app_usage'
+        AND timestamp_start < ?
+        AND timestamp_end > ?
+        ORDER BY timestamp_start ASC`,
+      endExclusiveIso,
+      startIso,
+    ),
+  ]);
+
+  const eventsById = new Map(dayEvents.map((event) => [event.id, event]));
+
+  overlappingAppUsageRows.map(mapEventRow).forEach((event) => {
+    eventsById.set(event.id, event);
+  });
+
+  return Array.from(eventsById.values()).sort((left, right) =>
+    left.timestampStart.localeCompare(right.timestampStart),
+  );
+}
+
 async function rebuildAggregateForDate(
   database: SQLiteDatabase,
   date: string,
 ): Promise<void> {
-  const { startIso, endExclusiveIso } = getRangeBounds(date, date);
-  const events = await getEventsBetweenWithDatabase(
-    database,
-    startIso,
-    endExclusiveIso,
-  );
+  const events = await getAggregateEventsForDateWithDatabase(database, date);
 
   if (!events.length) {
     await database.runAsync(
@@ -652,6 +676,12 @@ export async function getDailyAggregateForDate(
   date: string,
 ): Promise<DailyAggregateRecord | null> {
   const database = await getLocalDatabase();
+  const events = await getAggregateEventsForDateWithDatabase(database, date);
+
+  if (events.length) {
+    return buildDailyAggregateRecord(date, events);
+  }
+
   const row = await database.getFirstAsync<AggregateRow>(
     `SELECT * FROM daily_aggregates
       WHERE date = ?

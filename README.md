@@ -6,9 +6,9 @@
 **Nothing leaves the device.**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![CI](https://github.com/modastera/zentra/actions/workflows/ci.yml/badge.svg)](https://github.com/modastera/zentra/actions/workflows/ci.yml)
-[![Android Build](https://github.com/modastera/zentra/actions/workflows/android-build.yml/badge.svg)](https://github.com/modastera/zentra/actions/workflows/android-build.yml)
-[![iOS Build](https://github.com/modastera/zentra/actions/workflows/ios-build.yml/badge.svg)](https://github.com/modastera/zentra/actions/workflows/ios-build.yml)
+[![CI](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ci.yml/badge.svg)](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ci.yml)
+[![Android Build](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/android-build.yml/badge.svg)](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/android-build.yml)
+[![iOS Build](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ios-build.yml/badge.svg)](https://github.com/ModAstera-K-K/zentra-mobile/actions/workflows/ios-build.yml)
 
 </div>
 
@@ -58,7 +58,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the full breakdown of what is enfor
 
 | Channel | For | Signing |
 |---|---|---|
-| **[GitHub Releases](https://github.com/modastera/zentra/releases/latest)** | Most users | ModAstera key |
+| **[GitHub Releases](https://github.com/ModAstera-K-K/zentra-mobile/releases/latest)** | Most users | ModAstera key |
 | **F-Droid** | Maximum trust (coming soon) | F-Droid key (built from source on F-Droid infra) |
 | **Google Play** | Convenience (coming soon) | ModAstera key |
 
@@ -74,7 +74,7 @@ Because F-Droid and Google Play use different signing keys, they install as sepa
 | **TestFlight** | Beta testers (coming soon) |
 | **Build from source** | Developers with Xcode |
 
-**Minimum iOS version:** 16.
+**Minimum iOS version:** 15.1.
 
 ## Platform support
 
@@ -120,7 +120,7 @@ zentra/
 - Android Studio / Android SDK (Android development)
 
 ```bash
-git clone https://github.com/modastera/zentra.git
+git clone https://github.com/ModAstera-K-K/zentra-mobile.git
 cd zentra
 npm install
 ```
@@ -132,14 +132,25 @@ npm run android
 npm run ios
 ```
 
+### Run device builds
+
+```bash
+npm run build-android-dev-device
+npm run build-android-release-device
+npm run build-ios-release-device
+```
+
+Android release-device builds require the release signing environment variables from `docs/android-release.md`. iOS release-device builds require a connected device with Xcode signing already configured for your Apple account.
+
 ### Run checks
 
 ```bash
 npm run lint
 npm run typecheck
 npm run check:no-network   # CI-enforced: fails if any network path is detected
-npm test
 ```
+
+There is currently no automated `npm test` script in this repository.
 
 For signed Android APK releases and GitHub Releases publishing, see [`docs/android-release.md`](docs/android-release.md).
 
@@ -147,7 +158,11 @@ For signed Android APK releases and GitHub Releases publishing, see [`docs/andro
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request — it covers the development setup, coding standards, the DCO sign-off requirement, and the hard architectural rules that no PR may violate.
 
-For bug reports and feature requests, use [GitHub Issues](https://github.com/modastera/zentra/issues). For security issues, see [SECURITY.md](SECURITY.md) — do not report security issues through public issues.
+For bug reports and feature requests, use [GitHub Issues](https://github.com/ModAstera-K-K/zentra-mobile/issues). For security issues, see [SECURITY.md](SECURITY.md) — do not report security issues through public issues.
+
+## Community
+
+Join the [CareTech Catalyst community](https://discord.gg/uTxB4rRE) to connect with healthcare and healthtech innovators, share feedback, and help shape suggestions for the app's roadmap.
 
 ## Governance
 
