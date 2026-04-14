@@ -10,7 +10,10 @@ import type {
 } from "@/types/zentra";
 import { enumerateISODateRange, parseISODate } from "@/utils/dates";
 import { formatMinutes, formatNumber } from "@/utils/format";
-import { buildUnifiedDailyTimeline } from "@/utils/unified-timeline";
+import {
+  buildNormalizationMaxima,
+  buildUnifiedDailyTimeline,
+} from "@/utils/unified-timeline";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HEATMAP_HOURS = [
@@ -387,6 +390,11 @@ function buildDailyCompositeValues(
     }
   }
 
+  // Hoist normalization maxima outside the loop — each date used to recompute
+  // this from all events, making the loop O(N_days × N_events). Now it's O(N_events)
+  // once, then O(n_day_events) per day.
+  const normalizationMaxima = buildNormalizationMaxima(events, "hour");
+
   return dates.reduce<{
     intensityValues: number[];
     restValues: number[];
@@ -398,6 +406,7 @@ function buildDailyCompositeValues(
         date,
         "hour",
         events,
+        normalizationMaxima,
       );
       const bucketsWithData = timeline.filter((bucket) => bucket.hasAnyData);
 
@@ -418,8 +427,8 @@ function buildDailyCompositeValues(
           0,
         ) / bucketsWithData.length;
 
-      result.intensityValues.push(Math.round(averageIntensity * 100));
-      result.restValues.push(Math.round(averageRest * 100));
+      result.intensityValues.push(Math.round(averageIntensity));
+      result.restValues.push(Math.round(averageRest));
       return result;
     },
     { intensityValues: [], restValues: [] },

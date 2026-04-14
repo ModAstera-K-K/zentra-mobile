@@ -70,6 +70,11 @@ export type TodayDetailVisual =
       points: TodayDetailChartPoint[];
     }
   | {
+      type: "vertical_bar";
+      annotation: string;
+      points: TodayDetailChartPoint[];
+    }
+  | {
       type: "distribution";
       annotation: string;
       bars: TodayDetailBar[];
@@ -207,6 +212,7 @@ function getMetricEventTypes(key: string): EventDataType[] {
       return ["steps"];
     case "activeMinutes":
     case "topActivity":
+    case "activitySummary":
       return ["activity", "motion_context"];
     case "screenTime":
       return ["app_usage", "screen_state", "unlock_event"];
@@ -219,8 +225,6 @@ function getMetricEventTypes(key: string): EventDataType[] {
       return CORE_SIGNAL_TYPES;
     case "deviceContext":
       return ["charging_state"];
-    case "motionContext":
-      return ["motion_context"];
     case "connectivity":
       return ["connectivity_state"];
     case "heartRate":
@@ -239,6 +243,8 @@ function getMetricSourceLabel(key: string): string {
     case "activeMinutes":
     case "topActivity":
       return getActivitySourceLabel();
+    case "activitySummary":
+      return "Activity recognition + accelerometer";
     case "screenTime":
     case "unlockCount":
       return Platform.OS === "ios"
@@ -251,8 +257,6 @@ function getMetricSourceLabel(key: string): string {
       return "Repository aggregate";
     case "deviceContext":
       return "Battery monitoring";
-    case "motionContext":
-      return "Accelerometer + gyroscope";
     case "connectivity":
       return "Network reachability";
     case "heartRate":
@@ -581,21 +585,76 @@ function buildDeviceContextValue(todaySnapshot: TodayLiveSnapshot): string {
 function buildStepsVisual(
   events: ZentraEventRecord[],
 ): TodayDetailVisual | null {
-  const points = sortEventsAscending(events)
-    .filter((event) => typeof event.valueNumeric === "number")
-    .map((event) => ({
-      label: formatTimestampLabel(event.timestampStart),
-      value: clampPositive(Math.round(event.valueNumeric ?? 0)),
-      valueLabel: formatNumber(Math.round(event.valueNumeric ?? 0)),
-    }));
+  const stepEvents = sortEventsAscending(events).filter(
+    (event) => typeof event.valueNumeric === "number",
+  );
 
-  if (!points.length) {
+  if (!stepEvents.length) {
     return null;
   }
 
+  // Compute deltas for sensor-sourced step events (cumulative counters)
+  const sensorEvents = stepEvents
+    .filter((e) => e.source === "sensor")
+    .sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+  const sensorDeltas = new Map<string, number>();
+  let prevCount: number | null = null;
+  for (const event of sensorEvents) {
+    const current = Math.max(0, Math.round(event.valueNumeric ?? 0));
+    const delta =
+      prevCount === null ? current : Math.max(0, current - prevCount);
+    sensorDeltas.set(event.id, delta);
+    prevCount = current;
+  }
+
+  // Bucket steps into 24 hourly slots using deltas for sensors, raw for others
+  const hourlySteps = new Array<number>(24).fill(0);
+  for (const event of stepEvents) {
+    const hour = new Date(event.timestampStart).getHours();
+    const value =
+      event.source === "sensor"
+        ? (sensorDeltas.get(event.id) ?? 0)
+        : clampPositive(Math.round(event.valueNumeric ?? 0));
+    hourlySteps[hour] += value;
+  }
+
+  const HOUR_LABELS = [
+    "12 AM",
+    "1 AM",
+    "2 AM",
+    "3 AM",
+    "4 AM",
+    "5 AM",
+    "6 AM",
+    "7 AM",
+    "8 AM",
+    "9 AM",
+    "10 AM",
+    "11 AM",
+    "12 PM",
+    "1 PM",
+    "2 PM",
+    "3 PM",
+    "4 PM",
+    "5 PM",
+    "6 PM",
+    "7 PM",
+    "8 PM",
+    "9 PM",
+    "10 PM",
+    "11 PM",
+  ];
+
+  const points = hourlySteps.map((steps, hour) => ({
+    label: HOUR_LABELS[hour],
+    value: steps,
+    valueLabel: formatNumber(steps),
+    normalizedX: hour / 23,
+  }));
+
   return {
-    type: "line",
-    annotation: "Step readings across the current day.",
+    type: "vertical_bar",
+    annotation: "Steps per hour across the current day.",
     points,
   };
 }
@@ -1148,13 +1207,12 @@ function buildVisualForMetric(
     case "distanceMeters":
       return buildLocationRadiusVisual(events);
     case "topActivity":
+    case "activitySummary":
       return buildTopActivityVisual(events);
     case "dataCompleteness":
       return buildCompletenessVisual(events);
     case "deviceContext":
       return buildBatteryVisual(events);
-    case "motionContext":
-      return buildMotionContextVisual(events);
     case "connectivity":
       return buildConnectivityVisual(events);
     case "heartRate":
@@ -1282,8 +1340,15 @@ function buildMetricFacts(
         { label: "Events stored", value: formatNumber(relatedEvents.length) },
       ];
     case "topActivity":
+    case "activitySummary":
       return [
         { label: "Source", value: getMetricSourceLabel(metric.key) },
+        {
+          label: "Top activity",
+          value: context.todayAggregate?.topActivity
+            ? formatActivityLabel(context.todayAggregate.topActivity)
+            : "No dominant pattern yet",
+        },
         {
           label: "Activity samples",
           value: formatNumber(relatedEvents.length),
@@ -1296,6 +1361,22 @@ function buildMetricFacts(
               ? formatDateTimeLabel(relatedEvents[0].timestampStart)
               : "No data captured",
         },
+        ...(motionSummary
+          ? [
+              {
+                label: "Sedentary share",
+                value: formatPercent(motionSummary.averageSedentaryRatio * 100),
+              },
+              {
+                label: "Burst share",
+                value: formatPercent(motionSummary.averageBurstRatio * 100),
+              },
+              {
+                label: "Stability",
+                value: formatPercent(motionSummary.averageStability * 100),
+              },
+            ]
+          : []),
       ];
     case "dataCompleteness":
       return [
@@ -1321,26 +1402,6 @@ function buildMetricFacts(
         {
           label: "Low power",
           value: context.todaySnapshot.lowPowerMode ? "On" : "Off",
-        },
-      ];
-    case "motionContext":
-      return [
-        { label: "Source", value: getMetricSourceLabel(metric.key) },
-        {
-          label: "Dominant pattern",
-          value: motionSummary?.dominantLabel ?? "Waiting for motion windows",
-        },
-        {
-          label: "Stability",
-          value: motionSummary
-            ? formatPercent(motionSummary.averageStability * 100)
-            : "--",
-        },
-        {
-          label: "Burst share",
-          value: motionSummary
-            ? formatPercent(motionSummary.averageBurstRatio * 100)
-            : "--",
         },
       ];
     case "connectivity":
@@ -1461,14 +1522,16 @@ export function buildTodaySecondaryMetrics(
       available: Platform.OS !== "ios" && unlockCount > 0,
     },
     {
-      key: "topActivity",
-      label: "Top Activity",
-      value: topActivity,
-      detail: todayAggregate?.topActivity
-        ? "Most frequent movement pattern captured so far today."
-        : "No dominant movement pattern has surfaced yet.",
+      key: "activitySummary",
+      label: "Activity",
+      value: motionSummary?.dominantLabel ?? topActivity,
+      detail: motionSummary
+        ? `${motionSummary.eventCount} motion window${motionSummary.eventCount === 1 ? "" : "s"} today · ${formatPercent(motionSummary.averageSedentaryRatio * 100)} sedentary · ${formatPercent(motionSummary.averageBurstRatio * 100)} bursts.`
+        : todayAggregate?.topActivity
+          ? "Most frequent movement pattern captured so far today."
+          : "No activity or motion data has surfaced yet.",
       tone: "physical",
-      available: Boolean(todayAggregate?.topActivity),
+      available: Boolean(motionSummary) || Boolean(todayAggregate?.topActivity),
     },
     {
       key: "dataCompleteness",
@@ -1509,17 +1572,6 @@ export function buildTodaySecondaryMetrics(
       label: "Exercise",
       value: `${exerciseCount} session${exerciseCount === 1 ? "" : "s"}`,
       detail: `Imported from ${getHealthPlatformName()}.`,
-      tone: "physical",
-      available: true,
-    });
-  }
-
-  if (motionSummary) {
-    metrics.push({
-      key: "motionContext",
-      label: "Movement Quality",
-      value: motionSummary.dominantLabel,
-      detail: `${motionSummary.eventCount} motion window${motionSummary.eventCount === 1 ? "" : "s"} today · ${formatPercent(motionSummary.averageSedentaryRatio * 100)} sedentary · ${formatPercent(motionSummary.averageBurstRatio * 100)} bursts.`,
       tone: "physical",
       available: true,
     });

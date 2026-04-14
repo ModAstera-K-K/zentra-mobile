@@ -85,6 +85,11 @@ export default function TrendsScreen() {
       ) => void)
     | null
   >(null);
+  const lastLoadedRangeRef = React.useRef<{
+    start: string;
+    end: string;
+    dataVersion: string | null;
+  } | null>(null);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
   const repository = useRepositoryStore(
@@ -197,6 +202,17 @@ export default function TrendsScreen() {
       return;
     }
 
+    // Skip reload if range and data version are unchanged (e.g. simple re-focus)
+    const prev = lastLoadedRangeRef.current;
+    if (
+      prev &&
+      prev.start === rangeStart &&
+      prev.end === rangeEnd &&
+      prev.dataVersion === repository.todayDataUpdatedAt
+    ) {
+      return;
+    }
+
     let isCancelled = false;
 
     async function loadLiveTrends(): Promise<void> {
@@ -215,6 +231,12 @@ export default function TrendsScreen() {
           getEventsForRange(rangeStart, rangeEnd),
         ]);
 
+        // Guard before CPU-intensive computation — switching tabs sets isCancelled
+        // but the check used to sit after buildLiveTrendSeries, which is O(N_days × N_events).
+        if (isCancelled) {
+          return;
+        }
+
         const nextSeries = buildLiveTrendSeries(
           aggregates,
           { start: rangeStart, end: rangeEnd },
@@ -230,6 +252,11 @@ export default function TrendsScreen() {
 
         setLiveSeries(nextSeries);
         setLiveSurfaces(nextSurfaces);
+        lastLoadedRangeRef.current = {
+          start: rangeStart,
+          end: rangeEnd,
+          dataVersion: repository.todayDataUpdatedAt,
+        };
       } finally {
         stopLoad({
           cancelled: isCancelled,

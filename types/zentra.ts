@@ -124,6 +124,11 @@ export type TrendDetailVisual =
       points: TrendDetailChartPoint[];
     }
   | {
+      type: "vertical_bar";
+      annotation: string;
+      points: TrendDetailChartPoint[];
+    }
+  | {
       type: "distribution";
       annotation: string;
       bars: TrendDetailBar[];

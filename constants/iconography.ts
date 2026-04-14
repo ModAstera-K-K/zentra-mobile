@@ -23,6 +23,7 @@ export type MetricIconKey =
   | "distanceMeters"
   | "unlockCount"
   | "topActivity"
+  | "activitySummary"
   | "dataCompleteness"
   | "deviceContext"
   | "sleepEstimate"
@@ -57,6 +58,7 @@ const METRIC_ICONS: Record<MetricIconKey, AppIconName> = {
   distanceMeters: "map-outline",
   unlockCount: "lock-open-outline",
   topActivity: "body-outline",
+  activitySummary: "body-outline",
   dataCompleteness: "shield-checkmark-outline",
   deviceContext: "battery-half-outline",
   sleepEstimate: "moon-outline",
@@ -173,6 +175,7 @@ const METRIC_ICON_KEYS = new Set<MetricIconKey>([
   "distanceMeters",
   "unlockCount",
   "topActivity",
+  "activitySummary",
   "dataCompleteness",
   "deviceContext",
   "sleepEstimate",

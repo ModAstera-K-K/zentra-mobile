@@ -31,6 +31,24 @@ const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
 
 const MIN_TODAY_REFRESH_INTERVAL_MS = 1_500;
 
+/**
+ * Return the existing array if contents haven't changed (same length + same
+ * last event ID), avoiding unnecessary downstream re-renders.
+ */
+function stableEvents(
+  prev: ZentraEventRecord[],
+  next: ZentraEventRecord[],
+): ZentraEventRecord[] {
+  if (
+    prev.length === next.length &&
+    prev.length > 0 &&
+    prev[prev.length - 1]?.id === next[next.length - 1]?.id
+  ) {
+    return prev;
+  }
+  return next;
+}
+
 let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
 
@@ -164,13 +182,14 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       ]);
 
       const updatedAt = new Date().toISOString();
+      const stableTodayEvents = stableEvents(get().todayEvents, todayEvents);
 
       set({
         lastUpdatedAt: updatedAt,
         todayDataUpdatedAt: updatedAt,
         todaySnapshot,
         todayAggregate,
-        todayEvents,
+        todayEvents: stableTodayEvents,
       });
 
       lastTodayRefreshCompletedAtMs = Date.now();

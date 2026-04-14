@@ -12,6 +12,7 @@ import {
   buildActivityScoreMaxima,
   buildBucketCompositeScores,
 } from "@/utils/activity-intensity";
+import type { ActivityScoreMaxima } from "@/types/zentra";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
 
 const TRACKED_TIMELINE_TYPES: EventDataType[] = [
@@ -551,6 +552,13 @@ function applyCompositeScores(
 ): UnifiedTimelineBucket[] {
   const maxima = buildActivityScoreMaxima(normalizationBuckets);
 
+  return applyMaxima(buckets, maxima);
+}
+
+function applyMaxima(
+  buckets: UnifiedTimelineBucket[],
+  maxima: ActivityScoreMaxima,
+): UnifiedTimelineBucket[] {
   return buckets.map((bucket) => {
     const composite = buildBucketCompositeScores(bucket, maxima);
     return {
@@ -664,8 +672,14 @@ export function buildUnifiedTimeline(
   events: ZentraEventRecord[],
   window: UnifiedTimelineWindow,
   normalizationEvents: ZentraEventRecord[] = events,
+  precomputedMaxima?: ActivityScoreMaxima | null,
 ): UnifiedTimelineBucket[] {
   const buckets = buildRawUnifiedTimeline(events, window);
+
+  if (precomputedMaxima) {
+    return applyMaxima(buckets, precomputedMaxima);
+  }
+
   const normalizationWindow = buildEventWindow(
     normalizationEvents,
     window.resolution,
@@ -688,6 +702,7 @@ export function buildUnifiedDailyTimeline(
   date: string,
   resolution: UnifiedTimelineResolution = "15min",
   normalizationEvents: ZentraEventRecord[] = events,
+  precomputedMaxima?: ActivityScoreMaxima | null,
 ): UnifiedTimelineBucket[] {
   const start = parseISODate(date);
   const end = parseISODate(shiftISODate(date, 1));
@@ -700,6 +715,7 @@ export function buildUnifiedDailyTimeline(
       startTimestamp: start.toISOString(),
     },
     normalizationEvents,
+    precomputedMaxima,
   );
 }
 
@@ -708,6 +724,7 @@ export function buildMonthlyActivityPattern(
   anchorDate: string,
   resolution: UnifiedTimelineResolution = "15min",
   normalizationEvents: ZentraEventRecord[] = events,
+  precomputedMaxima?: ActivityScoreMaxima | null,
 ): ActivityPatternCell[] {
   const anchor = parseISODate(anchorDate);
   // Find the Monday of the current week
@@ -790,6 +807,7 @@ export function buildMonthlyActivityPattern(
         currentDate,
         resolution,
         normalizationEvents,
+        precomputedMaxima,
       );
       const summary = summarizeTimeline(timeline);
 
@@ -808,6 +826,22 @@ export function buildMonthlyActivityPattern(
   }
 
   return normalizePatternIntensity(cells);
+}
+
+/**
+ * Pre-compute the normalization maxima from a set of events. Pass the result
+ * to `buildUnifiedDailyTimeline` or `buildMonthlyActivityPattern` as
+ * `precomputedMaxima` to avoid recomputing the normalization pass on every
+ * call (e.g. 28× in the monthly pattern loop).
+ */
+export function buildNormalizationMaxima(
+  normalizationEvents: ZentraEventRecord[],
+  resolution: UnifiedTimelineResolution,
+): ActivityScoreMaxima | null {
+  const window = buildEventWindow(normalizationEvents, resolution);
+  if (!window) return null;
+  const buckets = buildRawUnifiedTimeline(normalizationEvents, window);
+  return buildActivityScoreMaxima(buckets);
 }
 
 export function buildYearlyActivityPattern(

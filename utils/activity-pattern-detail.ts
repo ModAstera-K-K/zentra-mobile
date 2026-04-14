@@ -210,8 +210,8 @@ function buildFacts(
   cell: ActivityPatternCell,
   relatedEvents: ZentraEventRecord[],
 ): TodayDetailFact[] {
-  const usefulActivity = Math.round(cell.intensityScore * 100);
-  const rest = Math.round(cell.restCompositeScore * 100);
+  const usefulActivity = Math.round(cell.intensityScore);
+  const rest = Math.round(cell.restCompositeScore);
   const intensity = Math.round(cell.intensity);
 
   return [

@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from "react-native";
-import Svg, { Circle, Line, Polyline } from "react-native-svg";
+import Svg, { Circle, Line, Polyline, Text as SvgText } from "react-native-svg";
 
 import { Card } from "@/components/ui/Card";
 import {
@@ -18,7 +18,11 @@ import {
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { TrendSeries } from "@/types/zentra";
-import { buildChartCoordinates, buildPolylinePoints } from "@/utils/charts";
+import {
+  buildChartCoordinates,
+  buildPolylinePoints,
+  pickAxisLabelIndices,
+} from "@/utils/charts";
 
 interface TrendChartCardProps {
   series: TrendSeries;
@@ -28,6 +32,7 @@ const CHART_HEIGHT_COMPACT = 108;
 const CHART_HEIGHT_EXPANDED = 216;
 const CHART_INSET_X = 8;
 const CHART_INSET_Y = 10;
+const X_AXIS_HEIGHT = 18;
 
 function getSeriesColor(series: TrendSeries, palette: AppPalette): string {
   switch (series.tone) {
@@ -78,6 +83,10 @@ export const TrendChartCard = React.memo(function TrendChartCard({
   const polyline = React.useMemo(
     () => buildPolylinePoints(coordinates),
     [coordinates],
+  );
+  const axisLabelIndices = React.useMemo(
+    () => pickAxisLabelIndices(series.points.length),
+    [series.points.length],
   );
   const selectedPoint =
     series.points[
@@ -139,9 +148,9 @@ export const TrendChartCard = React.memo(function TrendChartCard({
         onStartShouldSetResponder={() => true}
       >
         <Svg
-          height={chartHeight}
+          height={chartHeight + X_AXIS_HEIGHT}
           width="100%"
-          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${chartHeight}`}
+          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${chartHeight + X_AXIS_HEIGHT}`}
         >
           {[CHART_INSET_Y, chartHeight / 2, chartHeight - CHART_INSET_Y].map(
             (yPosition) => (
@@ -194,6 +203,26 @@ export const TrendChartCard = React.memo(function TrendChartCard({
               />
             );
           })}
+          {axisLabelIndices.map((labelIndex) => {
+            const coord = coordinates[labelIndex];
+            const point = series.points[labelIndex];
+            if (!coord || !point) return null;
+            const isFirst = labelIndex === 0;
+            const isLast = labelIndex === series.points.length - 1;
+            return (
+              <SvgText
+                key={`x-label-${labelIndex}`}
+                fill={palette.mutedForeground}
+                fontFamily="JetBrainsMonoRegular"
+                fontSize={9}
+                textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
+                x={coord.x}
+                y={chartHeight + X_AXIS_HEIGHT - 4}
+              >
+                {point.label}
+              </SvgText>
+            );
+          })}
         </Svg>
       </View>
       <View style={styles.submetaRow}>
@@ -219,21 +248,11 @@ export const TrendChartCard = React.memo(function TrendChartCard({
           {series.coverageLabel}
         </Text>
       ) : null}
-      <View style={styles.labelsRow}>
-        <Text style={[styles.caption, { color: palette.mutedForeground }]}>
-          {series.points[0]?.label}
+      {series.sourceLabel ? (
+        <Text style={[styles.sourceLabel, { color: palette.mutedForeground }]}>
+          {series.sourceLabel}
         </Text>
-        {series.sourceLabel ? (
-          <Text
-            style={[styles.sourceLabel, { color: palette.mutedForeground }]}
-          >
-            {series.sourceLabel}
-          </Text>
-        ) : null}
-        <Text style={[styles.caption, { color: palette.mutedForeground }]}>
-          {series.points.at(-1)?.label}
-        </Text>
-      </View>
+      ) : null}
     </Card>
   );
 });
@@ -266,10 +285,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: "uppercase",
   },
-  labelsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
   submeta: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
@@ -281,10 +296,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: Spacing.sm,
     marginTop: Spacing.sm,
-  },
-  caption: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
   },
   coverageLabel: {
     fontFamily: Fonts.body,

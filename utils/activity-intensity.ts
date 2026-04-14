@@ -79,6 +79,12 @@ export function buildBucketCompositeScores(
   bucket: UnifiedTimelineBucket,
   maxima: ActivityScoreMaxima,
 ): { intensityScore: number; restCompositeScore: number } {
+  // Buckets with no data at all are treated as full rest — the device was
+  // idle or off, which is the strongest rest signal available.
+  if (!bucket.hasAnyData) {
+    return { intensityScore: 0, restCompositeScore: 100 };
+  }
+
   const intensityValues = [
     maxima.steps > 0 ? clampNormalizedValue(bucket.steps, maxima.steps) : null,
     maxima.movementSignals > 0
@@ -98,7 +104,8 @@ export function buildBucketCompositeScores(
       : null,
   ].filter((value): value is number => value !== null);
 
-  const restValues = [
+  // Weighted rest: inverse intensity = 0.7, others share 0.3 equally
+  const otherRestValues = [
     maxima.sleepMinutes > 0
       ? clampNormalizedValue(bucket.sleepMinutes, maxima.sleepMinutes)
       : null,
@@ -110,8 +117,22 @@ export function buildBucketCompositeScores(
       : null,
   ].filter((value): value is number => value !== null);
 
+  const inverseIntensity =
+    intensityValues.length > 0 ? 1 - average(intensityValues) : null;
+
+  let restScore: number;
+  if (inverseIntensity != null && otherRestValues.length > 0) {
+    restScore = inverseIntensity * average(otherRestValues) * 0.5; // 0.5 is awake constant
+  } else if (inverseIntensity != null) {
+    restScore = inverseIntensity;
+  } else if (otherRestValues.length > 0) {
+    restScore = average(otherRestValues);
+  } else {
+    restScore = 0;
+  }
+
   return {
-    intensityScore: average(intensityValues),
-    restCompositeScore: average(restValues),
+    intensityScore: Math.round(average(intensityValues) * 100),
+    restCompositeScore: Math.round(restScore * 100),
   };
 }

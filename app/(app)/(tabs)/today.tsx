@@ -27,13 +27,17 @@ import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import type {
   ActivityNormalizationWindow,
   ActivityPatternCell,
+  CollectorState,
   DashboardMetric,
   PermissionStatus,
+  UnifiedTimelineBucket,
   ZentraEventRecord,
 } from "@/types/zentra";
 import type {
+  TodayDerivedEvents,
   TodayDetailPayload,
   TodayRecentSignalRow,
+  TodaySignalHealthSummary,
   TodaySummaryMetric,
 } from "@/utils/today-visualization";
 import { getActivityNormalizationRange } from "@/utils/activity-intensity";
@@ -52,6 +56,7 @@ import {
 import { useIsFocused } from "@react-navigation/native";
 import {
   buildMonthlyActivityPattern,
+  buildNormalizationMaxima,
   buildUnifiedDailyTimeline,
 } from "@/utils/unified-timeline";
 import { getActivityRecognitionPermissionStatusAsync } from "@/utils/native/zentra-native-signals";
@@ -93,6 +98,151 @@ type TodaySectionKey =
   | "recentSignals"
   | "completeness";
 
+// ---------------------------------------------------------------------------
+// Memo'd section components — each isolates its own re-renders
+// ---------------------------------------------------------------------------
+
+const PatternSection = React.memo(function PatternSection({
+  activityNormalizationWindow: window,
+  cells,
+  hasLoadedPattern,
+  isDemoMode,
+  isLoadingPatternHistory,
+  mutedForeground,
+  onSelectCell,
+  textSecondary,
+}: {
+  activityNormalizationWindow: ActivityNormalizationWindow;
+  cells: ActivityPatternCell[];
+  hasLoadedPattern: boolean;
+  isDemoMode: boolean;
+  isLoadingPatternHistory: boolean;
+  mutedForeground: string;
+  onSelectCell: (cell: ActivityPatternCell) => void;
+  textSecondary: string;
+}) {
+  if (!hasLoadedPattern && !isDemoMode) {
+    return (
+      <View style={styles.sectionBlock}>
+        <Card>
+          <View style={styles.patternLoading}>
+            <ActivityIndicator color={mutedForeground} size="small" />
+            <Text style={[styles.patternLoadingText, { color: textSecondary }]}>
+              Preparing pattern...
+            </Text>
+          </View>
+        </Card>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.sectionBlock}>
+      <ActivityPatternCard
+        cells={cells}
+        normalizationLabel={getActivityNormalizationLabel(window)}
+        onSelectCell={onSelectCell}
+      />
+      {isLoadingPatternHistory && !isDemoMode ? (
+        <View style={styles.patternRefreshingRow}>
+          <ActivityIndicator color={mutedForeground} size="small" />
+          <Text
+            style={[styles.patternRefreshingText, { color: textSecondary }]}
+          >
+            Refreshing pattern...
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
+const MetricsSection = React.memo(function MetricsSection({
+  metrics,
+  onPress,
+}: {
+  metrics: DashboardMetric[];
+  onPress: (metric: DashboardMetric) => void;
+}) {
+  return (
+    <View style={styles.metricGrid}>
+      {metrics.map((metric) => (
+        <View key={metric.key} style={styles.metricCell}>
+          <MetricCard metric={metric} onPress={onPress} />
+        </View>
+      ))}
+    </View>
+  );
+});
+
+const ActivityStripSection = React.memo(function ActivityStripSection({
+  buckets,
+}: {
+  buckets: UnifiedTimelineBucket[];
+}) {
+  return (
+    <View style={styles.sectionBlock}>
+      <ActivityStrip buckets={buckets} />
+    </View>
+  );
+});
+
+const SecondaryMetricsSection = React.memo(function SecondaryMetricsSection({
+  metrics,
+  onSelectMetric,
+}: {
+  metrics: TodaySummaryMetric[];
+  onSelectMetric: (metric: TodaySummaryMetric) => void;
+}) {
+  return (
+    <View style={styles.sectionBlock}>
+      <SignalSummaryCard metrics={metrics} onSelectMetric={onSelectMetric} />
+    </View>
+  );
+});
+
+const SleepSection = React.memo(function SleepSection({
+  sleepEstimate,
+}: {
+  sleepEstimate: ReturnType<typeof buildLiveSleepEstimate>;
+}) {
+  return (
+    <View style={styles.sectionBlock}>
+      <SleepEstimateCard sleepEstimate={sleepEstimate} />
+    </View>
+  );
+});
+
+const RecentSignalsSection = React.memo(function RecentSignalsSection({
+  onSelectRow,
+  rows,
+}: {
+  onSelectRow: (row: TodayRecentSignalRow) => void;
+  rows: TodayRecentSignalRow[];
+}) {
+  return (
+    <View style={styles.sectionBlock}>
+      <RecentSignalFeed onSelectRow={onSelectRow} rows={rows} />
+    </View>
+  );
+});
+
+const CompletenessSection = React.memo(function CompletenessSection({
+  collectors,
+  summary,
+}: {
+  collectors: CollectorState[];
+  summary: TodaySignalHealthSummary | null;
+}) {
+  return (
+    <View style={styles.sectionBlock}>
+      <CompletenessCard
+        collectors={collectors}
+        summary={summary ?? undefined}
+      />
+    </View>
+  );
+});
+
 export default function TodayScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -116,24 +266,31 @@ export default function TodayScreen() {
   const refreshTodayData = useRepositoryStore(
     (state) => state.refreshTodayData,
   );
-  const signals = useSignalStore(
+  // Split signal subscriptions: slow-changing permission/capability fields vs
+  // fast-changing sensor values. This prevents every step/lux/battery tick from
+  // re-queuing the expensive metrics and visibleCollectors effects.
+  const signalMeta = useSignalStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
-      stepCount: state.stepCount,
       stepSupported: state.stepSupported,
       stepPermissionStatus: state.stepPermissionStatus,
-      stepLastUpdatedAt: state.stepLastUpdatedAt,
       batterySupported: state.batterySupported,
+      locationSupported: state.locationSupported,
+      locationPermissionStatus: state.locationPermissionStatus,
+      locationServicesEnabled: state.locationServicesEnabled,
+      ambientLightSupported: state.ambientLightSupported,
+    })),
+  );
+  const signalValues = useSignalStore(
+    useShallow((state) => ({
+      stepCount: state.stepCount,
+      stepLastUpdatedAt: state.stepLastUpdatedAt,
       batteryLevel: state.batteryLevel,
       batteryStateLabel: state.batteryStateLabel,
       lowPowerMode: state.lowPowerMode,
       batteryLastUpdatedAt: state.batteryLastUpdatedAt,
-      locationSupported: state.locationSupported,
-      locationPermissionStatus: state.locationPermissionStatus,
-      locationServicesEnabled: state.locationServicesEnabled,
       locationSamples: state.locationSamples,
       locationLastUpdatedAt: state.locationLastUpdatedAt,
-      ambientLightSupported: state.ambientLightSupported,
       ambientLightLux: state.ambientLightLux,
       ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
     })),
@@ -164,6 +321,11 @@ export default function TodayScreen() {
       ) => void)
     | null
   >(null);
+  const lastFetchedAnchorRef = React.useRef<string | null>(null);
+  const lastFetchedWindowRef = React.useRef<ActivityNormalizationWindow | null>(
+    null,
+  );
+  const patternSourceEventsRef = React.useRef<ZentraEventRecord[]>([]);
   const todayAnchor = React.useMemo(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -238,6 +400,15 @@ export default function TodayScreen() {
       return;
     }
 
+    // Skip re-fetch if the data is still valid for these parameters
+    if (
+      hasLoadedPattern &&
+      lastFetchedAnchorRef.current === todayAnchor &&
+      lastFetchedWindowRef.current === activityNormalizationWindow
+    ) {
+      return;
+    }
+
     let isCancelled = false;
 
     async function loadPatternHistoryEvents(): Promise<void> {
@@ -261,6 +432,8 @@ export default function TodayScreen() {
           if (!isCancelled) {
             setHistoricalPatternEvents([]);
             setHasLoadedPattern(true);
+            lastFetchedAnchorRef.current = todayAnchor;
+            lastFetchedWindowRef.current = activityNormalizationWindow;
           }
 
           stopLoadPattern({
@@ -277,6 +450,8 @@ export default function TodayScreen() {
         if (!isCancelled) {
           setHistoricalPatternEvents(events);
           setHasLoadedPattern(true);
+          lastFetchedAnchorRef.current = todayAnchor;
+          lastFetchedWindowRef.current = activityNormalizationWindow;
         }
 
         stopLoadPattern({
@@ -306,6 +481,7 @@ export default function TodayScreen() {
     repository.isHydrated,
     todayAnchor,
     activityNormalizationWindow,
+    hasLoadedPattern,
   ]);
 
   // Heartbeat: refresh dashboard on a 30-second interval and when the app
@@ -380,27 +556,46 @@ export default function TodayScreen() {
     };
   }, [isDemoMode, isFocused, repository.isHydrated, refreshTodayData]);
 
-  const metrics = React.useMemo(
-    () =>
-      isDemoMode
+  const [metrics, setMetrics] = React.useState<DashboardMetric[]>([]);
+  const [visibleCollectors, setVisibleCollectors] = React.useState<
+    CollectorState[]
+  >([]);
+  const [derivedTodayEvents, setDerivedTodayEvents] =
+    React.useState<TodayDerivedEvents | null>(null);
+  const [secondaryMetrics, setSecondaryMetrics] = React.useState<
+    TodaySummaryMetric[]
+  >([]);
+  const [recentSignals, setRecentSignals] = React.useState<
+    TodayRecentSignalRow[]
+  >([]);
+  const [signalHealthSummary, setSignalHealthSummary] =
+    React.useState<TodaySignalHealthSummary | null>(null);
+
+  // Defer expensive dashboard metrics computation until after interactions.
+  // Only re-triggers on permission/capability changes, not sensor ticks.
+  React.useEffect(() => {
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      const result = isDemoMode
         ? buildDashboardMetrics(demoCollectors, true)
         : buildLiveDashboardMetrics(
             collectors,
-            signals,
+            { ...signalMeta, ...signalValues },
             repository.todaySnapshot,
             repository.todayAggregate,
             repository.todayEvents,
-          ),
-    [
-      isDemoMode,
-      demoCollectors,
-      collectors,
-      signals,
-      repository.todaySnapshot,
-      repository.todayAggregate,
-      repository.todayEvents,
-    ],
-  );
+          );
+      setMetrics(result);
+    });
+    return () => interaction.cancel();
+  }, [
+    isDemoMode,
+    demoCollectors,
+    collectors,
+    signalMeta,
+    repository.todaySnapshot,
+    repository.todayAggregate,
+    repository.todayEvents,
+  ]);
   const sleepEstimate = React.useMemo(
     () =>
       isDemoMode
@@ -408,122 +603,177 @@ export default function TodayScreen() {
         : buildLiveSleepEstimate(repository.latestSleepEvent),
     [isDemoMode, demoCollectors, repository.latestSleepEvent],
   );
-  const visibleCollectors = React.useMemo(
-    () =>
-      isDemoMode
+  // Defer visible collectors computation until after interactions.
+  // Depends on both signal slices since collector labels show sensor values.
+  React.useEffect(() => {
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      const result = isDemoMode
         ? Object.values(demoCollectors).filter((collector) => collector.enabled)
-        : buildCollectorStatuses(collectors, signals, repository.diagnostics, {
-            hasLatestSleepEstimate: Boolean(repository.latestSleepEvent),
-            permissionStatusByCollector: {
-              activity: collectors.activity.enabled
-                ? activityPermissionStatus
-                : "not_requested",
+        : buildCollectorStatuses(
+            collectors,
+            { ...signalMeta, ...signalValues },
+            repository.diagnostics,
+            {
+              hasLatestSleepEstimate: Boolean(repository.latestSleepEvent),
+              permissionStatusByCollector: {
+                activity: collectors.activity.enabled
+                  ? activityPermissionStatus
+                  : "not_requested",
+              },
             },
-          }).filter((collector) => collector.enabled),
-    [
-      isDemoMode,
-      demoCollectors,
-      collectors,
-      signals,
-      repository.diagnostics,
-      repository.latestSleepEvent,
-      activityPermissionStatus,
-    ],
-  );
+          ).filter((collector) => collector.enabled);
+      setVisibleCollectors(result);
+    });
+    return () => interaction.cancel();
+  }, [
+    isDemoMode,
+    demoCollectors,
+    collectors,
+    signalMeta,
+    signalValues,
+    repository.diagnostics,
+    repository.latestSleepEvent,
+    activityPermissionStatus,
+  ]);
   const hasCollectors = Object.values(collectors).some(
     (collector) => collector.enabled,
   );
-  const derivedTodayEvents = React.useMemo(
-    () => buildTodayDerivedEvents(repository.todayEvents),
-    [repository.todayEvents],
-  );
-  const secondaryMetrics: TodaySummaryMetric[] = React.useMemo(
-    () =>
-      isDemoMode
-        ? []
-        : buildTodaySecondaryMetrics(
-            repository.todayAggregate,
-            repository.todaySnapshot,
-            repository.todayEvents,
-            derivedTodayEvents,
-          ),
-    [
-      derivedTodayEvents,
-      isDemoMode,
-      repository.todayAggregate,
-      repository.todaySnapshot,
-      repository.todayEvents,
-    ],
-  );
-  const recentSignals: TodayRecentSignalRow[] = React.useMemo(
-    () =>
-      isDemoMode
-        ? []
-        : buildRecentSignalRows(repository.todayEvents, derivedTodayEvents),
-    [derivedTodayEvents, isDemoMode, repository.todayEvents],
-  );
-  const signalHealthSummary = React.useMemo(
-    () =>
-      isDemoMode
-        ? null
-        : buildSignalHealthSummary(
-            repository.todayAggregate,
-            visibleCollectors,
-            repository.todayEvents,
-          ),
-    [
-      isDemoMode,
-      repository.todayAggregate,
-      visibleCollectors,
-      repository.todayEvents,
-    ],
-  );
+  // Defer derived events and downstream computations until after interactions
+  React.useEffect(() => {
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      if (isDemoMode) {
+        setDerivedTodayEvents(null);
+        setSecondaryMetrics([]);
+        setRecentSignals([]);
+        setSignalHealthSummary(null);
+        return;
+      }
+      const derived = buildTodayDerivedEvents(repository.todayEvents);
+      setDerivedTodayEvents(derived);
+      setSecondaryMetrics(
+        buildTodaySecondaryMetrics(
+          repository.todayAggregate,
+          repository.todaySnapshot,
+          repository.todayEvents,
+          derived,
+        ),
+      );
+      setRecentSignals(buildRecentSignalRows(repository.todayEvents, derived));
+    });
+    return () => interaction.cancel();
+  }, [
+    isDemoMode,
+    repository.todayAggregate,
+    repository.todaySnapshot,
+    repository.todayEvents,
+  ]);
+
+  // Defer signal health summary (depends on visibleCollectors computed above)
+  React.useEffect(() => {
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      if (isDemoMode) {
+        setSignalHealthSummary(null);
+        return;
+      }
+      setSignalHealthSummary(
+        buildSignalHealthSummary(
+          repository.todayAggregate,
+          visibleCollectors,
+          repository.todayEvents,
+        ),
+      );
+    });
+    return () => interaction.cancel();
+  }, [
+    isDemoMode,
+    repository.todayAggregate,
+    visibleCollectors,
+    repository.todayEvents,
+  ]);
   const demoPatternEvents = React.useMemo(
     () => buildDemoTimelineEvents(demoCollectors),
     [demoCollectors],
   );
-  const patternSourceEvents = React.useMemo(
-    () =>
-      isDemoMode
-        ? demoPatternEvents
-        : [...historicalPatternEvents, ...(repository.todayEvents ?? [])],
-    [
-      isDemoMode,
-      demoPatternEvents,
-      historicalPatternEvents,
-      repository.todayEvents,
-    ],
+  const patternSourceEvents = React.useMemo(() => {
+    const next = isDemoMode
+      ? demoPatternEvents
+      : [...historicalPatternEvents, ...(repository.todayEvents ?? [])];
+
+    // Reference-stable: return previous array if contents are unchanged
+    const prev = patternSourceEventsRef.current;
+    if (
+      prev.length === next.length &&
+      prev.length > 0 &&
+      prev[prev.length - 1]?.id === next[next.length - 1]?.id
+    ) {
+      return prev;
+    }
+
+    patternSourceEventsRef.current = next;
+    return next;
+  }, [
+    isDemoMode,
+    demoPatternEvents,
+    historicalPatternEvents,
+    repository.todayEvents,
+  ]);
+  const [dailyRhythmBuckets, setDailyRhythmBuckets] = React.useState<
+    UnifiedTimelineBucket[]
+  >([]);
+  const [monthCells, setMonthCells] = React.useState<ActivityPatternCell[]>([]);
+  const lastRhythmKeyRef = React.useRef<string | null>(null);
+  const lastMonthKeyRef = React.useRef<string | null>(null);
+
+  const normalizationMaxima = React.useMemo(
+    () => buildNormalizationMaxima(patternSourceEvents, "hour"),
+    [patternSourceEvents],
   );
-  const dailyRhythmBuckets = React.useMemo(
-    () =>
-      timeSyncOperation(
+
+  React.useEffect(() => {
+    const key = `${todayAnchor}|${patternSourceEvents.length}|${patternSourceEvents.at(-1)?.id ?? ""}`;
+    if (key === lastRhythmKeyRef.current) return;
+
+    const todayEventsForCompute = isDemoMode
+      ? demoPatternEvents
+      : (repository.todayEvents ?? []);
+
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      const result = timeSyncOperation(
         "today.compute_daily_rhythm",
         () =>
           buildUnifiedDailyTimeline(
-            isDemoMode ? demoPatternEvents : (repository.todayEvents ?? []),
+            todayEventsForCompute,
             todayAnchor,
             "hour",
             patternSourceEvents,
+            normalizationMaxima,
           ),
         {
-          eventCount: isDemoMode
-            ? demoPatternEvents.length
-            : (repository.todayEvents ?? []).length,
+          eventCount: todayEventsForCompute.length,
           normalizationEventCount: patternSourceEvents.length,
           screen: "today",
         },
-      ),
-    [
-      isDemoMode,
-      demoPatternEvents,
-      repository.todayEvents,
-      todayAnchor,
-      patternSourceEvents,
-    ],
-  );
-  const monthCells = React.useMemo(
-    () =>
-      timeSyncOperation(
+      );
+      lastRhythmKeyRef.current = key;
+      setDailyRhythmBuckets(result);
+    });
+
+    return () => interaction.cancel();
+  }, [
+    isDemoMode,
+    demoPatternEvents,
+    todayAnchor,
+    patternSourceEvents,
+    normalizationMaxima,
+    repository.todayEvents,
+  ]);
+
+  React.useEffect(() => {
+    const key = `${todayAnchor}|${patternSourceEvents.length}|${patternSourceEvents.at(-1)?.id ?? ""}`;
+    if (key === lastMonthKeyRef.current) return;
+
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      const result = timeSyncOperation(
         "today.compute_month_pattern",
         () =>
           buildMonthlyActivityPattern(
@@ -531,14 +781,19 @@ export default function TodayScreen() {
             todayAnchor,
             "hour",
             patternSourceEvents,
+            normalizationMaxima,
           ),
         {
           eventCount: patternSourceEvents.length,
           screen: "today",
         },
-      ),
-    [patternSourceEvents, todayAnchor],
-  );
+      );
+      lastMonthKeyRef.current = key;
+      setMonthCells(result);
+    });
+
+    return () => interaction.cancel();
+  }, [patternSourceEvents, todayAnchor, normalizationMaxima]);
 
   const handleSelectPatternCell = React.useCallback(
     (cell: ActivityPatternCell) => {
@@ -589,7 +844,7 @@ export default function TodayScreen() {
         buildRecentSignalDetailPayload(
           row.event,
           repository.todayEvents,
-          derivedTodayEvents,
+          derivedTodayEvents ?? undefined,
         ),
       );
     },
@@ -601,11 +856,19 @@ export default function TodayScreen() {
     : hasCollectors
       ? "Welcome back."
       : "Hey, welcome.";
-  const introBody = isDemoMode
-    ? "Sample signals are flowing. This is what Zentra looks like with real data."
+  const introMessage = isRefreshingTodayData && !isDemoMode
+    ? "Refreshing today..."
+    : isDemoMode
+      ? "Sample signals are flowing."
+      : hasCollectors
+        ? "Signals are coming in from your phone."
+        : "Nothing's running yet — head to Settings to start.";
+  const totalCollectorCount = Object.keys(collectors).length;
+  const statusLabel = isDemoMode
+    ? "Demo"
     : hasCollectors
-      ? "Signals are coming in from your phone."
-      : "Nothing's running yet — head to Settings and turn on a collector to start.";
+      ? `${visibleCollectors.length}/${totalCollectorCount}`
+      : "Idle";
 
   const sections = React.useMemo(() => {
     const items: TodaySectionKey[] = [
@@ -629,101 +892,45 @@ export default function TodayScreen() {
       switch (item) {
         case "pattern":
           return (
-            <View style={styles.sectionBlock}>
-              {!hasLoadedPattern && !isDemoMode ? (
-                <Card>
-                  <View style={styles.patternLoading}>
-                    <ActivityIndicator
-                      color={palette.mutedForeground}
-                      size="small"
-                    />
-                    <Text
-                      style={[
-                        styles.patternLoadingText,
-                        { color: palette.textSecondary },
-                      ]}
-                    >
-                      Preparing pattern...
-                    </Text>
-                  </View>
-                </Card>
-              ) : (
-                <>
-                  <ActivityPatternCard
-                    cells={monthCells}
-                    normalizationLabel={getActivityNormalizationLabel(
-                      activityNormalizationWindow,
-                    )}
-                    onSelectCell={handleSelectPatternCell}
-                  />
-                  {isLoadingPatternHistory && !isDemoMode ? (
-                    <View style={styles.patternRefreshingRow}>
-                      <ActivityIndicator
-                        color={palette.mutedForeground}
-                        size="small"
-                      />
-                      <Text
-                        style={[
-                          styles.patternRefreshingText,
-                          { color: palette.textSecondary },
-                        ]}
-                      >
-                        Refreshing pattern...
-                      </Text>
-                    </View>
-                  ) : null}
-                </>
-              )}
-            </View>
+            <PatternSection
+              activityNormalizationWindow={activityNormalizationWindow}
+              cells={monthCells}
+              hasLoadedPattern={hasLoadedPattern}
+              isDemoMode={isDemoMode}
+              isLoadingPatternHistory={isLoadingPatternHistory}
+              mutedForeground={palette.mutedForeground}
+              onSelectCell={handleSelectPatternCell}
+              textSecondary={palette.textSecondary}
+            />
           );
         case "metrics":
           return (
-            <View style={styles.metricGrid}>
-              {metrics.map((metric) => (
-                <View key={metric.key} style={styles.metricCell}>
-                  <MetricCard metric={metric} onPress={handleSelectMetric} />
-                </View>
-              ))}
-            </View>
+            <MetricsSection metrics={metrics} onPress={handleSelectMetric} />
           );
         case "activityStrip":
-          return (
-            <View style={styles.sectionBlock}>
-              <ActivityStrip buckets={dailyRhythmBuckets} />
-            </View>
-          );
+          return <ActivityStripSection buckets={dailyRhythmBuckets} />;
         case "secondaryMetrics":
           return (
-            <View style={styles.sectionBlock}>
-              <SignalSummaryCard
-                metrics={secondaryMetrics}
-                onSelectMetric={handleSelectSecondaryMetric}
-              />
-            </View>
+            <SecondaryMetricsSection
+              metrics={secondaryMetrics}
+              onSelectMetric={handleSelectSecondaryMetric}
+            />
           );
         case "sleep":
-          return (
-            <View style={styles.sectionBlock}>
-              <SleepEstimateCard sleepEstimate={sleepEstimate} />
-            </View>
-          );
+          return <SleepSection sleepEstimate={sleepEstimate} />;
         case "recentSignals":
           return (
-            <View style={styles.sectionBlock}>
-              <RecentSignalFeed
-                onSelectRow={handleSelectRecentSignal}
-                rows={recentSignals}
-              />
-            </View>
+            <RecentSignalsSection
+              onSelectRow={handleSelectRecentSignal}
+              rows={recentSignals}
+            />
           );
         case "completeness":
           return (
-            <View style={styles.sectionBlock}>
-              <CompletenessCard
-                collectors={visibleCollectors}
-                summary={signalHealthSummary ?? undefined}
-              />
-            </View>
+            <CompletenessSection
+              collectors={visibleCollectors}
+              summary={signalHealthSummary}
+            />
           );
         default:
           return null;
@@ -755,37 +962,35 @@ export default function TodayScreen() {
     <ScreenShell
       scrollable={false}
       subtitle={formatScreenDate(new Date())}
+      subtitleAccessory={
+        <View style={styles.subtitleAccessory}>
+          <Text style={[styles.introTitle, { color: palette.foreground }]}>
+            {introTitle}
+          </Text>
+        </View>
+      }
       title="Today"
+      titleAccessory={
+        <View style={styles.titleAccessory}>
+          {isRefreshingTodayData && !isDemoMode ? (
+            <ActivityIndicator
+              color={palette.mutedForeground}
+              size="small"
+            />
+          ) : null}
+          <Text
+            style={[styles.introMessage, { color: palette.textSecondary }]}
+            numberOfLines={1}
+          >
+            {introMessage}
+          </Text>
+          <Text style={[styles.statusLabel, { color: palette.textSecondary }]}>
+            {statusLabel}
+          </Text>
+          <PilotLight size={10} />
+        </View>
+      }
     >
-      <View style={styles.introWrap}>
-        <Card elevated style={styles.introCard}>
-          <View style={styles.introHeader}>
-            <View style={styles.introCopy}>
-              <Text style={[styles.introTitle, { color: palette.foreground }]}>
-                {introTitle}
-              </Text>
-              <Text
-                style={[styles.introBody, { color: palette.textSecondary }]}
-              >
-                {introBody}
-              </Text>
-            </View>
-            <View style={styles.introStatus}>
-              <PilotLight size={12} />
-              <Text
-                style={[styles.introMeta, { color: palette.textSecondary }]}
-              >
-                {isDemoMode
-                  ? "Demo"
-                  : hasCollectors
-                    ? `${visibleCollectors.length} on`
-                    : "Idle"}
-              </Text>
-            </View>
-          </View>
-        </Card>
-      </View>
-
       {(!repository.isHydrated && !isDemoMode) || !hasCollectors ? (
         <EmptyState
           body="Head to Settings and turn on a collector. Zentra will start reading your signals quietly in the background."
@@ -793,34 +998,14 @@ export default function TodayScreen() {
           title="Nothing here yet"
         />
       ) : (
-        <>
-          {isRefreshingTodayData && !isDemoMode ? (
-            <Card style={styles.processingCard}>
-              <View style={styles.processingRow}>
-                <ActivityIndicator
-                  color={palette.mutedForeground}
-                  size="small"
-                />
-                <Text
-                  style={[
-                    styles.processingText,
-                    { color: palette.textSecondary },
-                  ]}
-                >
-                  Refreshing today...
-                </Text>
-              </View>
-            </Card>
-          ) : null}
-          <FlatList
-            contentContainerStyle={styles.listContent}
-            data={sections}
-            keyExtractor={(item) => item}
-            renderItem={renderSection}
-            showsVerticalScrollIndicator={false}
-            style={styles.list}
-          />
-        </>
+        <FlatList
+          contentContainerStyle={styles.listContent}
+          data={sections}
+          keyExtractor={(item) => item}
+          renderItem={renderSection}
+          showsVerticalScrollIndicator={false}
+          style={styles.list}
+        />
       )}
       <DetailSheet
         onClose={() => setSelectedDetail(null)}
@@ -831,43 +1016,14 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  introBody: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.sm,
-    lineHeight: 20,
-  },
-  introCard: {
-    minHeight: 92,
-    paddingVertical: Spacing.lg,
-  },
-  introCopy: {
+  introMessage: {
     flex: 1,
-    gap: Spacing.xs,
-    minWidth: 0,
-  },
-  introHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: Spacing.md,
-    justifyContent: "space-between",
-  },
-  introMeta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-  },
-  introStatus: {
-    alignItems: "center",
-    gap: Spacing.xs,
   },
   introTitle: {
     fontFamily: Fonts.display,
-    fontSize: FontSizes.lg,
-    lineHeight: 24,
-  },
-  introWrap: {
-    marginBottom: Spacing.lg,
+    fontSize: FontSizes.sm,
   },
   list: {
     flex: 1,
@@ -909,21 +1065,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },
-  processingCard: {
-    marginBottom: Spacing.md,
+  sectionBlock: {
+    marginBottom: Spacing.lg,
   },
-  processingRow: {
+  statusLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  subtitleAccessory: {
     alignItems: "center",
     flexDirection: "row",
     gap: Spacing.sm,
+    marginLeft: Spacing.md,
   },
-  processingText: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-  },
-  sectionBlock: {
-    marginBottom: Spacing.lg,
+  titleAccessory: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
   },
 });

@@ -127,6 +127,11 @@ export default function ExportScreen() {
       ) => void)
     | null
   >(null);
+  const lastLoadedRangeRef = React.useRef<{
+    start: string;
+    end: string;
+    dataVersion: string | null;
+  } | null>(null);
   const range =
     preset === "custom" ? customRange : getExportRangeForPreset(preset);
   const demoCollectors = React.useMemo(
@@ -200,6 +205,17 @@ export default function ExportScreen() {
       return;
     }
 
+    // Skip reload if range and data version are unchanged (e.g. simple re-focus)
+    const prev = lastLoadedRangeRef.current;
+    if (
+      prev &&
+      prev.start === range.start &&
+      prev.end === range.end &&
+      prev.dataVersion === repositoryState.todayDataUpdatedAt
+    ) {
+      return;
+    }
+
     let isCancelled = false;
 
     async function loadLiveExportData(): Promise<void> {
@@ -231,6 +247,11 @@ export default function ExportScreen() {
         setLiveEvents(events);
         setLiveAggregates(aggregates);
         setLiveRawEvents(rawEvents);
+        lastLoadedRangeRef.current = {
+          start: range.start,
+          end: range.end,
+          dataVersion: repositoryState.todayDataUpdatedAt,
+        };
       } catch {
         stopLoad({ isCancelled, result: "error" });
       } finally {
