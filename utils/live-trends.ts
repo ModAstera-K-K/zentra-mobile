@@ -384,9 +384,19 @@ function buildDailyCompositeValues(
   );
 
   for (const event of events) {
-    const dateKey = event.timestampStart.slice(0, 10);
-    if (eventsByDate[dateKey]) {
-      eventsByDate[dateKey].push(event);
+    const startKey = event.timestampStart.slice(0, 10);
+    const endKey = event.timestampEnd.slice(0, 10);
+
+    if (startKey === endKey) {
+      if (eventsByDate[startKey]) {
+        eventsByDate[startKey].push(event);
+      }
+    } else {
+      for (const date of dates) {
+        if (date >= startKey && date <= endKey && eventsByDate[date]) {
+          eventsByDate[date].push(event);
+        }
+      }
     }
   }
 
@@ -467,20 +477,53 @@ function buildDailySleepValues(
       continue;
     }
 
-    const dateKey = event.timestampStart.slice(0, 10);
-    if (importedByDate[dateKey] === undefined) {
-      continue;
-    }
-
     if (event.source === "health_connect") {
-      importedByDate[dateKey] += Math.round(event.valueNumeric);
       if (typeof event.metadata.health_platform === "string") {
         importedSleepSourceLabel = event.metadata.health_platform;
+      }
+    }
+
+    const startKey = event.timestampStart.slice(0, 10);
+    const endKey = event.timestampEnd.slice(0, 10);
+    const totalMinutes = Math.round(event.valueNumeric);
+    const isImported = event.source === "health_connect";
+    const target = isImported ? importedByDate : inferredByDate;
+
+    if (startKey === endKey) {
+      if (target[startKey] !== undefined) {
+        target[startKey] += totalMinutes;
       }
       continue;
     }
 
-    inferredByDate[dateKey] += Math.round(event.valueNumeric);
+    const startMs = new Date(event.timestampStart).getTime();
+    const endMs = new Date(event.timestampEnd).getTime();
+    const spanMs = endMs - startMs;
+
+    if (spanMs <= 0) {
+      if (target[startKey] !== undefined) {
+        target[startKey] += totalMinutes;
+      }
+      continue;
+    }
+
+    for (const date of dates) {
+      if (date < startKey || date > endKey) {
+        continue;
+      }
+      if (target[date] === undefined) {
+        continue;
+      }
+      const dayStartMs = new Date(`${date}T00:00:00`).getTime();
+      const dayEndMs = dayStartMs + 86_400_000;
+      const overlapStart = Math.max(startMs, dayStartMs);
+      const overlapEnd = Math.min(endMs, dayEndMs);
+      if (overlapEnd > overlapStart) {
+        target[date] += Math.round(
+          totalMinutes * ((overlapEnd - overlapStart) / spanMs),
+        );
+      }
+    }
   }
 
   return {
@@ -797,14 +840,14 @@ export function buildLiveTrendSurfaces(
   ].filter((entry): entry is TrendSurface => entry !== null);
 }
 
-const GROUP_ORDER: TrendSeriesGroupKey[] = [
+export const GROUP_ORDER: TrendSeriesGroupKey[] = [
   "body",
   "device",
   "health",
   "environment",
   "quality",
 ];
-const GROUP_LABELS: Record<TrendSeriesGroupKey, string> = {
+export const GROUP_LABELS: Record<TrendSeriesGroupKey, string> = {
   body: "Body & Movement",
   device: "Device Behavior",
   health: "Health & Recovery",

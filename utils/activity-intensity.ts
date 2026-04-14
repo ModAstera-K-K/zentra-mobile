@@ -104,7 +104,6 @@ export function buildBucketCompositeScores(
       : null,
   ].filter((value): value is number => value !== null);
 
-  // Weighted rest: inverse intensity = 0.7, others share 0.3 equally
   const otherRestValues = [
     maxima.sleepMinutes > 0
       ? clampNormalizedValue(bucket.sleepMinutes, maxima.sleepMinutes)

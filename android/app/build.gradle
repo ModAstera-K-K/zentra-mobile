@@ -105,15 +105,32 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (System.getenv("ANDROID_KEYSTORE_PATH") && file(System.getenv("ANDROID_KEYSTORE_PATH")).exists()) {
+            release {
+                storeFile file(System.getenv("ANDROID_KEYSTORE_PATH"))
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: "zentra-release"
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+    def releaseSigningConfigured = signingConfigs.hasProperty('release')
+    if (findProperty('zentra.requireReleaseSigning')?.toBoolean() && !releaseSigningConfigured) {
+        def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+        def detail = keystorePath
+            ? "ANDROID_KEYSTORE_PATH is set to '${keystorePath}' but the file does not exist."
+            : "ANDROID_KEYSTORE_PATH is not set."
+        throw new GradleException(
+            "Release signing requested (-Pzentra.requireReleaseSigning=true) but ${detail} " +
+            'See docs/android-release.md for the required environment variables.'
+        )
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig releaseSigningConfigured ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

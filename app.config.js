@@ -19,7 +19,16 @@ export default {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: true,
-      blockedPermissions: IS_DEV ? [] : ["android.permission.INTERNET"],
+      blockedPermissions: IS_DEV
+        ? [
+            "android.permission.READ_EXTERNAL_STORAGE",
+            "android.permission.WRITE_EXTERNAL_STORAGE",
+          ]
+        : [
+            "android.permission.INTERNET",
+            "android.permission.READ_EXTERNAL_STORAGE",
+            "android.permission.WRITE_EXTERNAL_STORAGE",
+          ],
     },
     ios: {
       bundleIdentifier: "com.modastera.zentra",

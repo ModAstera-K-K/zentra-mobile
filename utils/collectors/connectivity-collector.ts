@@ -33,13 +33,6 @@ export async function startConnectivityCollector(
   try {
     let lastState = mapNetworkState(await Network.getNetworkStateAsync());
 
-    await appendEventsForCollector(
-      "connectivity",
-      [createConnectivityStateEvent(lastState)],
-      `Connectivity ${lastState}`,
-    );
-    await deps.refreshRepository();
-
     const subscription = Network.addNetworkStateListener((state) => {
       const nextState = mapNetworkState(state);
 
@@ -49,14 +42,28 @@ export async function startConnectivityCollector(
 
       lastState = nextState;
       void (async () => {
-        await appendEventsForCollector(
-          "connectivity",
-          [createConnectivityStateEvent(nextState)],
-          `Connectivity ${nextState}`,
-        );
-        await deps.refreshRepository();
+        try {
+          await appendEventsForCollector(
+            "connectivity",
+            [createConnectivityStateEvent(nextState)],
+            `Connectivity ${nextState}`,
+          );
+          await deps.refreshRepository();
+        } catch {
+          await ensureCollectorFailureState(
+            "connectivity",
+            "Failed to record connectivity transition",
+          ).catch(() => undefined);
+        }
       })();
     });
+
+    await appendEventsForCollector(
+      "connectivity",
+      [createConnectivityStateEvent(lastState)],
+      `Connectivity ${lastState}`,
+    );
+    await deps.refreshRepository();
 
     return {
       stop: () => subscription.remove(),

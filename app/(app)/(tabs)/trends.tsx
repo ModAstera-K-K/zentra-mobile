@@ -37,6 +37,8 @@ import {
   getEventsForRange,
 } from "@/utils/event-repository";
 import {
+  GROUP_LABELS,
+  GROUP_ORDER,
   buildLiveTrendSeries,
   buildLiveTrendSurfaces,
   groupTrendSeries,
@@ -138,7 +140,26 @@ export default function TrendsScreen() {
     (collector) => collector.enabled,
   );
   const hasLiveTrendData = series.length > 0 || surfaces.length > 0;
-  const groups = React.useMemo(() => groupTrendSeries(series), [series]);
+  const groups = React.useMemo(() => {
+    const seriesGroups = groupTrendSeries(series);
+    const coveredKeys = new Set(seriesGroups.map((g) => g.key));
+    const surfaceOnlyKeys = new Set(
+      surfaces
+        .map((s) => s.group)
+        .filter((key) => !coveredKeys.has(key)),
+    );
+    if (surfaceOnlyKeys.size === 0) {
+      return seriesGroups;
+    }
+    const extra: TrendSeriesGroup[] = [...surfaceOnlyKeys].map((key) => ({
+      key,
+      label: GROUP_LABELS[key],
+      series: [],
+    }));
+    return [...seriesGroups, ...extra].sort(
+      (a, b) => GROUP_ORDER.indexOf(a.key) - GROUP_ORDER.indexOf(b.key),
+    );
+  }, [series, surfaces]);
   const emptyTitle = isLoadingLiveData
     ? "Pulling things together…"
     : hasCollectors

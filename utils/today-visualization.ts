@@ -602,7 +602,7 @@ function buildStepsVisual(
   for (const event of sensorEvents) {
     const current = Math.max(0, Math.round(event.valueNumeric ?? 0));
     const delta =
-      prevCount === null ? current : Math.max(0, current - prevCount);
+      prevCount === null ? 0 : Math.max(0, current - prevCount);
     sensorDeltas.set(event.id, delta);
     prevCount = current;
   }
@@ -1503,7 +1503,7 @@ export function buildTodaySecondaryMetrics(
   const heartRateEvents = derived.heartRateEvents;
   const exerciseEvents = derived.exerciseEvents;
   const latestHeartRate = heartRateEvents.length
-    ? Math.round(heartRateEvents[heartRateEvents.length - 1]!.valueNumeric ?? 0)
+    ? Math.round(heartRateEvents[0]!.valueNumeric ?? 0)
     : null;
   const exerciseCount = exerciseEvents.length;
   const motionSummary = buildMotionContextSummary(todayEvents);

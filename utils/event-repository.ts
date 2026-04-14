@@ -314,21 +314,21 @@ export async function getRepositoryDateBounds(): Promise<{
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
     const row = await database.getFirstAsync<{
-      max_timestamp_start: string | null;
+      max_timestamp_end: string | null;
       min_timestamp_start: string | null;
     }>(
       `SELECT
         MIN(timestamp_start) AS min_timestamp_start,
-        MAX(timestamp_start) AS max_timestamp_start
+        MAX(timestamp_end) AS max_timestamp_end
         FROM events`,
     );
 
-    if (!row?.min_timestamp_start || !row.max_timestamp_start) {
+    if (!row?.min_timestamp_start || !row.max_timestamp_end) {
       return null;
     }
 
     return {
-      end: toISODate(new Date(row.max_timestamp_start)),
+      end: toISODate(new Date(row.max_timestamp_end)),
       start: toISODate(new Date(row.min_timestamp_start)),
     };
   });

@@ -41,7 +41,6 @@ function stableEvents(
 ): ZentraEventRecord[] {
   if (
     prev.length === next.length &&
-    prev.length > 0 &&
     prev[prev.length - 1]?.id === next[next.length - 1]?.id
   ) {
     return prev;

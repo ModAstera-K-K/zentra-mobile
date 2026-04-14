@@ -79,7 +79,7 @@ function filterEventsForCell(
 }
 
 function getCombinedScore(bucket: UnifiedTimelineBucket): number {
-  return Math.round(bucket.intensityScore * 100);
+  return bucket.intensityScore;
 }
 
 function formatPointLabel(

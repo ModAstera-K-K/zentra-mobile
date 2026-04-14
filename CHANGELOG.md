@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/modastera/zentra/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ModAstera-K-K/zentra-mobile/compare/v1.0.0...HEAD
 
 ## [1.0.0] - 2026-04-13
 
@@ -37,4 +37,4 @@ First public open-source release.
 
 - Outbound connectivity probing from the collector surface
 
-[1.0.0]: https://github.com/modastera/zentra/releases/tag/v1.0.0
+[1.0.0]: https://github.com/ModAstera-K-K/zentra-mobile/releases/tag/v1.0.0
