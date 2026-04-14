@@ -601,8 +601,7 @@ function buildStepsVisual(
   let prevCount: number | null = null;
   for (const event of sensorEvents) {
     const current = Math.max(0, Math.round(event.valueNumeric ?? 0));
-    const delta =
-      prevCount === null ? 0 : Math.max(0, current - prevCount);
+    const delta = prevCount === null ? 0 : Math.max(0, current - prevCount);
     sensorDeltas.set(event.id, delta);
     prevCount = current;
   }

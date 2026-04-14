@@ -144,9 +144,7 @@ export default function TrendsScreen() {
     const seriesGroups = groupTrendSeries(series);
     const coveredKeys = new Set(seriesGroups.map((g) => g.key));
     const surfaceOnlyKeys = new Set(
-      surfaces
-        .map((s) => s.group)
-        .filter((key) => !coveredKeys.has(key)),
+      surfaces.map((s) => s.group).filter((key) => !coveredKeys.has(key)),
     );
     if (surfaceOnlyKeys.size === 0) {
       return seriesGroups;

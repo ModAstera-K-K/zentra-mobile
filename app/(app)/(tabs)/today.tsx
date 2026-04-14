@@ -4,6 +4,7 @@ import {
   AppState,
   FlatList,
   InteractionManager,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -400,7 +401,10 @@ export default function TodayScreen() {
       return;
     }
 
-    // Skip re-fetch if the data is still valid for these parameters
+    // Invalidate cached pattern when the repository ingests new data so the
+    // activity pattern re-fetches after a Health Connect import or any other
+    // collector that writes historical events.  Also invalidated by
+    // pull-to-refresh via setHasLoadedPattern(false).
     if (
       hasLoadedPattern &&
       lastFetchedAnchorRef.current === todayAnchor &&
@@ -555,6 +559,17 @@ export default function TodayScreen() {
       subscription.remove();
     };
   }, [isDemoMode, isFocused, repository.isHydrated, refreshTodayData]);
+
+  const [isPullRefreshing, setIsPullRefreshing] = React.useState(false);
+  const handlePullRefresh = React.useCallback(async () => {
+    setIsPullRefreshing(true);
+    try {
+      await refreshTodayData();
+      setHasLoadedPattern(false);
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [refreshTodayData]);
 
   const [metrics, setMetrics] = React.useState<DashboardMetric[]>([]);
   const [visibleCollectors, setVisibleCollectors] = React.useState<
@@ -1006,6 +1021,12 @@ export default function TodayScreen() {
           contentContainerStyle={styles.listContent}
           data={sections}
           keyExtractor={(item) => item}
+          refreshControl={
+            <RefreshControl
+              refreshing={isPullRefreshing}
+              onRefresh={handlePullRefresh}
+            />
+          }
           renderItem={renderSection}
           showsVerticalScrollIndicator={false}
           style={styles.list}
