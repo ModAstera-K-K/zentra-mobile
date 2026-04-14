@@ -127,6 +127,44 @@ restCompositeScore = round(restScore × 100)
 
 ---
 
+## Activity Pattern Visualization
+
+The activity pattern grid (heatmap) maps each cell's color using two
+dimensions:
+
+### Hue — Dominant Kind
+
+Each time bucket is classified by its dominant activity kind. The hue of the
+cell reflects this:
+
+| Dominant kind | Theme token      | Meaning                    |
+| ------------- | ---------------- | -------------------------- |
+| `movement`    | `signalPhysical` | Physical activity dominated |
+| `screen`      | `signalCool`     | Screen usage dominated      |
+| `rest`        | `signalHuman`    | Rest / inactivity dominated |
+
+### Opacity — Intensity
+
+The alpha (opacity) of the cell color scales linearly with the bucket's
+intensity score:
+
+```
+alpha = 0.16 + (intensity / 100) × 0.70
+```
+
+- A faintly colored cell indicates low activity in that period.
+- A deeply saturated cell indicates high activity.
+- Placeholder cells (no data) render as dashed, transparent outlines.
+
+Light and dark modes apply a small alpha offset (+0.04 in dark mode) and
+different caps (0.82 light, 0.88 dark) to maintain contrast.
+
+### Source
+
+Visualization logic lives in [`components/zentra/ActivityPatternCard.tsx`](../components/zentra/ActivityPatternCard.tsx).
+
+---
+
 ## Source
 
 Scoring logic lives in [`utils/activity-intensity.ts`](../utils/activity-intensity.ts).

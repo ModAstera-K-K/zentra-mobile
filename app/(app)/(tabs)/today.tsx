@@ -595,6 +595,10 @@ export default function TodayScreen() {
     repository.todaySnapshot,
     repository.todayAggregate,
     repository.todayEvents,
+    // signalValues is intentionally omitted — metrics only needs permission/
+    // capability fields (signalMeta). Including signalValues would re-trigger
+    // this effect on every sensor tick (step, lux, battery).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   ]);
   const sleepEstimate = React.useMemo(
     () =>

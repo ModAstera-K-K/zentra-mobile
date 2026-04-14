@@ -47,20 +47,6 @@ function getModeColor(mode: ActivityMode, palette: AppPalette): string {
   }
 }
 
-function getModeValue(
-  bucket: UnifiedTimelineBucket,
-  mode: ActivityMode,
-): number {
-  switch (mode) {
-    case "movement":
-      return bucket.intensityScore;
-    case "screen":
-      return bucket.screenScore;
-    default:
-      return bucket.restCompositeScore;
-  }
-}
-
 /** Normalize raw screen scores to 0–100 across the given buckets. */
 function normalizeScreenScores(
   buckets: UnifiedTimelineBucket[],
