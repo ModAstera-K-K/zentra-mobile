@@ -56,6 +56,7 @@ import {
 } from "@/utils/unified-timeline";
 import { getActivityRecognitionPermissionStatusAsync } from "@/utils/native/zentra-native-signals";
 import {
+  buildTodayDerivedEvents,
   buildRecentSignalDetailPayload,
   buildRecentSignalRows,
   buildSignalHealthSummary,
@@ -67,6 +68,7 @@ import {
   buildSleepEstimate,
   createDemoCollectors,
 } from "@/utils/mock-data";
+import { startPerfTimer, timeSyncOperation } from "@/utils/perf";
 import { useShallow } from "zustand/react/shallow";
 
 function getActivityNormalizationLabel(
@@ -149,6 +151,19 @@ export default function TodayScreen() {
     ZentraEventRecord[]
   >([]);
   const [hasLoadedPattern, setHasLoadedPattern] = React.useState(false);
+  const [isLoadingPatternHistory, setIsLoadingPatternHistory] =
+    React.useState(false);
+  const [isRefreshingTodayData, setIsRefreshingTodayData] =
+    React.useState(false);
+  const focusReadyStopRef = React.useRef<
+    | ((
+        endContext?: Record<
+          string,
+          string | number | boolean | null | undefined
+        >,
+      ) => void)
+    | null
+  >(null);
   const todayAnchor = React.useMemo(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -158,6 +173,54 @@ export default function TodayScreen() {
     // Re-derive when the repository refreshes so the anchor advances at midnight
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repository.todayDataUpdatedAt]);
+
+  React.useEffect(() => {
+    if (!isFocused) {
+      focusReadyStopRef.current?.({ ready: false });
+      focusReadyStopRef.current = null;
+      return;
+    }
+
+    focusReadyStopRef.current?.({ replaced: true });
+    focusReadyStopRef.current = startPerfTimer("today.focus_to_ready", {
+      dataMode,
+      screen: "today",
+    });
+  }, [dataMode, isFocused]);
+
+  React.useEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    const hasEnabledCollectors = Object.values(collectors).some(
+      (collector) => collector.enabled,
+    );
+
+    const readyForFirstPaint =
+      (isDemoMode || repository.isHydrated) &&
+      hasEnabledCollectors &&
+      (isDemoMode || hasLoadedPattern);
+
+    if (!readyForFirstPaint || !focusReadyStopRef.current) {
+      return;
+    }
+
+    focusReadyStopRef.current({
+      events: repository.todayEvents.length,
+      hasCollectors: hasEnabledCollectors,
+      hasLoadedPattern,
+      ready: true,
+    });
+    focusReadyStopRef.current = null;
+  }, [
+    collectors,
+    hasLoadedPattern,
+    isDemoMode,
+    isFocused,
+    repository.isHydrated,
+    repository.todayEvents.length,
+  ]);
 
   React.useEffect(() => {
     if (isDemoMode || !collectors.activity.enabled) {
@@ -178,6 +241,13 @@ export default function TodayScreen() {
     let isCancelled = false;
 
     async function loadPatternHistoryEvents(): Promise<void> {
+      setIsLoadingPatternHistory(true);
+      const stopLoadPattern = startPerfTimer("today.load_pattern_history", {
+        normalizationWindow: activityNormalizationWindow,
+        screen: "today",
+        todayAnchor,
+      });
+
       try {
         const bounds = await getRepositoryDateBounds();
         const range = getActivityNormalizationRange(
@@ -192,6 +262,13 @@ export default function TodayScreen() {
             setHistoricalPatternEvents([]);
             setHasLoadedPattern(true);
           }
+
+          stopLoadPattern({
+            eventCount: 0,
+            rangeStart: range.start,
+            reason: "empty_range",
+          });
+          setIsLoadingPatternHistory(false);
           return;
         }
 
@@ -201,7 +278,16 @@ export default function TodayScreen() {
           setHistoricalPatternEvents(events);
           setHasLoadedPattern(true);
         }
+
+        stopLoadPattern({
+          eventCount: events.length,
+          rangeStart: range.start,
+          reason: "loaded",
+        });
+        setIsLoadingPatternHistory(false);
       } catch {
+        stopLoadPattern({ reason: "error" });
+        setIsLoadingPatternHistory(false);
         // keep previous data on failure
       }
     }
@@ -239,11 +325,19 @@ export default function TodayScreen() {
       }
 
       isRefreshing = true;
+      setIsRefreshingTodayData(true);
+      const stopRefresh = startPerfTimer("today.refresh_today_data", {
+        screen: "today",
+      });
 
       try {
         await refreshTodayData();
+        stopRefresh({ result: "ok" });
+      } catch {
+        stopRefresh({ result: "error" });
       } finally {
         isRefreshing = false;
+        setIsRefreshingTodayData(false);
       }
     }
 
@@ -339,6 +433,10 @@ export default function TodayScreen() {
   const hasCollectors = Object.values(collectors).some(
     (collector) => collector.enabled,
   );
+  const derivedTodayEvents = React.useMemo(
+    () => buildTodayDerivedEvents(repository.todayEvents),
+    [repository.todayEvents],
+  );
   const secondaryMetrics: TodaySummaryMetric[] = React.useMemo(
     () =>
       isDemoMode
@@ -347,8 +445,10 @@ export default function TodayScreen() {
             repository.todayAggregate,
             repository.todaySnapshot,
             repository.todayEvents,
+            derivedTodayEvents,
           ),
     [
+      derivedTodayEvents,
       isDemoMode,
       repository.todayAggregate,
       repository.todaySnapshot,
@@ -356,8 +456,11 @@ export default function TodayScreen() {
     ],
   );
   const recentSignals: TodayRecentSignalRow[] = React.useMemo(
-    () => (isDemoMode ? [] : buildRecentSignalRows(repository.todayEvents)),
-    [isDemoMode, repository.todayEvents],
+    () =>
+      isDemoMode
+        ? []
+        : buildRecentSignalRows(repository.todayEvents, derivedTodayEvents),
+    [derivedTodayEvents, isDemoMode, repository.todayEvents],
   );
   const signalHealthSummary = React.useMemo(
     () =>
@@ -393,11 +496,22 @@ export default function TodayScreen() {
   );
   const dailyRhythmBuckets = React.useMemo(
     () =>
-      buildUnifiedDailyTimeline(
-        isDemoMode ? demoPatternEvents : (repository.todayEvents ?? []),
-        todayAnchor,
-        "hour",
-        patternSourceEvents,
+      timeSyncOperation(
+        "today.compute_daily_rhythm",
+        () =>
+          buildUnifiedDailyTimeline(
+            isDemoMode ? demoPatternEvents : (repository.todayEvents ?? []),
+            todayAnchor,
+            "hour",
+            patternSourceEvents,
+          ),
+        {
+          eventCount: isDemoMode
+            ? demoPatternEvents.length
+            : (repository.todayEvents ?? []).length,
+          normalizationEventCount: patternSourceEvents.length,
+          screen: "today",
+        },
       ),
     [
       isDemoMode,
@@ -409,11 +523,19 @@ export default function TodayScreen() {
   );
   const monthCells = React.useMemo(
     () =>
-      buildMonthlyActivityPattern(
-        patternSourceEvents,
-        todayAnchor,
-        "hour",
-        patternSourceEvents,
+      timeSyncOperation(
+        "today.compute_month_pattern",
+        () =>
+          buildMonthlyActivityPattern(
+            patternSourceEvents,
+            todayAnchor,
+            "hour",
+            patternSourceEvents,
+          ),
+        {
+          eventCount: patternSourceEvents.length,
+          screen: "today",
+        },
       ),
     [patternSourceEvents, todayAnchor],
   );
@@ -464,10 +586,14 @@ export default function TodayScreen() {
   const handleSelectRecentSignal = React.useCallback(
     (row: TodayRecentSignalRow) => {
       setSelectedDetail(
-        buildRecentSignalDetailPayload(row.event, repository.todayEvents),
+        buildRecentSignalDetailPayload(
+          row.event,
+          repository.todayEvents,
+          derivedTodayEvents,
+        ),
       );
     },
-    [repository.todayEvents],
+    [derivedTodayEvents, repository.todayEvents],
   );
 
   const introTitle = isDemoMode
@@ -478,7 +604,7 @@ export default function TodayScreen() {
   const introBody = isDemoMode
     ? "Sample signals are flowing. This is what Zentra looks like with real data."
     : hasCollectors
-      ? "Your signals are coming in. Everything looks good."
+      ? "Signals are coming in from your phone."
       : "Nothing's running yet — head to Settings and turn on a collector to start.";
 
   const sections = React.useMemo(() => {
@@ -517,18 +643,36 @@ export default function TodayScreen() {
                         { color: palette.textSecondary },
                       ]}
                     >
-                      Building your pattern…
+                      Preparing pattern...
                     </Text>
                   </View>
                 </Card>
               ) : (
-                <ActivityPatternCard
-                  cells={monthCells}
-                  normalizationLabel={getActivityNormalizationLabel(
-                    activityNormalizationWindow,
-                  )}
-                  onSelectCell={handleSelectPatternCell}
-                />
+                <>
+                  <ActivityPatternCard
+                    cells={monthCells}
+                    normalizationLabel={getActivityNormalizationLabel(
+                      activityNormalizationWindow,
+                    )}
+                    onSelectCell={handleSelectPatternCell}
+                  />
+                  {isLoadingPatternHistory && !isDemoMode ? (
+                    <View style={styles.patternRefreshingRow}>
+                      <ActivityIndicator
+                        color={palette.mutedForeground}
+                        size="small"
+                      />
+                      <Text
+                        style={[
+                          styles.patternRefreshingText,
+                          { color: palette.textSecondary },
+                        ]}
+                      >
+                        Refreshing pattern...
+                      </Text>
+                    </View>
+                  ) : null}
+                </>
               )}
             </View>
           );
@@ -594,6 +738,7 @@ export default function TodayScreen() {
       handleSelectSecondaryMetric,
       hasLoadedPattern,
       isDemoMode,
+      isLoadingPatternHistory,
       metrics,
       monthCells,
       palette.mutedForeground,
@@ -648,14 +793,34 @@ export default function TodayScreen() {
           title="Nothing here yet"
         />
       ) : (
-        <FlatList
-          contentContainerStyle={styles.listContent}
-          data={sections}
-          keyExtractor={(item) => item}
-          renderItem={renderSection}
-          showsVerticalScrollIndicator={false}
-          style={styles.list}
-        />
+        <>
+          {isRefreshingTodayData && !isDemoMode ? (
+            <Card style={styles.processingCard}>
+              <View style={styles.processingRow}>
+                <ActivityIndicator
+                  color={palette.mutedForeground}
+                  size="small"
+                />
+                <Text
+                  style={[
+                    styles.processingText,
+                    { color: palette.textSecondary },
+                  ]}
+                >
+                  Refreshing today...
+                </Text>
+              </View>
+            </Card>
+          ) : null}
+          <FlatList
+            contentContainerStyle={styles.listContent}
+            data={sections}
+            keyExtractor={(item) => item}
+            renderItem={renderSection}
+            showsVerticalScrollIndicator={false}
+            style={styles.list}
+          />
+        </>
       )}
       <DetailSheet
         onClose={() => setSelectedDetail(null)}
@@ -730,6 +895,32 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
     letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  patternRefreshingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  patternRefreshingText: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  processingCard: {
+    marginBottom: Spacing.md,
+  },
+  processingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  processingText: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.4,
     textTransform: "uppercase",
   },
   sectionBlock: {

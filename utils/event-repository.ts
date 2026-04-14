@@ -724,12 +724,6 @@ export async function getDailyAggregateForDate(
 ): Promise<DailyAggregateRecord | null> {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
-    const events = await getAggregateEventsForDateWithDatabase(database, date);
-
-    if (events.length) {
-      return buildDailyAggregateRecord(date, events);
-    }
-
     const row = await database.getFirstAsync<AggregateRow>(
       `SELECT * FROM daily_aggregates
         WHERE date = ?
@@ -737,7 +731,46 @@ export async function getDailyAggregateForDate(
       date,
     );
 
-    return row ? mapAggregateRow(row) : null;
+    if (row) {
+      return mapAggregateRow(row);
+    }
+
+    const events = await getAggregateEventsForDateWithDatabase(database, date);
+
+    if (!events.length) {
+      return null;
+    }
+
+    const aggregate = buildDailyAggregateRecord(date, events);
+
+    await database.runAsync(
+      `INSERT OR REPLACE INTO daily_aggregates (
+        date,
+        steps_total,
+        active_minutes,
+        distance_meters,
+        screen_time_seconds,
+        unlock_count,
+        sleep_estimate_minutes,
+        mobility_radius_meters,
+        top_activity,
+        data_completeness,
+        computed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      aggregate.date,
+      aggregate.stepsTotal,
+      aggregate.activeMinutes,
+      aggregate.distanceMeters,
+      aggregate.screenTimeSeconds,
+      aggregate.unlockCount,
+      aggregate.sleepEstimateMinutes,
+      aggregate.mobilityRadiusMeters,
+      aggregate.topActivity,
+      aggregate.dataCompleteness,
+      aggregate.computedAt,
+    );
+
+    return aggregate;
   });
 }
 

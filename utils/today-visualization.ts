@@ -116,6 +116,19 @@ interface TodayVisualizationContext {
   todaySnapshot: TodayLiveSnapshot;
 }
 
+export interface TodayDerivedEvents {
+  eventsByTypeDescending: Map<EventDataType, ZentraEventRecord[]>;
+  exerciseEvents: ZentraEventRecord[];
+  heartRateEvents: ZentraEventRecord[];
+  sortedDescending: ZentraEventRecord[];
+  unlockCount: number;
+}
+
+const todayDerivedEventsCache = new WeakMap<
+  ZentraEventRecord[],
+  TodayDerivedEvents
+>();
+
 interface LocationPayload {
   latitude: number;
   longitude: number;
@@ -487,6 +500,45 @@ function sortEventsAscending(events: ZentraEventRecord[]): ZentraEventRecord[] {
     .sort((left, right) =>
       left.timestampStart.localeCompare(right.timestampStart),
     );
+}
+
+export function buildTodayDerivedEvents(
+  todayEvents: ZentraEventRecord[],
+): TodayDerivedEvents {
+  const cached = todayDerivedEventsCache.get(todayEvents);
+  if (cached) {
+    return cached;
+  }
+
+  const sortedDescending = sortEventsDescending(todayEvents);
+  const eventsByTypeDescending = new Map<EventDataType, ZentraEventRecord[]>();
+
+  for (const event of sortedDescending) {
+    const existing = eventsByTypeDescending.get(event.dataType);
+    if (existing) {
+      existing.push(event);
+      continue;
+    }
+
+    eventsByTypeDescending.set(event.dataType, [event]);
+  }
+
+  const heartRateEvents = (
+    eventsByTypeDescending.get("heart_rate") ?? []
+  ).filter((event) => typeof event.valueNumeric === "number");
+  const exerciseEvents = eventsByTypeDescending.get("exercise_session") ?? [];
+  const unlockCount = (eventsByTypeDescending.get("unlock_event") ?? []).length;
+
+  const derived: TodayDerivedEvents = {
+    eventsByTypeDescending,
+    exerciseEvents,
+    heartRateEvents,
+    sortedDescending,
+    unlockCount,
+  };
+
+  todayDerivedEventsCache.set(todayEvents, derived);
+  return derived;
 }
 
 function getRelatedEvents(
@@ -1374,10 +1426,10 @@ export function buildTodaySecondaryMetrics(
   todayAggregate: DailyAggregateRecord | null,
   todaySnapshot: TodayLiveSnapshot,
   todayEvents: ZentraEventRecord[],
+  derivedEvents?: TodayDerivedEvents,
 ): TodaySummaryMetric[] {
-  const unlockCount =
-    todayAggregate?.unlockCount ??
-    todayEvents.filter((event) => event.dataType === "unlock_event").length;
+  const derived = derivedEvents ?? buildTodayDerivedEvents(todayEvents);
+  const unlockCount = todayAggregate?.unlockCount ?? derived.unlockCount;
   const topActivity = todayAggregate?.topActivity
     ? formatActivityLabel(todayAggregate.topActivity)
     : "Waiting";
@@ -1387,13 +1439,8 @@ export function buildTodaySecondaryMetrics(
       ? getCoverageCount(todayEvents) / CORE_SIGNAL_TYPES.length
       : 0);
 
-  const heartRateEvents = todayEvents.filter(
-    (event) =>
-      event.dataType === "heart_rate" && typeof event.valueNumeric === "number",
-  );
-  const exerciseEvents = todayEvents.filter(
-    (event) => event.dataType === "exercise_session",
-  );
+  const heartRateEvents = derived.heartRateEvents;
+  const exerciseEvents = derived.exerciseEvents;
   const latestHeartRate = heartRateEvents.length
     ? Math.round(heartRateEvents[heartRateEvents.length - 1]!.valueNumeric ?? 0)
     : null;
@@ -1514,8 +1561,11 @@ export function buildTodayMetricDetailPayload(
 
 export function buildRecentSignalRows(
   todayEvents: ZentraEventRecord[],
+  derivedEvents?: TodayDerivedEvents,
 ): TodayRecentSignalRow[] {
-  return sortEventsDescending(todayEvents)
+  const derived = derivedEvents ?? buildTodayDerivedEvents(todayEvents);
+
+  return derived.sortedDescending
     .slice(0, RECENT_SIGNAL_LIMIT)
     .map((event) => ({
       id: event.id,
@@ -1592,10 +1642,14 @@ function buildEventSpecificFacts(event: ZentraEventRecord): TodayDetailFact[] {
 export function buildRecentSignalDetailPayload(
   event: ZentraEventRecord,
   todayEvents: ZentraEventRecord[],
+  derivedEvents?: TodayDerivedEvents,
 ): TodayDetailPayload {
-  const relatedEvents = sortEventsDescending(
-    todayEvents.filter((candidate) => candidate.dataType === event.dataType),
-  );
+  const derived = derivedEvents ?? buildTodayDerivedEvents(todayEvents);
+  const relatedEvents =
+    derived.eventsByTypeDescending.get(event.dataType) ??
+    sortEventsDescending(
+      todayEvents.filter((candidate) => candidate.dataType === event.dataType),
+    );
   const metadataFacts = Object.entries(event.metadata)
     .slice(0, 2)
     .map(([label, value]) => ({

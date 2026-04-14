@@ -46,6 +46,7 @@ import {
   buildTrendSeries,
   createDemoCollectors,
 } from "@/utils/mock-data";
+import { startPerfTimer } from "@/utils/perf";
 import { useShallow } from "zustand/react/shallow";
 
 type TrendListItem =
@@ -75,6 +76,15 @@ export default function TrendsScreen() {
   const [hiddenSeriesKeys, setHiddenSeriesKeys] = React.useState<Set<string>>(
     new Set(),
   );
+  const focusReadyStopRef = React.useRef<
+    | ((
+        endContext?: Record<
+          string,
+          string | number | boolean | null | undefined
+        >,
+      ) => void)
+    | null
+  >(null);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
   const repository = useRepositoryStore(
@@ -136,6 +146,53 @@ export default function TrendsScreen() {
       : "Turn on a collector in Settings. Trends start forming once your signals have had time to accumulate.";
 
   React.useEffect(() => {
+    if (!isFocused) {
+      focusReadyStopRef.current?.({ ready: false });
+      focusReadyStopRef.current = null;
+      return;
+    }
+
+    focusReadyStopRef.current?.({ replaced: true });
+    focusReadyStopRef.current = startPerfTimer("trends.focus_to_ready", {
+      dataMode,
+      range,
+      screen: "trends",
+    });
+  }, [dataMode, isFocused, range]);
+
+  React.useEffect(() => {
+    if (
+      !isFocused ||
+      !repository.isHydrated ||
+      isDemoMode ||
+      isLoadingLiveData
+    ) {
+      return;
+    }
+
+    if (!focusReadyStopRef.current) {
+      return;
+    }
+
+    focusReadyStopRef.current({
+      rangeEnd,
+      rangeStart,
+      seriesCount: series.length,
+      surfaceCount: surfaces.length,
+    });
+    focusReadyStopRef.current = null;
+  }, [
+    isDemoMode,
+    isFocused,
+    isLoadingLiveData,
+    rangeEnd,
+    rangeStart,
+    repository.isHydrated,
+    series.length,
+    surfaces.length,
+  ]);
+
+  React.useEffect(() => {
     if (isDemoMode || !repository.isHydrated || !isFocused) {
       return;
     }
@@ -144,6 +201,13 @@ export default function TrendsScreen() {
 
     async function loadLiveTrends(): Promise<void> {
       setIsLoadingLiveData(true);
+      const stopLoad = startPerfTimer("trends.load_live_range", {
+        rangeEnd,
+        rangeStart,
+        screen: "trends",
+      });
+      let nextSeriesCount = 0;
+      let nextSurfaceCount = 0;
 
       try {
         const [aggregates, trendEvents] = await Promise.all([
@@ -151,19 +215,28 @@ export default function TrendsScreen() {
           getEventsForRange(rangeStart, rangeEnd),
         ]);
 
+        const nextSeries = buildLiveTrendSeries(
+          aggregates,
+          { start: rangeStart, end: rangeEnd },
+          trendEvents,
+        );
+        const nextSurfaces = buildLiveTrendSurfaces(trendEvents);
+        nextSeriesCount = nextSeries.length;
+        nextSurfaceCount = nextSurfaces.length;
+
         if (isCancelled) {
           return;
         }
 
-        setLiveSeries(
-          buildLiveTrendSeries(
-            aggregates,
-            { start: rangeStart, end: rangeEnd },
-            trendEvents,
-          ),
-        );
-        setLiveSurfaces(buildLiveTrendSurfaces(trendEvents));
+        setLiveSeries(nextSeries);
+        setLiveSurfaces(nextSurfaces);
       } finally {
+        stopLoad({
+          cancelled: isCancelled,
+          seriesCount: nextSeriesCount,
+          surfaceCount: nextSurfaceCount,
+        });
+
         if (!isCancelled) {
           setIsLoadingLiveData(false);
         }

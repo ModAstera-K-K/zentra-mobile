@@ -29,6 +29,11 @@ const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
   locationLastUpdatedAt: null,
 };
 
+const MIN_TODAY_REFRESH_INTERVAL_MS = 1_500;
+
+let lastTodayRefreshCompletedAtMs = 0;
+let refreshTodayDataInFlight: Promise<void> | null = null;
+
 interface RepositoryStoreState {
   isHydrated: boolean;
   lastUpdatedAt: string | null;
@@ -139,22 +144,43 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   },
 
   refreshTodayData: async () => {
-    const todayDate = toISODate(new Date());
-    const [todaySnapshot, todayAggregate, todayEvents] = await Promise.all([
-      getTodayLiveSnapshot(),
-      getDailyAggregateForDate(todayDate),
-      getEventsForRange(todayDate, todayDate),
-    ]);
+    if (refreshTodayDataInFlight) {
+      return refreshTodayDataInFlight;
+    }
 
-    const updatedAt = new Date().toISOString();
+    if (
+      Date.now() - lastTodayRefreshCompletedAtMs <
+      MIN_TODAY_REFRESH_INTERVAL_MS
+    ) {
+      return;
+    }
 
-    set({
-      lastUpdatedAt: updatedAt,
-      todayDataUpdatedAt: updatedAt,
-      todaySnapshot,
-      todayAggregate,
-      todayEvents,
-    });
+    refreshTodayDataInFlight = (async () => {
+      const todayDate = toISODate(new Date());
+      const [todaySnapshot, todayAggregate, todayEvents] = await Promise.all([
+        getTodayLiveSnapshot(),
+        getDailyAggregateForDate(todayDate),
+        getEventsForRange(todayDate, todayDate),
+      ]);
+
+      const updatedAt = new Date().toISOString();
+
+      set({
+        lastUpdatedAt: updatedAt,
+        todayDataUpdatedAt: updatedAt,
+        todaySnapshot,
+        todayAggregate,
+        todayEvents,
+      });
+
+      lastTodayRefreshCompletedAtMs = Date.now();
+    })();
+
+    try {
+      await refreshTodayDataInFlight;
+    } finally {
+      refreshTodayDataInFlight = null;
+    }
   },
 
   refreshDiagnostics: async () => {
