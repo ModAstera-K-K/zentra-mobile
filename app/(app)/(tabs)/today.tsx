@@ -4,6 +4,7 @@ import {
   AppState,
   FlatList,
   InteractionManager,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -22,7 +23,7 @@ import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { SignalSummaryCard } from "@/components/zentra/SignalSummaryCard";
 import { SleepEstimateCard } from "@/components/zentra/SleepEstimateCard";
 import { Card } from "@/components/ui/Card";
-import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import type {
@@ -875,13 +876,14 @@ export default function TodayScreen() {
     : hasCollectors
       ? "Welcome back."
       : "Hey, welcome.";
-  const introMessage = isRefreshingTodayData && !isDemoMode
-    ? "Refreshing today..."
-    : isDemoMode
-      ? "Sample signals are flowing."
-      : hasCollectors
-        ? "Signals are coming in from your phone."
-        : "Nothing's running yet — head to Settings to start.";
+  const introMessage =
+    isRefreshingTodayData && !isDemoMode
+      ? "Refreshing today..."
+      : isDemoMode
+        ? "Sample signals are flowing."
+        : hasCollectors
+          ? "Signals are coming in from your phone."
+          : "Nothing's running yet — head to Settings to start.";
   const totalCollectorCount = Object.keys(collectors).length;
   const statusLabel = isDemoMode
     ? "Demo"
@@ -991,22 +993,25 @@ export default function TodayScreen() {
       title="Today"
       titleAccessory={
         <View style={styles.titleAccessory}>
-          {isRefreshingTodayData && !isDemoMode ? (
-            <ActivityIndicator
-              color={palette.mutedForeground}
-              size="small"
-            />
-          ) : null}
-          <Text
-            style={[styles.introMessage, { color: palette.textSecondary }]}
-            numberOfLines={1}
-          >
-            {introMessage}
-          </Text>
-          <Text style={[styles.statusLabel, { color: palette.textSecondary }]}>
-            {statusLabel}
-          </Text>
-          <PilotLight size={10} />
+          <View style={styles.titleAccessoryLeft}>
+            {isRefreshingTodayData && !isDemoMode ? (
+              <ActivityIndicator color={palette.mutedForeground} size="small" />
+            ) : null}
+            <Text
+              style={[styles.introMessage, { color: palette.textSecondary }]}
+              numberOfLines={1}
+            >
+              {introMessage}
+            </Text>
+          </View>
+          <View style={styles.titleAccessoryRight}>
+            <Text
+              style={[styles.statusLabel, { color: palette.textSecondary }]}
+            >
+              {statusLabel}
+            </Text>
+            <PilotLight size={10} />
+          </View>
         </View>
       }
     >
@@ -1054,7 +1059,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingBottom: Spacing.sm,
+    paddingBottom: 0,
   },
   metricGrid: {
     flexDirection: "row",
@@ -1106,6 +1111,18 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.md,
   },
   titleAccessory: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  titleAccessoryLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: Spacing.sm,
+  },
+  titleAccessoryRight: {
     alignItems: "center",
     flexDirection: "row",
     gap: Spacing.sm,

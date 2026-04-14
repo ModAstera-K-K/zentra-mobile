@@ -92,9 +92,6 @@ export function ScreenShell({
             styles.flex,
             {
               backgroundColor: palette.background,
-              paddingBottom: isAndroid
-                ? 0
-                : Layout.tabBarHeight + Spacing["4xl"],
             },
           ]}
         >
@@ -132,14 +129,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: Layout.screenGutter,
+    paddingHorizontal: Layout.screenGutter,
+    paddingTop: Layout.screenGutter,
   },
   flex: {
     flex: 1,
   },
   chromeRow: {
-    alignItems: "flex-start",
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.sm,
     position: "relative",
   },
   brandRow: {
@@ -159,7 +156,6 @@ const styles = StyleSheet.create({
   },
   headerCopy: {
     gap: Spacing.xs,
-    paddingRight: Spacing["4xl"],
   },
   subtitleRow: {
     alignItems: "center",
