@@ -29,7 +29,7 @@ function main() {
   const expoBin = path.join(projectRoot, 'node_modules', '.bin', 'expo');
   const child = spawn(expoBin, ['run:android', ...process.argv.slice(2)], {
     cwd: projectRoot,
-    env,
+    env: { ...env, APP_VARIANT: 'development' },
     stdio: 'inherit',
   });
 

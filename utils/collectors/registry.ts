@@ -3,6 +3,7 @@ import type {
   AppUsageCollectorDeps,
   AmbientLightCollectorDeps,
   CollectorHandle,
+  ConnectivityCollectorDeps,
   DeviceStateCollectorDeps,
   HealthConnectCollectorDeps,
   LocationCollectorDeps,
@@ -13,6 +14,7 @@ import type {
 import { startActivityCollector } from "@/utils/collectors/activity-collector";
 import { startAppUsageCollector } from "@/utils/collectors/app-usage-collector";
 import { startAmbientLightCollector } from "@/utils/collectors/ambient-light-collector";
+import { startConnectivityCollector } from "@/utils/collectors/connectivity-collector";
 import { startDeviceStateCollector } from "@/utils/collectors/device-state-collector";
 import { startHealthConnectCollector } from "@/utils/collectors/health-connect-collector";
 import { startLocationCollector } from "@/utils/collectors/location-collector";
@@ -31,6 +33,12 @@ export function startDeviceStateCollectorModule(
   deps: DeviceStateCollectorDeps,
 ): Promise<CollectorHandle> {
   return startDeviceStateCollector(deps);
+}
+
+export function startConnectivityCollectorModule(
+  deps: ConnectivityCollectorDeps,
+): Promise<CollectorHandle> {
+  return startConnectivityCollector(deps);
 }
 
 export function startLocationCollectorModule(

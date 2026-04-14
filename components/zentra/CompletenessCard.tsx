@@ -39,7 +39,7 @@ function formatHealthLabel(health: CollectorState["health"]): string {
   }
 }
 
-export function CompletenessCard({
+export const CompletenessCard = React.memo(function CompletenessCard({
   collectors,
   summary,
 }: CompletenessCardProps) {
@@ -124,7 +124,7 @@ export function CompletenessCard({
       </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   eyebrow: {

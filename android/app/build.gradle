@@ -68,13 +68,6 @@ react {
  */
 def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBuilds') ?: false).toBoolean()
 
-def releaseStoreFilePath = findProperty('ZENTRA_RELEASE_STORE_FILE') ?: System.getenv('ANDROID_KEYSTORE_PATH')
-def releaseStorePassword = findProperty('ZENTRA_RELEASE_STORE_PASSWORD') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
-def releaseKeyAlias = findProperty('ZENTRA_RELEASE_KEY_ALIAS') ?: System.getenv('ANDROID_KEY_ALIAS')
-def releaseKeyPassword = findProperty('ZENTRA_RELEASE_KEY_PASSWORD') ?: System.getenv('ANDROID_KEY_PASSWORD')
-def releaseSigningConfigured = [releaseStoreFilePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && it.toString().trim() }
-def requireReleaseSigning = (findProperty('zentra.requireReleaseSigning') ?: 'false').toBoolean()
-
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
  *
@@ -97,7 +90,7 @@ android {
     namespace 'com.modastera.zentra'
     defaultConfig {
         applicationId 'com.modastera.zentra'
-        // Health Connect's AndroidX client requires API 26+.
+        // Health Connect requires API 26+; set via app.config.js android.minSdkVersion
         minSdkVersion 26
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -112,21 +105,15 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        if (releaseSigningConfigured) {
-            release {
-                storeFile file(releaseStoreFilePath)
-                storePassword releaseStorePassword
-                keyAlias releaseKeyAlias
-                keyPassword releaseKeyPassword
-            }
-        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig releaseSigningConfigured ? signingConfigs.release : signingConfigs.debug
+            // Caution! In production, you need to generate your own keystore file.
+            // see https://reactnative.dev/docs/signed-apk-android.
+            signingConfig signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
@@ -192,11 +179,5 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
-    }
-}
-
-gradle.taskGraph.whenReady { taskGraph ->
-    if (requireReleaseSigning && taskGraph.allTasks.any { task -> task.name.toLowerCase().contains('release') } && !releaseSigningConfigured) {
-        throw new GradleException('Release signing is required but not configured. Set ZENTRA_RELEASE_* Gradle properties or ANDROID_KEYSTORE_* environment variables.')
     }
 }

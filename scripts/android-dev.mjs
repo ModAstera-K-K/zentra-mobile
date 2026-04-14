@@ -58,10 +58,11 @@ async function main() {
     process.exit(1);
   }
 
+  const devEnv = { ...env, APP_VARIANT: 'development' };
   const expoBin = path.join(projectRoot, 'node_modules', '.bin', 'expo');
   const metro = spawn(expoBin, ['start', '--dev-client', '--host', 'localhost', '--clear'], {
     cwd: projectRoot,
-    env,
+    env: devEnv,
     stdio: 'inherit',
   });
 
@@ -73,17 +74,17 @@ async function main() {
     process.exit(1);
   }
 
-  runReverse(adbPath, env);
+  runReverse(adbPath, devEnv);
 
   const build = spawn(expoBin, ['run:android'], {
     cwd: projectRoot,
-    env,
+    env: devEnv,
     stdio: 'inherit',
   });
 
   build.on('exit', (code) => {
     if (code === 0) {
-      runReverse(adbPath, env);
+      runReverse(adbPath, devEnv);
       console.log('Android dev client installed. Leave this terminal open so Metro stays available.');
       return;
     }

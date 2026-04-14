@@ -57,6 +57,10 @@ export interface AppUsageCollectorDeps {
   refreshRepository: () => Promise<void>;
 }
 
+export interface ConnectivityCollectorDeps {
+  refreshRepository: () => Promise<void>;
+}
+
 export interface SleepCollectorDeps {
   refreshRepository: () => Promise<void>;
 }

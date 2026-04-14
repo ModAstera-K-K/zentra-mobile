@@ -5,6 +5,7 @@ export type CollectorKey =
   | "activity"
   | "appUsage"
   | "deviceState"
+  | "connectivity"
   | "healthConnect"
   | "location"
   | "sleep"
@@ -27,6 +28,7 @@ export type UnifiedTimelineResolution = "minute" | "15min" | "hour";
 export type ActivityPatternGranularity = "day" | "month" | "year";
 export type DataMode = "live" | "demo";
 export type LocationRetentionPreference = "24h" | "30d";
+export type ActivityNormalizationWindow = "month" | "year" | "all";
 export type EventDataType =
   | "steps"
   | "distance"
@@ -102,6 +104,41 @@ export interface TrendPoint {
   value: number;
 }
 
+export interface TrendDetailChartPoint {
+  label: string;
+  value: number;
+  valueLabel: string;
+  normalizedX?: number;
+}
+
+export interface TrendDetailBar {
+  label: string;
+  value: number;
+  valueLabel: string;
+}
+
+export type TrendDetailVisual =
+  | {
+      type: "line";
+      annotation: string;
+      points: TrendDetailChartPoint[];
+    }
+  | {
+      type: "vertical_bar";
+      annotation: string;
+      points: TrendDetailChartPoint[];
+    }
+  | {
+      type: "distribution";
+      annotation: string;
+      bars: TrendDetailBar[];
+    }
+  | {
+      type: "heatmap";
+      annotation: string;
+      cells: HeatmapCell[];
+    };
+
 export interface TrendSeries {
   key: string;
   label: string;
@@ -126,6 +163,19 @@ export interface TrendSeriesGroup {
   key: TrendSeriesGroupKey;
   label: string;
   series: TrendSeries[];
+}
+
+export interface TrendSurface {
+  key: string;
+  title: string;
+  summary: string;
+  tone: MetricTone;
+  group: TrendSeriesGroupKey;
+  visual: TrendDetailVisual;
+  valueLabel?: string;
+  metaLabel?: string;
+  coverageLabel?: string;
+  sourceLabel?: string;
 }
 
 export interface HeatmapCell {
@@ -155,12 +205,18 @@ export interface UnifiedTimelineBucket {
   dataTypeCoverage: Partial<Record<EventDataType, number>>;
   dominantKind: "rest" | "movement" | "screen";
   exerciseSeconds: number;
+  heartRateLoad: number;
   hasAnyData: boolean;
   heartRateAverageBpm: number | null;
+  idleSignals: number;
+  intensityScore: number;
   label: string;
   locationSamples: number;
+  movementSignals: number;
   movementScore: number;
+  nonSedentaryActivityCount: number;
   resolution: UnifiedTimelineResolution;
+  restCompositeScore: number;
   restScore: number;
   screenScore: number;
   screenTimeSeconds: number;
@@ -172,6 +228,17 @@ export interface UnifiedTimelineBucket {
   unlockCount: number;
 }
 
+export interface ActivityScoreMaxima {
+  exerciseSeconds: number;
+  heartRateLoad: number;
+  idleSignals: number;
+  movementSignals: number;
+  nonSedentaryActivityCount: number;
+  sleepMinutes: number;
+  steps: number;
+  unlockCount: number;
+}
+
 export interface ActivityPatternCell {
   detailLabel: string;
   dominantKind: "rest" | "movement" | "screen";
@@ -180,9 +247,11 @@ export interface ActivityPatternCell {
   hasAnyData: boolean;
   id: string;
   intensity: number;
+  intensityScore: number;
   label: string;
   movementScore: number;
   placeholder?: boolean;
+  restCompositeScore: number;
   restScore: number;
   screenScore: number;
   startTimestamp: string;

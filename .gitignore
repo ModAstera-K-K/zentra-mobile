@@ -37,3 +37,4 @@ build
 node
 zentra@1.0.0
 .secret
+android_keystore_base64

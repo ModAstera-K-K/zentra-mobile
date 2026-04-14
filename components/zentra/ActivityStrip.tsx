@@ -1,10 +1,9 @@
 import React from "react";
 import { LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Line, Polyline } from "react-native-svg";
+import Svg, { Circle, Line, Polyline, Text as SvgText } from "react-native-svg";
 
 import { EmptyState } from "@/components/zentra/EmptyState";
 import { Card } from "@/components/ui/Card";
-import { Chip } from "@/components/ui/Chip";
 import {
   Colors,
   Fonts,
@@ -14,7 +13,11 @@ import {
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { UnifiedTimelineBucket } from "@/types/zentra";
-import { buildChartCoordinates, buildPolylinePoints } from "@/utils/charts";
+import {
+  buildChartCoordinates,
+  buildPolylinePoints,
+  pickAxisLabelIndices,
+} from "@/utils/charts";
 
 interface ActivityStripProps {
   buckets: UnifiedTimelineBucket[];
@@ -22,15 +25,16 @@ interface ActivityStripProps {
 
 type ActivityMode = "movement" | "screen" | "rest";
 
-const MODE_OPTIONS: { key: ActivityMode; label: string }[] = [
-  { key: "movement", label: "Movement" },
-  { key: "screen", label: "Screen" },
-  { key: "rest", label: "Rest" },
+const MODES: { key: ActivityMode; label: string; unit: string }[] = [
+  { key: "movement", label: "Movement", unit: "/ 100" },
+  { key: "screen", label: "Screen", unit: "/ 100" },
+  { key: "rest", label: "Rest", unit: "/ 100" },
 ];
 
-const CHART_HEIGHT = 120;
+const CHART_HEIGHT = 140;
 const CHART_INSET_X = 8;
 const CHART_INSET_Y = 10;
+const X_AXIS_HEIGHT = 18;
 
 function getModeColor(mode: ActivityMode, palette: AppPalette): string {
   switch (mode) {
@@ -43,99 +47,107 @@ function getModeColor(mode: ActivityMode, palette: AppPalette): string {
   }
 }
 
-function getModeValue(
+/** Normalize raw screen scores to 0–100 across the given buckets. */
+function normalizeScreenScores(
+  buckets: UnifiedTimelineBucket[],
+): Map<UnifiedTimelineBucket, number> {
+  const maxScreen = Math.max(...buckets.map((b) => b.screenScore), 1);
+  const result = new Map<UnifiedTimelineBucket, number>();
+  for (const b of buckets) {
+    result.set(b, Math.round((b.screenScore / maxScreen) * 100));
+  }
+  return result;
+}
+
+function getNormalizedModeValue(
   bucket: UnifiedTimelineBucket,
   mode: ActivityMode,
+  normalizedScreen: Map<UnifiedTimelineBucket, number>,
 ): number {
   switch (mode) {
     case "movement":
-      return bucket.steps;
+      return bucket.intensityScore;
     case "screen":
-      return bucket.screenScore;
+      return normalizedScreen.get(bucket) ?? 0;
     default:
-      return bucket.restScore;
+      return bucket.restCompositeScore;
   }
 }
 
-function getModeUnit(mode: ActivityMode): string {
-  switch (mode) {
-    case "movement":
-      return "steps/hr";
-    case "screen":
-      return "score";
-    default:
-      return "score";
-  }
-}
-
-function getSummaryCopy(mode: ActivityMode): string {
-  switch (mode) {
-    case "movement":
-      return "See your steps per hour through the day.";
-    case "screen":
-      return "Score based on app usage, unlocks, and screen-on time. Higher means more screen activity that hour.";
-    default:
-      return "Score based on screen-off and idle periods. Higher means more downtime that hour.";
-  }
-}
-
-function getInitialSelectedIndex(
+function buildNormalizedPoints(
   buckets: UnifiedTimelineBucket[],
   mode: ActivityMode,
-): number {
-  const selected = buckets
-    .map((bucket, index) => ({ index, value: getModeValue(bucket, mode) }))
-    .sort((left, right) => right.value - left.value)[0];
-
-  return selected?.index ?? 0;
-}
-
-function buildPoints(
-  buckets: UnifiedTimelineBucket[],
-  mode: ActivityMode,
+  normalizedScreen: Map<UnifiedTimelineBucket, number>,
 ): { label: string; value: number }[] {
   return buckets.map((bucket) => ({
     label: bucket.label,
-    value: getModeValue(bucket, mode),
+    value: getNormalizedModeValue(bucket, mode, normalizedScreen),
   }));
 }
 
-export function ActivityStrip({ buckets }: ActivityStripProps) {
+function getInitialSelectedIndex(buckets: UnifiedTimelineBucket[]): number {
+  const selected = buckets
+    .map((bucket, index) => ({ index, value: bucket.steps }))
+    .sort((left, right) => right.value - left.value)[0];
+  return selected?.index ?? 0;
+}
+
+export const ActivityStrip = React.memo(function ActivityStrip({
+  buckets,
+}: ActivityStripProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
-  const [mode, setMode] = React.useState<ActivityMode>("movement");
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const [chartWidth, setChartWidth] = React.useState(0);
-  const accent = getModeColor(mode, palette);
-
-  const points = React.useMemo(
-    () => buildPoints(buckets, mode),
-    [buckets, mode],
-  );
 
   const innerWidth = Math.max(chartWidth - CHART_INSET_X * 2, 0);
   const innerHeight = CHART_HEIGHT - CHART_INSET_Y * 2;
-  const coordinates = React.useMemo(
-    () =>
-      innerWidth > 0
-        ? buildChartCoordinates(points, innerWidth, innerHeight).map(
-            (coordinate) => ({
-              ...coordinate,
-              x: coordinate.x + CHART_INSET_X,
-              y: coordinate.y + CHART_INSET_Y,
-            }),
-          )
-        : [],
-    [points, innerWidth, innerHeight],
-  );
-  const polyline = React.useMemo(
-    () => buildPolylinePoints(coordinates),
-    [coordinates],
+
+  const normalizedScreen = React.useMemo(
+    () => normalizeScreenScores(buckets),
+    [buckets],
   );
 
+  const seriesData = React.useMemo(() => {
+    return MODES.map((m) => ({
+      ...m,
+      points: buildNormalizedPoints(buckets, m.key, normalizedScreen),
+    }));
+  }, [buckets, normalizedScreen]);
+
+  const seriesCoordinates = React.useMemo(() => {
+    if (innerWidth <= 0)
+      return MODES.map(() => [] as { x: number; y: number }[]);
+    const sharedRange = { min: 0, max: 100 };
+    return seriesData.map((s) =>
+      buildChartCoordinates(
+        s.points,
+        innerWidth,
+        innerHeight,
+        undefined,
+        sharedRange,
+      ).map((c) => ({
+        x: c.x + CHART_INSET_X,
+        y: c.y + CHART_INSET_Y,
+      })),
+    );
+  }, [seriesData, innerWidth, innerHeight]);
+
+  const seriesPolylines = React.useMemo(
+    () => seriesCoordinates.map((coords) => buildPolylinePoints(coords)),
+    [seriesCoordinates],
+  );
+
+  const axisLabelIndices = React.useMemo(
+    () => pickAxisLabelIndices(buckets.length),
+    [buckets.length],
+  );
+
+  const movementCoordinates = seriesCoordinates[0] ?? [];
+
   React.useEffect(() => {
-    setSelectedIndex(getInitialSelectedIndex(buckets, mode));
-  }, [buckets, mode]);
+    setSelectedIndex(getInitialSelectedIndex(buckets));
+  }, [buckets]);
 
   if (!buckets.length || !buckets.some((bucket) => bucket.hasAnyData)) {
     return (
@@ -149,16 +161,17 @@ export function ActivityStrip({ buckets }: ActivityStripProps) {
 
   const clampedIndex = Math.max(0, Math.min(selectedIndex, buckets.length - 1));
   const selectedBucket = buckets[clampedIndex];
-  const selectedValue = getModeValue(selectedBucket, mode);
-  const selectedCoordinate =
-    coordinates[Math.max(0, Math.min(clampedIndex, coordinates.length - 1))];
+  const selectedX =
+    movementCoordinates[
+      Math.max(0, Math.min(clampedIndex, movementCoordinates.length - 1))
+    ]?.x;
 
   function handleLayout(event: LayoutChangeEvent): void {
     setChartWidth(event.nativeEvent.layout.width);
   }
 
   function updateSelection(locationX: number): void {
-    if (points.length <= 1 || innerWidth <= 0) {
+    if (buckets.length <= 1 || innerWidth <= 0) {
       return;
     }
 
@@ -166,9 +179,9 @@ export function ActivityStrip({ buckets }: ActivityStripProps) {
       0,
       Math.min(locationX - CHART_INSET_X, innerWidth),
     );
-    const step = innerWidth / (points.length - 1);
+    const step = innerWidth / (buckets.length - 1);
     const nextIndex = Math.round(relativeX / step);
-    setSelectedIndex(Math.max(0, Math.min(nextIndex, points.length - 1)));
+    setSelectedIndex(Math.max(0, Math.min(nextIndex, buckets.length - 1)));
   }
 
   return (
@@ -176,38 +189,6 @@ export function ActivityStrip({ buckets }: ActivityStripProps) {
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         Daily rhythm
       </Text>
-
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryCopy}>
-          <Text style={[styles.summaryValue, { color: accent }]}>
-            {selectedBucket.label}
-          </Text>
-          <Text style={[styles.summaryBody, { color: palette.textSecondary }]}>
-            {getSummaryCopy(mode)}
-          </Text>
-        </View>
-        <View style={styles.summaryMeta}>
-          <Text style={[styles.summaryMetric, { color: accent }]}>
-            {selectedValue}
-          </Text>
-          <Text
-            style={[styles.summaryCaption, { color: palette.textSecondary }]}
-          >
-            {getModeUnit(mode)}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.modeRow}>
-        {MODE_OPTIONS.map((option) => (
-          <Chip
-            key={option.key}
-            active={option.key === mode}
-            label={option.label}
-            onPress={() => setMode(option.key)}
-          />
-        ))}
-      </View>
 
       <View
         onLayout={handleLayout}
@@ -221,9 +202,9 @@ export function ActivityStrip({ buckets }: ActivityStripProps) {
         onStartShouldSetResponder={() => true}
       >
         <Svg
-          height={CHART_HEIGHT}
+          height={CHART_HEIGHT + X_AXIS_HEIGHT}
           width="100%"
-          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT}`}
+          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT + X_AXIS_HEIGHT}`}
         >
           {[CHART_INSET_Y, CHART_HEIGHT / 2, CHART_HEIGHT - CHART_INSET_Y].map(
             (yPosition) => (
@@ -241,43 +222,94 @@ export function ActivityStrip({ buckets }: ActivityStripProps) {
               />
             ),
           )}
-          {selectedCoordinate ? (
+          {selectedX != null ? (
             <Line
               stroke={palette.textSecondary}
               strokeDasharray="3 6"
               strokeWidth={1}
-              x1={selectedCoordinate.x}
-              x2={selectedCoordinate.x}
+              x1={selectedX}
+              x2={selectedX}
               y1={CHART_INSET_Y}
               y2={CHART_HEIGHT - CHART_INSET_Y}
             />
           ) : null}
-          <Polyline
-            fill="none"
-            points={polyline}
-            stroke={accent}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-          />
-          {coordinates.map((coordinate, index) => {
-            const isSelected = index === clampedIndex;
-
-            return isSelected ? (
+          {MODES.map((m, modeIndex) => (
+            <Polyline
+              key={m.key}
+              fill="none"
+              points={seriesPolylines[modeIndex]}
+              stroke={getModeColor(m.key, palette)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeOpacity={0.85}
+              strokeWidth={1.5}
+            />
+          ))}
+          {MODES.map((m, modeIndex) => {
+            const coords = seriesCoordinates[modeIndex];
+            const coord =
+              coords[Math.max(0, Math.min(clampedIndex, coords.length - 1))];
+            if (!coord) return null;
+            return (
               <Circle
-                key={`dot-${index}`}
-                cx={coordinate.x}
-                cy={coordinate.y}
-                fill={accent}
-                r={4}
+                key={`dot-${m.key}`}
+                cx={coord.x}
+                cy={coord.y}
+                fill={getModeColor(m.key, palette)}
+                r={3.5}
               />
-            ) : null;
+            );
+          })}
+          {axisLabelIndices.map((labelIndex) => {
+            const coord = movementCoordinates[labelIndex];
+            const bucket = buckets[labelIndex];
+            if (!coord || !bucket) return null;
+            const isFirst = labelIndex === 0;
+            const isLast = labelIndex === buckets.length - 1;
+            return (
+              <SvgText
+                key={`x-label-${labelIndex}`}
+                fill={palette.mutedForeground}
+                fontFamily="JetBrainsMonoRegular"
+                fontSize={9}
+                textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
+                x={coord.x}
+                y={CHART_HEIGHT + X_AXIS_HEIGHT - 4}
+              >
+                {bucket.label}
+              </SvgText>
+            );
           })}
         </Svg>
       </View>
+
+      <View style={styles.legendRow}>
+        <Text style={[styles.selectedLabel, { color: palette.foreground }]}>
+          {selectedBucket.label}
+        </Text>
+        {MODES.map((m) => {
+          const color = getModeColor(m.key, palette);
+          const value = getNormalizedModeValue(
+            selectedBucket,
+            m.key,
+            normalizedScreen,
+          );
+          return (
+            <View key={m.key} style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: color }]} />
+              <Text style={[styles.legendValue, { color }]}>{value}/100</Text>
+              <Text
+                style={[styles.legendLabel, { color: palette.textSecondary }]}
+              >
+                {m.label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
     </Card>
   );
-}
+});
 
 const styles = StyleSheet.create({
   eyebrow: {
@@ -287,44 +319,35 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     textTransform: "uppercase",
   },
-  modeRow: {
+  legendDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+  },
+  legendItem: {
+    alignItems: "center",
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+    gap: Spacing.xs,
   },
-  summaryBody: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.sm,
-    lineHeight: 20,
-  },
-  summaryCaption: {
+  legendLabel: {
     fontFamily: Fonts.mono,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
-  summaryCopy: {
-    flex: 1,
-    gap: Spacing.xs,
-  },
-  summaryMeta: {
-    alignItems: "flex-end",
-    gap: Spacing.xs,
-  },
-  summaryMetric: {
-    fontFamily: Fonts.monoMedium,
-    fontSize: FontSizes.xl,
-  },
-  summaryRow: {
-    alignItems: "flex-start",
+  legendRow: {
     flexDirection: "row",
-    gap: Spacing.md,
-    justifyContent: "space-between",
-    marginBottom: Spacing.md,
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
   },
-  summaryValue: {
+  legendValue: {
+    fontFamily: Fonts.monoMedium,
+    fontSize: FontSizes.xs,
+  },
+  selectedLabel: {
     fontFamily: Fonts.bodyMedium,
-    fontSize: FontSizes.base,
+    fontSize: FontSizes.sm,
+    marginRight: Spacing.xs,
   },
 });

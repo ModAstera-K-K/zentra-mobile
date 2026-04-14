@@ -21,7 +21,9 @@ interface ScreenShellProps {
   scrollable?: boolean;
   settingsEnabled?: boolean;
   subtitle: string;
+  subtitleAccessory?: React.ReactNode;
   title: string;
+  titleAccessory?: React.ReactNode;
 }
 
 export function ScreenShell({
@@ -29,7 +31,9 @@ export function ScreenShell({
   scrollable = true,
   settingsEnabled = true,
   subtitle,
+  subtitleAccessory,
   title,
+  titleAccessory,
 }: ScreenShellProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -45,12 +49,18 @@ export function ScreenShell({
       </View>
 
       <View style={styles.headerCopy}>
-        <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-          {subtitle}
-        </Text>
-        <Text style={[styles.title, { color: palette.foreground }]}>
-          {title}
-        </Text>
+        <View style={styles.subtitleRow}>
+          <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+            {subtitle}
+          </Text>
+          {subtitleAccessory ?? null}
+        </View>
+        <View style={styles.titleRow}>
+          <Text style={[styles.title, { color: palette.foreground }]}>
+            {title}
+          </Text>
+          {titleAccessory ?? null}
+        </View>
       </View>
 
       {settingsEnabled ? (
@@ -82,9 +92,6 @@ export function ScreenShell({
             styles.flex,
             {
               backgroundColor: palette.background,
-              paddingBottom: isAndroid
-                ? 0
-                : Layout.tabBarHeight + Spacing["4xl"],
             },
           ]}
         >
@@ -122,14 +129,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: Layout.screenGutter,
+    paddingHorizontal: Layout.screenGutter,
+    paddingTop: Layout.screenGutter,
   },
   flex: {
     flex: 1,
   },
   chromeRow: {
-    alignItems: "flex-start",
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.sm,
     position: "relative",
   },
   brandRow: {
@@ -149,7 +156,17 @@ const styles = StyleSheet.create({
   },
   headerCopy: {
     gap: Spacing.xs,
-    paddingRight: Spacing["4xl"],
+  },
+  subtitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  titleRow: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
   },
   subtitle: {
     fontFamily: Fonts.mono,

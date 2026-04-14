@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ActivityIndicator,
   Alert,
   InteractionManager,
   StyleSheet,
@@ -30,10 +31,12 @@ import {
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
+import { useIsFocused } from "@react-navigation/native";
 import type {
   ExportFormat,
   ExportMode,
   ExportPreset,
+  UnifiedTimelineBucket,
   UnifiedTimelineResolution,
 } from "@/types/zentra";
 import {
@@ -56,6 +59,7 @@ import {
   estimateUnifiedExportBundleBytes,
 } from "@/utils/export";
 import { formatBytes } from "@/utils/format";
+import { startPerfTimer, timeSyncOperation } from "@/utils/perf";
 import { buildUnifiedTimeline } from "@/utils/unified-timeline";
 import { useShallow } from "zustand/react/shallow";
 
@@ -80,13 +84,14 @@ const SECTION_ICONS = {
 export default function ExportScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const isFocused = useIsFocused();
   const noteExport = useAppStore((state) => state.noteExport);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
   const repositoryState = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
-      lastUpdatedAt: state.lastUpdatedAt,
+      todayDataUpdatedAt: state.todayDataUpdatedAt,
     })),
   );
   const [preset, setPreset] = React.useState<ExportPreset>("week");
@@ -95,6 +100,8 @@ export default function ExportScreen() {
   const [resolution, setResolution] =
     React.useState<UnifiedTimelineResolution>("15min");
   const [isExporting, setIsExporting] = React.useState(false);
+  const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
+  const [isComputingTimeline, setIsComputingTimeline] = React.useState(false);
   const [selectedTypes, setSelectedTypes] = React.useState<string[]>([]);
   const [liveEvents, setLiveEvents] = React.useState<
     Record<string, import("@/types/zentra").ZentraEventRecord[]>
@@ -105,9 +112,26 @@ export default function ExportScreen() {
   const [liveRawEvents, setLiveRawEvents] = React.useState<
     import("@/types/zentra").ZentraEventRecord[]
   >([]);
+  const [timelineBuckets, setTimelineBuckets] = React.useState<
+    UnifiedTimelineBucket[]
+  >([]);
   const [customRange, setCustomRange] = React.useState(() =>
     getExportRangeForPreset("custom"),
   );
+  const focusReadyStopRef = React.useRef<
+    | ((
+        endContext?: Record<
+          string,
+          string | number | boolean | null | undefined
+        >,
+      ) => void)
+    | null
+  >(null);
+  const lastLoadedRangeRef = React.useRef<{
+    start: string;
+    end: string;
+    dataVersion: string | null;
+  } | null>(null);
   const range =
     preset === "custom" ? customRange : getExportRangeForPreset(preset);
   const demoCollectors = React.useMemo(
@@ -123,28 +147,118 @@ export default function ExportScreen() {
     isValidISODate(range.start) &&
     isValidISODate(range.end) &&
     range.start <= range.end;
+  const isPreparingBundleData =
+    isLoadingLiveData || (exportMode === "unified" && isComputingTimeline);
 
   React.useEffect(() => {
-    if (dataMode === "demo" || !repositoryState.isHydrated || !hasValidRange) {
+    if (!isFocused) {
+      focusReadyStopRef.current?.({ ready: false });
+      focusReadyStopRef.current = null;
+      return;
+    }
+
+    focusReadyStopRef.current?.({ replaced: true });
+    focusReadyStopRef.current = startPerfTimer("export.focus_to_ready", {
+      dataMode,
+      exportMode,
+      rangeEnd: range.end,
+      rangeStart: range.start,
+      resolution,
+      screen: "export",
+    });
+  }, [dataMode, exportMode, isFocused, range.end, range.start, resolution]);
+
+  React.useEffect(() => {
+    if (!isFocused || dataMode === "demo" || !repositoryState.isHydrated) {
+      return;
+    }
+
+    if (isLoadingLiveData || !focusReadyStopRef.current) {
+      return;
+    }
+
+    focusReadyStopRef.current({
+      aggregateCount: liveAggregates.length,
+      rawEventCount: liveRawEvents.length,
+      selectedTypeCount: selectedTypes.length,
+      typeCount: availableTypes.length,
+    });
+    focusReadyStopRef.current = null;
+  }, [
+    availableTypes.length,
+    dataMode,
+    isFocused,
+    isLoadingLiveData,
+    liveAggregates.length,
+    liveRawEvents.length,
+    repositoryState.isHydrated,
+    selectedTypes.length,
+  ]);
+
+  React.useEffect(() => {
+    if (
+      dataMode === "demo" ||
+      !repositoryState.isHydrated ||
+      !hasValidRange ||
+      !isFocused
+    ) {
+      return;
+    }
+
+    // Skip reload if range and data version are unchanged (e.g. simple re-focus)
+    const prev = lastLoadedRangeRef.current;
+    if (
+      prev &&
+      prev.start === range.start &&
+      prev.end === range.end &&
+      prev.dataVersion === repositoryState.todayDataUpdatedAt
+    ) {
       return;
     }
 
     let isCancelled = false;
 
     async function loadLiveExportData(): Promise<void> {
-      const [events, aggregates, rawEvents] = await Promise.all([
-        getGroupedEventsForRange(range.start, range.end),
-        getDailyAggregatesForRange(range.start, range.end),
-        getEventsForRange(range.start, range.end),
-      ]);
+      setIsLoadingLiveData(true);
+      const stopLoad = startPerfTimer("export.load_live_range", {
+        rangeEnd: range.end,
+        rangeStart: range.start,
+        screen: "export",
+      });
 
-      if (isCancelled) {
-        return;
+      try {
+        const [events, aggregates, rawEvents] = await Promise.all([
+          getGroupedEventsForRange(range.start, range.end),
+          getDailyAggregatesForRange(range.start, range.end),
+          getEventsForRange(range.start, range.end),
+        ]);
+
+        stopLoad({
+          aggregateCount: aggregates.length,
+          eventTypeCount: Object.keys(events).length,
+          isCancelled,
+          rawEventCount: rawEvents.length,
+        });
+
+        if (isCancelled) {
+          return;
+        }
+
+        setLiveEvents(events);
+        setLiveAggregates(aggregates);
+        setLiveRawEvents(rawEvents);
+        lastLoadedRangeRef.current = {
+          start: range.start,
+          end: range.end,
+          dataVersion: repositoryState.todayDataUpdatedAt,
+        };
+      } catch {
+        stopLoad({ isCancelled, result: "error" });
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingLiveData(false);
+        }
       }
-
-      setLiveEvents(events);
-      setLiveAggregates(aggregates);
-      setLiveRawEvents(rawEvents);
     }
 
     const interaction = InteractionManager.runAfterInteractions(() => {
@@ -154,14 +268,16 @@ export default function ExportScreen() {
     return () => {
       isCancelled = true;
       interaction.cancel();
+      setIsLoadingLiveData(false);
     };
   }, [
     dataMode,
     hasValidRange,
+    isFocused,
     range.end,
     range.start,
     repositoryState.isHydrated,
-    repositoryState.lastUpdatedAt,
+    repositoryState.todayDataUpdatedAt,
   ]);
 
   React.useEffect(() => {
@@ -184,27 +300,71 @@ export default function ExportScreen() {
   const rawEventsForTimeline =
     dataMode === "demo" ? demoRawEvents : liveRawEvents;
 
-  const timelineBuckets = React.useMemo(() => {
+  React.useEffect(() => {
     if (
       exportMode !== "unified" ||
       !hasValidRange ||
       !rawEventsForTimeline.length
     ) {
-      return [];
+      setTimelineBuckets([]);
+      setIsComputingTimeline(false);
+      return;
     }
-    const startDate = parseISODate(range.start);
-    const endDate = parseISODate(shiftISODate(range.end, 1));
-    return buildUnifiedTimeline(rawEventsForTimeline, {
-      resolution,
-      startTimestamp: startDate.toISOString(),
-      endTimestamp: endDate.toISOString(),
+
+    let isCancelled = false;
+    setIsComputingTimeline(true);
+
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      const stopCompute = startPerfTimer("export.compute_unified_timeline", {
+        eventCount: rawEventsForTimeline.length,
+        rangeEnd: range.end,
+        rangeStart: range.start,
+        resolution,
+        screen: "export",
+      });
+
+      try {
+        const nextTimelineBuckets = timeSyncOperation(
+          "export.compute_unified_timeline.sync",
+          () => {
+            const startDate = parseISODate(range.start);
+            const endDate = parseISODate(shiftISODate(range.end, 1));
+            return buildUnifiedTimeline(rawEventsForTimeline, {
+              resolution,
+              startTimestamp: startDate.toISOString(),
+              endTimestamp: endDate.toISOString(),
+            });
+          },
+        );
+
+        if (!isCancelled) {
+          setTimelineBuckets(nextTimelineBuckets);
+        }
+
+        stopCompute({
+          bucketCount: nextTimelineBuckets.length,
+          cancelled: isCancelled,
+        });
+      } catch {
+        stopCompute({ cancelled: isCancelled, result: "error" });
+      } finally {
+        if (!isCancelled) {
+          setIsComputingTimeline(false);
+        }
+      }
     });
+
+    return () => {
+      isCancelled = true;
+      interaction.cancel();
+      setIsComputingTimeline(false);
+    };
   }, [
     exportMode,
     hasValidRange,
-    rawEventsForTimeline,
-    range.start,
     range.end,
+    range.start,
+    rawEventsForTimeline,
     resolution,
   ]);
 
@@ -245,6 +405,13 @@ export default function ExportScreen() {
     }
     if (!hasValidRange) {
       Alert.alert("Check your dates", "Use YYYY-MM-DD format for both dates.");
+      return;
+    }
+    if (isPreparingBundleData) {
+      Alert.alert(
+        "Still preparing",
+        "Zentra is still loading and aligning this range. Try export again in a moment.",
+      );
       return;
     }
 
@@ -313,6 +480,18 @@ export default function ExportScreen() {
                   : `${selectedTypes.length} signal${selectedTypes.length === 1 ? "" : "s"} selected`}
               </Text>
             </View>
+            {isPreparingBundleData ? (
+              <View style={styles.leadMetaRow}>
+                <ActivityIndicator color={palette.textSecondary} size="small" />
+                <Text
+                  style={[styles.leadMeta, { color: palette.textSecondary }]}
+                >
+                  {isLoadingLiveData
+                    ? "Loading data..."
+                    : "Preparing timeline..."}
+                </Text>
+              </View>
+            ) : null}
           </View>
         }
         title={
@@ -450,9 +629,11 @@ export default function ExportScreen() {
                 ))}
               </View>
               <Text style={[styles.helper, { color: palette.mutedForeground }]}>
-                {timelineBuckets.length
-                  ? `${timelineBuckets.length} buckets · ${timelineBuckets.filter((b) => b.hasAnyData).length} with data`
-                  : "Buckets will be computed from your selected range."}
+                {isComputingTimeline
+                  ? "Preparing timeline..."
+                  : timelineBuckets.length
+                    ? `${timelineBuckets.length} buckets · ${timelineBuckets.filter((b) => b.hasAnyData).length} with data`
+                    : "Buckets will be computed from your selected range."}
               </Text>
             </Card>
           ) : null}
@@ -539,13 +720,34 @@ export default function ExportScreen() {
                   ? "Time-aligned timeline buckets and a manifest. Stays here until you share it."
                   : "Your captured signals and a manifest. Stays here until you share it."}
             </Text>
+            {isPreparingBundleData ? (
+              <View style={styles.bundleProgressRow}>
+                <ActivityIndicator
+                  color={palette.mutedForeground}
+                  size="small"
+                />
+                <Text
+                  style={[
+                    styles.bundleProgressText,
+                    { color: palette.textSecondary },
+                  ]}
+                >
+                  Preparing export data...
+                </Text>
+              </View>
+            ) : null}
           </Card>
 
           <Button
+            disabled={isExporting || isPreparingBundleData}
             leadingIconName={getActionIcon("export")}
             onPress={() => void handleExport()}
           >
-            {isExporting ? "Bundling…" : "Bundle and export"}
+            {isExporting
+              ? "Exporting bundle..."
+              : isPreparingBundleData
+                ? "Preparing bundle..."
+                : "Export bundle"}
           </Button>
         </>
       )}
@@ -618,5 +820,16 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontFamily: Fonts.monoMedium,
     fontSize: FontSizes["2xl"],
+  },
+  bundleProgressRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  bundleProgressText: {
+    fontFamily: Fonts.mono,
+    fontSize: FontSizes.xs,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
 });

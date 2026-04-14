@@ -1,6 +1,12 @@
 import React from "react";
 import { LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Line, Polyline } from "react-native-svg";
+import Svg, {
+  Circle,
+  Line,
+  Polyline,
+  Rect,
+  Text as SvgText,
+} from "react-native-svg";
 
 import {
   Colors,
@@ -10,18 +16,25 @@ import {
   type AppPalette,
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import type { MetricTone } from "@/types/zentra";
-import { buildChartCoordinates, buildPolylinePoints } from "@/utils/charts";
+import type { MetricTone, TrendDetailVisual } from "@/types/zentra";
+import {
+  buildChartCoordinates,
+  buildPolylinePoints,
+  pickAxisLabelIndices,
+} from "@/utils/charts";
 import type { TodayDetailVisual } from "@/utils/today-visualization";
 
 interface MetricDetailVisualProps {
   tone: MetricTone;
-  visual: TodayDetailVisual | null;
+  visual: TodayDetailVisual | TrendDetailVisual | null;
 }
+
+type DetailVisual = TodayDetailVisual | TrendDetailVisual;
 
 const CHART_HEIGHT = 148;
 const CHART_INSET_X = 12;
 const CHART_INSET_Y = 14;
+const X_AXIS_HEIGHT = 18;
 
 function getToneColor(tone: MetricTone, palette: AppPalette): string {
   switch (tone) {
@@ -86,7 +99,7 @@ function LineVisual({
   visual,
 }: {
   accent: string;
-  visual: Extract<TodayDetailVisual, { type: "line" }>;
+  visual: Extract<DetailVisual, { type: "line" }>;
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -134,6 +147,10 @@ function LineVisual({
         ? buildGappedPolylineSegments(visual.points, coordinates)
         : [buildPolylinePoints(coordinates)],
     [hasNormalizedX, visual.points, coordinates],
+  );
+  const axisLabelIndices = React.useMemo(
+    () => pickAxisLabelIndices(visual.points.length),
+    [visual.points.length],
   );
 
   React.useEffect(() => {
@@ -202,9 +219,9 @@ function LineVisual({
         ]}
       >
         <Svg
-          height={CHART_HEIGHT}
+          height={CHART_HEIGHT + X_AXIS_HEIGHT}
           width="100%"
-          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT}`}
+          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT + X_AXIS_HEIGHT}`}
         >
           {buildGridYPositions().map((yPosition) => (
             <Line
@@ -257,6 +274,200 @@ function LineVisual({
               />
             );
           })}
+          {axisLabelIndices.map((labelIndex) => {
+            const coord = coordinates[labelIndex];
+            const point = visual.points[labelIndex];
+            if (!coord || !point) return null;
+            const isFirst = labelIndex === 0;
+            const isLast = labelIndex === visual.points.length - 1;
+            return (
+              <SvgText
+                key={`x-label-${labelIndex}`}
+                fill={palette.mutedForeground}
+                fontFamily="JetBrainsMonoRegular"
+                fontSize={9}
+                textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
+                x={coord.x}
+                y={CHART_HEIGHT + X_AXIS_HEIGHT - 4}
+              >
+                {point.label}
+              </SvgText>
+            );
+          })}
+        </Svg>
+      </View>
+      <Text style={[styles.annotation, { color: palette.textSecondary }]}>
+        {visual.annotation}
+      </Text>
+    </View>
+  );
+}
+
+function VerticalBarVisual({
+  accent,
+  visual,
+}: {
+  accent: string;
+  visual: Extract<DetailVisual, { type: "vertical_bar" }>;
+}) {
+  const colorScheme = useColorScheme();
+  const palette = Colors[colorScheme];
+  const [chartWidth, setChartWidth] = React.useState(0);
+  const [selectedIndex, setSelectedIndex] = React.useState(
+    Math.max(visual.points.length - 1, 0),
+  );
+  const innerWidth = Math.max(chartWidth - CHART_INSET_X * 2, 0);
+  const innerHeight = CHART_HEIGHT - CHART_INSET_Y * 2;
+  const hasNormalizedX = visual.points.some(
+    (point) => point.normalizedX != null,
+  );
+  const maxValue = React.useMemo(
+    () => Math.max(...visual.points.map((p) => p.value), 1),
+    [visual.points],
+  );
+  const axisLabelIndices = React.useMemo(
+    () => pickAxisLabelIndices(visual.points.length),
+    [visual.points.length],
+  );
+  const selectedPoint =
+    visual.points[clampIndex(selectedIndex, visual.points.length - 1)];
+
+  React.useEffect(() => {
+    setSelectedIndex(Math.max(visual.points.length - 1, 0));
+  }, [visual.points]);
+
+  function handleLayout(event: LayoutChangeEvent): void {
+    setChartWidth(event.nativeEvent.layout.width);
+  }
+
+  function updateSelection(locationX: number): void {
+    if (visual.points.length <= 1 || innerWidth <= 0) {
+      return;
+    }
+
+    const adjustedX = locationX - CHART_INSET_X;
+    let nearest = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < visual.points.length; i++) {
+      const nx = hasNormalizedX
+        ? (visual.points[i].normalizedX ?? 0)
+        : i / (visual.points.length - 1);
+      const barX = nx * innerWidth;
+      const dist = Math.abs(barX - adjustedX);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = i;
+      }
+    }
+    setSelectedIndex(clampIndex(nearest, visual.points.length - 1));
+  }
+
+  const barCount = visual.points.length;
+  const gap = barCount > 1 ? Math.min(3, innerWidth / barCount / 4) : 0;
+  const barWidth = Math.max(
+    1,
+    barCount > 1
+      ? (innerWidth - gap * (barCount - 1)) / barCount
+      : innerWidth / 3,
+  );
+
+  return (
+    <View style={styles.visualBlock}>
+      <View style={styles.visualHeader}>
+        <Text style={[styles.visualValue, { color: accent }]}>
+          {selectedPoint?.valueLabel ??
+            visual.points.at(-1)?.valueLabel ??
+            "--"}
+        </Text>
+        <Text style={[styles.visualCaption, { color: palette.textSecondary }]}>
+          {selectedPoint?.label ?? visual.points.at(-1)?.label ?? ""}
+        </Text>
+      </View>
+      <View
+        onLayout={handleLayout}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={(event) =>
+          updateSelection(event.nativeEvent.locationX)
+        }
+        onResponderMove={(event) =>
+          updateSelection(event.nativeEvent.locationX)
+        }
+        onStartShouldSetResponder={() => true}
+        style={[
+          styles.chartFrame,
+          { backgroundColor: palette.card, borderColor: palette.border },
+        ]}
+      >
+        <Svg
+          height={CHART_HEIGHT + X_AXIS_HEIGHT}
+          width="100%"
+          viewBox={`0 0 ${Math.max(chartWidth, 1)} ${CHART_HEIGHT + X_AXIS_HEIGHT}`}
+        >
+          {buildGridYPositions().map((yPosition) => (
+            <Line
+              key={`grid-${yPosition}`}
+              stroke={palette.border}
+              strokeDasharray={
+                yPosition === CHART_HEIGHT / 2 ? "3 6" : undefined
+              }
+              strokeWidth={1}
+              x1={CHART_INSET_X}
+              x2={Math.max(chartWidth - CHART_INSET_X, CHART_INSET_X)}
+              y1={yPosition}
+              y2={yPosition}
+            />
+          ))}
+          {visual.points.map((point, index) => {
+            const nx = hasNormalizedX
+              ? (point.normalizedX ?? 0)
+              : barCount > 1
+                ? index / (barCount - 1)
+                : 0.5;
+            const barX = CHART_INSET_X + nx * innerWidth - barWidth / 2;
+            const barHeight =
+              maxValue > 0 ? (point.value / maxValue) * innerHeight : 0;
+            const barY = CHART_INSET_Y + innerHeight - barHeight;
+            const isSelected =
+              index === clampIndex(selectedIndex, visual.points.length - 1);
+
+            return (
+              <Rect
+                key={`bar-${index}`}
+                x={barX}
+                y={barY}
+                width={barWidth}
+                height={Math.max(barHeight, 0)}
+                rx={Math.min(barWidth / 2, 3)}
+                fill={accent}
+                opacity={isSelected ? 1 : 0.5}
+              />
+            );
+          })}
+          {axisLabelIndices.map((labelIndex) => {
+            const point = visual.points[labelIndex];
+            if (!point) return null;
+            const nx = hasNormalizedX
+              ? (point.normalizedX ?? 0)
+              : barCount > 1
+                ? labelIndex / (barCount - 1)
+                : 0.5;
+            const labelX = CHART_INSET_X + nx * innerWidth;
+            const isFirst = labelIndex === 0;
+            const isLast = labelIndex === visual.points.length - 1;
+            return (
+              <SvgText
+                key={`x-label-${labelIndex}`}
+                fill={palette.mutedForeground}
+                fontFamily="JetBrainsMonoRegular"
+                fontSize={9}
+                textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
+                x={labelX}
+                y={CHART_HEIGHT + X_AXIS_HEIGHT - 4}
+              >
+                {point.label}
+              </SvgText>
+            );
+          })}
         </Svg>
       </View>
       <Text style={[styles.annotation, { color: palette.textSecondary }]}>
@@ -271,7 +482,7 @@ function DistributionVisual({
   visual,
 }: {
   accent: string;
-  visual: Extract<TodayDetailVisual, { type: "distribution" }>;
+  visual: Extract<DetailVisual, { type: "distribution" }>;
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -331,7 +542,7 @@ function DistributionVisual({
 function HeatmapVisual({
   visual,
 }: {
-  visual: Extract<TodayDetailVisual, { type: "heatmap" }>;
+  visual: Extract<DetailVisual, { type: "heatmap" }>;
 }) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -395,6 +606,10 @@ export function MetricDetailVisual({ tone, visual }: MetricDetailVisualProps) {
 
   if (visual.type === "line") {
     return <LineVisual accent={accent} visual={visual} />;
+  }
+
+  if (visual.type === "vertical_bar") {
+    return <VerticalBarVisual accent={accent} visual={visual} />;
   }
 
   if (visual.type === "distribution") {

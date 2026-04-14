@@ -69,7 +69,21 @@ export async function startHealthConnectCollector(
   }
 
   const { startIso, endIso } = getHealthConnectWindow();
-  const records = await readHealthConnectRecordsAsync(startIso, endIso);
+
+  let records;
+  try {
+    records = await readHealthConnectRecordsAsync(startIso, endIso);
+  } catch (error) {
+    await ensureCollectorFailureState(
+      "healthConnect",
+      error instanceof Error
+        ? error.message
+        : `${getHealthPlatformName()} read failed — check permissions in ${getHealthPlatformName()}`,
+    );
+    await deps.refreshRepository();
+    return { stop: () => undefined };
+  }
+
   const events = createHealthConnectEvents(records);
 
   if (!events.length) {

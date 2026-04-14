@@ -8,8 +8,10 @@ import type {
   EventSource,
   HeatmapCell,
   SleepEstimate,
+  TrendDetailBar,
   TrendRange,
   TrendSeries,
+  TrendSurface,
   ZentraEventRecord,
 } from "@/types/zentra";
 import { formatMinutes, formatNumber } from "@/utils/format";
@@ -61,6 +63,17 @@ const BASE_COLLECTORS: CollectorStateMap = {
     health: "idle",
     lastRunLabel: "Waiting for device state",
     sourceLabel: "System Broadcasts",
+  },
+  connectivity: {
+    key: "connectivity",
+    label: "Connectivity",
+    description: "Wi-Fi, cellular, offline, and network path changes.",
+    permissionLabel: "System reachability",
+    enabled: false,
+    permissionStatus: "not_requested",
+    health: "idle",
+    lastRunLabel: "Off",
+    sourceLabel: "Network reachability",
   },
   healthConnect: {
     key: "healthConnect",
@@ -390,6 +403,17 @@ export function buildTrendSeries(
       ready: isCollectorReady(collectors, "activity"),
     },
     {
+      key: "activityIntensity",
+      label: "Activity Intensity",
+      unit: "%",
+      tone: "physical" as const,
+      group: "body" as const,
+      min: 36,
+      max: 92,
+      phase: 6,
+      ready: isCollectorReady(collectors, "activity"),
+    },
+    {
       key: "distanceMeters",
       label: "Distance",
       unit: "km",
@@ -423,14 +447,36 @@ export function buildTrendSeries(
       ready: isCollectorReady(collectors, "appUsage"),
     },
     {
-      key: "sleepEstimate",
-      label: "Sleep Estimate",
+      key: "inferredSleep",
+      label: "Inferred Sleep",
       unit: "min",
       tone: "human" as const,
-      group: "body" as const,
+      group: "health" as const,
       min: 360,
       max: 510,
       phase: 3,
+      ready: isCollectorReady(collectors, "sleep"),
+    },
+    {
+      key: "importedSleep",
+      label: "Imported Sleep",
+      unit: "min",
+      tone: "human" as const,
+      group: "health" as const,
+      min: 340,
+      max: 500,
+      phase: 5,
+      ready: isCollectorReady(collectors, "healthConnect"),
+    },
+    {
+      key: "restScore",
+      label: "Rest Score",
+      unit: "%",
+      tone: "human" as const,
+      group: "health" as const,
+      min: 28,
+      max: 82,
+      phase: 4,
       ready: isCollectorReady(collectors, "sleep"),
     },
     {
@@ -458,9 +504,13 @@ export function buildTrendSeries(
       sourceLabel:
         definition.key === "distanceMeters"
           ? "Foreground location"
-          : definition.group === "device"
-            ? "Usage Access"
-            : "Repository demo",
+          : definition.key === "inferredSleep"
+            ? "Local inference"
+            : definition.key === "importedSleep"
+              ? "Health Connect"
+              : definition.group === "device"
+                ? "Usage Access"
+                : "Repository demo",
       points: labels.map((label, index) => ({
         label,
         value: buildWaveValue(
@@ -473,6 +523,108 @@ export function buildTrendSeries(
       change: buildWaveValue(days / 3, -9, 18, definition.phase),
       variability: buildWaveValue(days / 4, 8, 24, definition.phase),
     }));
+}
+
+export function buildDemoTrendSurfaces(
+  range: TrendRange,
+  collectors: CollectorStateMap,
+  hasSeedData: boolean,
+): TrendSurface[] {
+  if (!hasSeedData) {
+    return [];
+  }
+
+  const rangeWeight = Math.max(1, Math.round(getTrendRangeDays(range) / 7));
+  const surfaces: TrendSurface[] = [];
+
+  if (
+    isCollectorReady(collectors, "sleep") ||
+    isCollectorReady(collectors, "healthConnect")
+  ) {
+    const cells = DAYS.flatMap((dayLabel, dayIndex) =>
+      HOURS.map((hourLabel, hourIndex) => ({
+        dayLabel,
+        hourLabel,
+        value: buildWaveValue(
+          dayIndex * rangeWeight + hourIndex,
+          12,
+          100,
+          dayIndex + 2,
+        ),
+      })),
+    );
+    surfaces.push({
+      key: "sleepStartHeatmap",
+      title: "Sleep Timing",
+      summary:
+        "Sleep windows settle into a late-evening start most days in the demo range.",
+      tone: "human",
+      group: "health",
+      valueLabel: "11",
+      metaLabel: "sleep windows",
+      coverageLabel: "Demo sleep timing across the selected range",
+      sourceLabel: isCollectorReady(collectors, "healthConnect")
+        ? "Health Connect + local inference"
+        : "Local inference",
+      visual: {
+        type: "heatmap",
+        annotation: "When sleep windows usually begin across this range.",
+        cells,
+      },
+    });
+  }
+
+  if (isCollectorReady(collectors, "healthConnect")) {
+    const heartRateBars: TrendDetailBar[] = [
+      { label: "Night", value: 62, valueLabel: "62 bpm" },
+      { label: "Morning", value: 69, valueLabel: "69 bpm" },
+      { label: "Afternoon", value: 74, valueLabel: "74 bpm" },
+      { label: "Evening", value: 71, valueLabel: "71 bpm" },
+    ];
+    const exerciseBars: TrendDetailBar[] = [
+      { label: "Walking", value: 146, valueLabel: formatMinutes(146) },
+      { label: "Running", value: 82, valueLabel: formatMinutes(82) },
+      { label: "Cycling", value: 54, valueLabel: formatMinutes(54) },
+      { label: "Yoga", value: 38, valueLabel: formatMinutes(38) },
+    ];
+
+    surfaces.push({
+      key: "heartRateDayparts",
+      title: "Heart Rate Dayparts",
+      summary:
+        "Afternoon carries the highest average imported heart rate in the demo history.",
+      tone: "human",
+      group: "health",
+      valueLabel: "74 bpm",
+      metaLabel: "Afternoon peak",
+      coverageLabel: "Demo imported heart-rate distribution",
+      sourceLabel: "Health Connect",
+      visual: {
+        type: "distribution",
+        annotation: "Average imported heart rate by part of day.",
+        bars: heartRateBars,
+      },
+    });
+    surfaces.push({
+      key: "exerciseMix",
+      title: "Exercise Mix",
+      summary:
+        "Walking accounts for the biggest share of imported exercise minutes in the demo range.",
+      tone: "physical",
+      group: "health",
+      valueLabel: formatMinutes(146),
+      metaLabel: "Walking lead",
+      coverageLabel: "Demo imported exercise mix",
+      sourceLabel: "Health Connect",
+      visual: {
+        type: "distribution",
+        annotation: "Total imported exercise minutes by session type.",
+        bars: exerciseBars,
+      },
+    });
+  }
+
+  return surfaces;
 }
 
 export function buildHeatmap(

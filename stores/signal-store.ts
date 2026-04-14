@@ -1,7 +1,14 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
-import type { LocationSample, PermissionStatus, SignalStoreState } from '@/types/zentra';
-import { loadPersistedSignalState, savePersistedSignalState } from '@/utils/app-storage';
+import type {
+  LocationSample,
+  PermissionStatus,
+  SignalStoreState,
+} from "@/types/zentra";
+import {
+  loadPersistedSignalState,
+  savePersistedSignalState,
+} from "@/utils/app-storage";
 
 interface SignalState extends SignalStoreState {
   bootstrap: () => Promise<void>;
@@ -27,7 +34,7 @@ const EMPTY_SIGNAL_STATE: SignalStoreState = {
   isHydrated: false,
   stepCount: null,
   stepSupported: null,
-  stepPermissionStatus: 'not_requested',
+  stepPermissionStatus: "not_requested",
   stepLastUpdatedAt: null,
   batterySupported: null,
   batteryLevel: null,
@@ -35,7 +42,7 @@ const EMPTY_SIGNAL_STATE: SignalStoreState = {
   lowPowerMode: null,
   batteryLastUpdatedAt: null,
   locationSupported: null,
-  locationPermissionStatus: 'not_requested',
+  locationPermissionStatus: "not_requested",
   locationServicesEnabled: null,
   locationSamples: [],
   locationLastUpdatedAt: null,
@@ -67,7 +74,10 @@ async function persistSignalState(state: SignalState): Promise<void> {
   });
 }
 
-function withTimestamp<T extends object>(payload: T, key: string): T & Record<string, string> {
+function withTimestamp<T extends object>(
+  payload: T,
+  key: string,
+): T & Record<string, string> {
   return {
     ...payload,
     [key]: new Date().toISOString(),
@@ -101,7 +111,7 @@ export const useSignalStore = create<SignalState>((set, get) => ({
   },
 
   setStepCount: async (stepCount) => {
-    set(withTimestamp({ stepCount }, 'stepLastUpdatedAt'));
+    set(withTimestamp({ stepCount }, "stepLastUpdatedAt"));
     await persistSignalState(get());
   },
 
@@ -110,12 +120,21 @@ export const useSignalStore = create<SignalState>((set, get) => ({
     await persistSignalState(get());
   },
 
-  setBatterySnapshot: async ({ batteryLevel, batteryStateLabel, lowPowerMode }) => {
-    set((state) => withTimestamp({
-      batteryLevel: batteryLevel ?? state.batteryLevel,
-      batteryStateLabel: batteryStateLabel ?? state.batteryStateLabel,
-      lowPowerMode: lowPowerMode ?? state.lowPowerMode,
-    }, 'batteryLastUpdatedAt'));
+  setBatterySnapshot: async ({
+    batteryLevel,
+    batteryStateLabel,
+    lowPowerMode,
+  }) => {
+    set((state) =>
+      withTimestamp(
+        {
+          batteryLevel: batteryLevel ?? state.batteryLevel,
+          batteryStateLabel: batteryStateLabel ?? state.batteryStateLabel,
+          lowPowerMode: lowPowerMode ?? state.lowPowerMode,
+        },
+        "batteryLastUpdatedAt",
+      ),
+    );
     await persistSignalState(get());
   },
 
@@ -135,9 +154,14 @@ export const useSignalStore = create<SignalState>((set, get) => ({
   },
 
   addLocationSample: async (sample) => {
-    set((state) => withTimestamp({
-      locationSamples: [...state.locationSamples, sample].slice(-24),
-    }, 'locationLastUpdatedAt'));
+    set((state) =>
+      withTimestamp(
+        {
+          locationSamples: [...state.locationSamples, sample].slice(-24),
+        },
+        "locationLastUpdatedAt",
+      ),
+    );
     await persistSignalState(get());
   },
 
@@ -147,7 +171,7 @@ export const useSignalStore = create<SignalState>((set, get) => ({
   },
 
   setAmbientLightLux: async (ambientLightLux) => {
-    set(withTimestamp({ ambientLightLux }, 'ambientLightLastUpdatedAt'));
+    set(withTimestamp({ ambientLightLux }, "ambientLightLastUpdatedAt"));
     await persistSignalState(get());
   },
 

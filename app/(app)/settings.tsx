@@ -32,6 +32,7 @@ import {
   useSignalStore,
 } from "@/stores";
 import type {
+  ActivityNormalizationWindow,
   DataMode,
   LocationRetentionPreference,
   PermissionStatus,
@@ -74,6 +75,11 @@ const LOCATION_RETENTION_OPTIONS: LocationRetentionPreference[] = [
   "24h",
   "30d",
 ];
+const ACTIVITY_NORMALIZATION_OPTIONS: ActivityNormalizationWindow[] = [
+  "month",
+  "year",
+  "all",
+];
 const QUICK_ACTION_ICONS: Record<
   CollectorQuickActionType,
   keyof typeof Ionicons.glyphMap
@@ -84,6 +90,32 @@ const QUICK_ACTION_ICONS: Record<
   connect_health: "fitness-outline",
 };
 
+function getActivityNormalizationLabel(
+  preference: ActivityNormalizationWindow,
+): string {
+  switch (preference) {
+    case "month":
+      return "Rolling month";
+    case "all":
+      return "All time";
+    default:
+      return "Rolling year";
+  }
+}
+
+function getActivityNormalizationDescription(
+  preference: ActivityNormalizationWindow,
+): string {
+  switch (preference) {
+    case "month":
+      return "Useful-activity intensity is normalized against your strongest buckets from the last 30 rolling days.";
+    case "all":
+      return "Useful-activity intensity is normalized against your strongest buckets across all stored history on this device.";
+    default:
+      return "Useful-activity intensity is normalized against your strongest buckets from the last 365 rolling days.";
+  }
+}
+
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -91,6 +123,12 @@ export default function SettingsScreen() {
   const setCollectorEnabled = useAppStore((state) => state.setCollectorEnabled);
   const dataMode = useAppStore((state) => state.dataMode);
   const setDataMode = useAppStore((state) => state.setDataMode);
+  const activityNormalizationWindow = useAppStore(
+    (state) => state.activityNormalizationWindow,
+  );
+  const setActivityNormalizationWindow = useAppStore(
+    (state) => state.setActivityNormalizationWindow,
+  );
   const locationRetentionPreference = useAppStore(
     (state) => state.locationRetentionPreference,
   );
@@ -457,6 +495,25 @@ export default function SettingsScreen() {
 
       <Card style={styles.section}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+          Activity intensity
+        </Text>
+        <View style={styles.themeRow}>
+          {ACTIVITY_NORMALIZATION_OPTIONS.map((option) => (
+            <Chip
+              key={option}
+              active={activityNormalizationWindow === option}
+              label={getActivityNormalizationLabel(option)}
+              onPress={() => void setActivityNormalizationWindow(option)}
+            />
+          ))}
+        </View>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          {getActivityNormalizationDescription(activityNormalizationWindow)}
+        </Text>
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
           Your signals
         </Text>
         <View style={styles.column}>
@@ -555,6 +612,10 @@ export default function SettingsScreen() {
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Raw location retention{" "}
           {getLocationRetentionLabel(locationRetentionPreference)}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Activity normalization{" "}
+          {getActivityNormalizationLabel(activityNormalizationWindow)}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Repository diagnostics{" "}

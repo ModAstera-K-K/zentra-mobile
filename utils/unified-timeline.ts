@@ -8,6 +8,11 @@ import type {
   UnifiedTimelineWindow,
   ZentraEventRecord,
 } from "@/types/zentra";
+import {
+  buildActivityScoreMaxima,
+  buildBucketCompositeScores,
+} from "@/utils/activity-intensity";
+import type { ActivityScoreMaxima } from "@/types/zentra";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
 
 const TRACKED_TIMELINE_TYPES: EventDataType[] = [
@@ -73,12 +78,18 @@ function createEmptyBucket(
     dataTypeCoverage: createCoverageRecord<EventDataType>(),
     dominantKind: "rest",
     exerciseSeconds: 0,
+    heartRateLoad: 0,
     hasAnyData: false,
     heartRateAverageBpm: null,
+    idleSignals: 0,
+    intensityScore: 0,
     label: formatBucketLabel(start, resolution),
     locationSamples: 0,
+    movementSignals: 0,
     movementScore: 0,
+    nonSedentaryActivityCount: 0,
     resolution,
+    restCompositeScore: 0,
     restScore: 0,
     screenScore: 0,
     screenTimeSeconds: 0,
@@ -262,8 +273,13 @@ function applyActivityEvent(
   bucket.movementScore += getMovementContribution(event);
 
   if (event.valueText === "still") {
+    bucket.idleSignals += 1;
     bucket.restScore += 2;
+    return;
   }
+
+  bucket.nonSedentaryActivityCount += 1;
+  bucket.movementSignals += 1;
 }
 
 function applyAppUsageEvent(
@@ -283,6 +299,10 @@ function applyScreenStateEvent(
   const contribution = getScreenStateContribution(event);
   bucket.screenScore += contribution.screen;
   bucket.restScore += contribution.rest;
+
+  if (event.valueText === "non_interactive") {
+    bucket.idleSignals += 1;
+  }
 }
 
 function applyUnlockEvent(bucket: UnifiedTimelineBucket): void {
@@ -310,6 +330,7 @@ function applySleepEvent(
 
 function applyLocationEvent(bucket: UnifiedTimelineBucket): void {
   bucket.locationSamples += 1;
+  bucket.movementSignals += 1;
   bucket.movementScore += 2;
 }
 
@@ -350,6 +371,7 @@ function applyHeartRateEvent(
   bucket.heartRateAverageBpm = Number(
     ((bucket.heartRateAverageBpm + nextValue) / 2).toFixed(1),
   );
+  bucket.heartRateLoad = bucket.heartRateAverageBpm;
 }
 
 function applyExerciseEvent(
@@ -441,111 +463,11 @@ function finalizeBucket(bucket: UnifiedTimelineBucket): UnifiedTimelineBucket {
       (coveredTypes / TRACKED_TIMELINE_TYPES.length).toFixed(2),
     ),
     dominantKind: getDominantKind(bucket),
+    heartRateLoad: bucket.heartRateAverageBpm ?? bucket.heartRateLoad,
   };
 }
 
-function getIntensityValue(
-  cell: Omit<ActivityPatternCell, "intensity">,
-): number {
-  return Math.max(cell.movementScore, cell.screenScore, cell.restScore);
-}
-
-function normalizePatternIntensity(
-  cells: Omit<ActivityPatternCell, "intensity">[],
-): ActivityPatternCell[] {
-  const maxValue = Math.max(0, ...cells.map(getIntensityValue));
-
-  return cells.map((cell) => ({
-    ...cell,
-    intensity:
-      maxValue <= 0 || !cell.hasAnyData
-        ? 0
-        : Math.max(
-            8,
-            Math.min(
-              100,
-              Math.round((getIntensityValue(cell) / maxValue) * 100),
-            ),
-          ),
-  }));
-}
-
-function createPatternCell(
-  granularity: ActivityPatternGranularity,
-  start: Date,
-  end: Date,
-  bucket: {
-    movementScore: number;
-    restScore: number;
-    screenScore: number;
-    hasAnyData: boolean;
-  },
-  label: string,
-  detailLabel: string,
-): Omit<ActivityPatternCell, "intensity"> {
-  const dominantKind =
-    bucket.movementScore >= bucket.screenScore &&
-    bucket.movementScore >= bucket.restScore
-      ? bucket.movementScore > 0
-        ? "movement"
-        : "rest"
-      : bucket.screenScore >= bucket.restScore
-        ? bucket.screenScore > 0
-          ? "screen"
-          : "rest"
-        : "rest";
-
-  return {
-    detailLabel,
-    dominantKind,
-    endTimestamp: end.toISOString(),
-    granularity,
-    hasAnyData: bucket.hasAnyData,
-    id: `${granularity}-${start.toISOString()}`,
-    label,
-    movementScore: bucket.movementScore,
-    restScore: bucket.restScore,
-    screenScore: bucket.screenScore,
-    startTimestamp: start.toISOString(),
-  };
-}
-
-function summarizeTimeline(buckets: UnifiedTimelineBucket[]): {
-  hasAnyData: boolean;
-  movementScore: number;
-  restScore: number;
-  screenScore: number;
-} {
-  return buckets.reduce<{
-    hasAnyData: boolean;
-    movementScore: number;
-    restScore: number;
-    screenScore: number;
-  }>(
-    (result, bucket) => ({
-      hasAnyData: result.hasAnyData || bucket.hasAnyData,
-      movementScore: result.movementScore + bucket.movementScore,
-      restScore: result.restScore + bucket.restScore,
-      screenScore: result.screenScore + bucket.screenScore,
-    }),
-    {
-      hasAnyData: false,
-      movementScore: 0,
-      restScore: 0,
-      screenScore: 0,
-    },
-  );
-}
-
-function getMonthStart(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function shiftMonth(date: Date, months: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + months, 1);
-}
-
-export function buildUnifiedTimeline(
+function buildRawUnifiedTimeline(
   events: ZentraEventRecord[],
   window: UnifiedTimelineWindow,
 ): UnifiedTimelineBucket[] {
@@ -590,25 +512,219 @@ export function buildUnifiedTimeline(
   return buckets.map(finalizeBucket);
 }
 
+function buildEventWindow(
+  events: ZentraEventRecord[],
+  resolution: UnifiedTimelineResolution,
+): UnifiedTimelineWindow | null {
+  if (!events.length) {
+    return null;
+  }
+
+  const resolutionMs = getResolutionMinutes(resolution) * 60_000;
+  let minStartMs = Number.POSITIVE_INFINITY;
+  let maxEndMs = Number.NEGATIVE_INFINITY;
+
+  for (const event of events) {
+    const startMs = new Date(event.timestampStart).getTime();
+    const endMs =
+      event.timestampEnd > event.timestampStart
+        ? new Date(event.timestampEnd).getTime()
+        : startMs + resolutionMs;
+
+    minStartMs = Math.min(minStartMs, startMs);
+    maxEndMs = Math.max(maxEndMs, endMs);
+  }
+
+  if (!Number.isFinite(minStartMs) || !Number.isFinite(maxEndMs)) {
+    return null;
+  }
+
+  return {
+    endTimestamp: new Date(maxEndMs).toISOString(),
+    resolution,
+    startTimestamp: new Date(minStartMs).toISOString(),
+  };
+}
+
+function applyCompositeScores(
+  buckets: UnifiedTimelineBucket[],
+  normalizationBuckets: UnifiedTimelineBucket[],
+): UnifiedTimelineBucket[] {
+  const maxima = buildActivityScoreMaxima(normalizationBuckets);
+
+  return applyMaxima(buckets, maxima);
+}
+
+function applyMaxima(
+  buckets: UnifiedTimelineBucket[],
+  maxima: ActivityScoreMaxima,
+): UnifiedTimelineBucket[] {
+  return buckets.map((bucket) => {
+    const composite = buildBucketCompositeScores(bucket, maxima);
+    return {
+      ...bucket,
+      intensityScore: composite.intensityScore,
+      restCompositeScore: composite.restCompositeScore,
+    };
+  });
+}
+
+function getIntensityValue(
+  cell: Omit<ActivityPatternCell, "intensity">,
+): number {
+  return cell.intensityScore;
+}
+
+function normalizePatternIntensity(
+  cells: Omit<ActivityPatternCell, "intensity">[],
+): ActivityPatternCell[] {
+  const maxValue = Math.max(0, ...cells.map(getIntensityValue));
+
+  return cells.map((cell) => ({
+    ...cell,
+    intensity:
+      maxValue <= 0 || !cell.hasAnyData
+        ? 0
+        : Math.max(
+            8,
+            Math.min(
+              100,
+              Math.round((getIntensityValue(cell) / maxValue) * 100),
+            ),
+          ),
+  }));
+}
+
+function createPatternCell(
+  granularity: ActivityPatternGranularity,
+  start: Date,
+  end: Date,
+  bucket: {
+    hasAnyData: boolean;
+    intensityScore: number;
+    restCompositeScore: number;
+  },
+  label: string,
+  detailLabel: string,
+): Omit<ActivityPatternCell, "intensity"> {
+  const dominantKind =
+    bucket.intensityScore >= bucket.restCompositeScore &&
+    bucket.intensityScore > 0
+      ? "movement"
+      : "rest";
+
+  return {
+    detailLabel,
+    dominantKind,
+    endTimestamp: end.toISOString(),
+    granularity,
+    hasAnyData: bucket.hasAnyData,
+    id: `${granularity}-${start.toISOString()}`,
+    intensityScore: bucket.intensityScore,
+    label,
+    movementScore: bucket.intensityScore,
+    restCompositeScore: bucket.restCompositeScore,
+    restScore: bucket.restCompositeScore,
+    screenScore: 0,
+    startTimestamp: start.toISOString(),
+  };
+}
+
+function summarizeTimeline(buckets: UnifiedTimelineBucket[]): {
+  hasAnyData: boolean;
+  intensityScore: number;
+  restCompositeScore: number;
+} {
+  const bucketsWithData = buckets.filter((bucket) => bucket.hasAnyData);
+
+  if (!bucketsWithData.length) {
+    return {
+      hasAnyData: false,
+      intensityScore: 0,
+      restCompositeScore: 0,
+    };
+  }
+
+  return {
+    hasAnyData: true,
+    intensityScore:
+      bucketsWithData.reduce(
+        (total, bucket) => total + bucket.intensityScore,
+        0,
+      ) / bucketsWithData.length,
+    restCompositeScore:
+      bucketsWithData.reduce(
+        (total, bucket) => total + bucket.restCompositeScore,
+        0,
+      ) / bucketsWithData.length,
+  };
+}
+
+function getMonthStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function shiftMonth(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+export function buildUnifiedTimeline(
+  events: ZentraEventRecord[],
+  window: UnifiedTimelineWindow,
+  normalizationEvents: ZentraEventRecord[] = events,
+  precomputedMaxima?: ActivityScoreMaxima | null,
+): UnifiedTimelineBucket[] {
+  const buckets = buildRawUnifiedTimeline(events, window);
+
+  if (precomputedMaxima) {
+    return applyMaxima(buckets, precomputedMaxima);
+  }
+
+  const normalizationWindow = buildEventWindow(
+    normalizationEvents,
+    window.resolution,
+  );
+
+  if (!normalizationWindow) {
+    return buckets;
+  }
+
+  const normalizationBuckets = buildRawUnifiedTimeline(
+    normalizationEvents,
+    normalizationWindow,
+  );
+
+  return applyCompositeScores(buckets, normalizationBuckets);
+}
+
 export function buildUnifiedDailyTimeline(
   events: ZentraEventRecord[],
   date: string,
   resolution: UnifiedTimelineResolution = "15min",
+  normalizationEvents: ZentraEventRecord[] = events,
+  precomputedMaxima?: ActivityScoreMaxima | null,
 ): UnifiedTimelineBucket[] {
   const start = parseISODate(date);
   const end = parseISODate(shiftISODate(date, 1));
 
-  return buildUnifiedTimeline(events, {
-    endTimestamp: end.toISOString(),
-    resolution,
-    startTimestamp: start.toISOString(),
-  });
+  return buildUnifiedTimeline(
+    events,
+    {
+      endTimestamp: end.toISOString(),
+      resolution,
+      startTimestamp: start.toISOString(),
+    },
+    normalizationEvents,
+    precomputedMaxima,
+  );
 }
 
 export function buildMonthlyActivityPattern(
   events: ZentraEventRecord[],
   anchorDate: string,
   resolution: UnifiedTimelineResolution = "15min",
+  normalizationEvents: ZentraEventRecord[] = events,
+  precomputedMaxima?: ActivityScoreMaxima | null,
 ): ActivityPatternCell[] {
   const anchor = parseISODate(anchorDate);
   // Find the Monday of the current week
@@ -675,9 +791,11 @@ export function buildMonthlyActivityPattern(
         granularity: "month",
         hasAnyData: false,
         id: `month-placeholder-${offset}`,
+        intensityScore: 0,
         label: String(current.getDate()),
         movementScore: 0,
         placeholder: true,
+        restCompositeScore: 0,
         restScore: 0,
         screenScore: 0,
         startTimestamp: current.toISOString(),
@@ -688,6 +806,8 @@ export function buildMonthlyActivityPattern(
         dayEvents,
         currentDate,
         resolution,
+        normalizationEvents,
+        precomputedMaxima,
       );
       const summary = summarizeTimeline(timeline);
 
@@ -708,10 +828,27 @@ export function buildMonthlyActivityPattern(
   return normalizePatternIntensity(cells);
 }
 
+/**
+ * Pre-compute the normalization maxima from a set of events. Pass the result
+ * to `buildUnifiedDailyTimeline` or `buildMonthlyActivityPattern` as
+ * `precomputedMaxima` to avoid recomputing the normalization pass on every
+ * call (e.g. 28× in the monthly pattern loop).
+ */
+export function buildNormalizationMaxima(
+  normalizationEvents: ZentraEventRecord[],
+  resolution: UnifiedTimelineResolution,
+): ActivityScoreMaxima | null {
+  const window = buildEventWindow(normalizationEvents, resolution);
+  if (!window) return null;
+  const buckets = buildRawUnifiedTimeline(normalizationEvents, window);
+  return buildActivityScoreMaxima(buckets);
+}
+
 export function buildYearlyActivityPattern(
   events: ZentraEventRecord[],
   anchorDate: string,
   resolution: UnifiedTimelineResolution = "15min",
+  normalizationEvents: ZentraEventRecord[] = events,
 ): ActivityPatternCell[] {
   const anchorMonthStart = getMonthStart(parseISODate(anchorDate));
   const cells: Omit<ActivityPatternCell, "intensity">[] = [];
@@ -721,11 +858,15 @@ export function buildYearlyActivityPattern(
     const nextMonthStart = shiftMonth(monthStart, 1);
     const currentDate = toISODate(monthStart);
     const lastDate = shiftISODate(toISODate(nextMonthStart), -1);
-    const timeline = buildUnifiedTimeline(events, {
-      endTimestamp: nextMonthStart.toISOString(),
-      resolution,
-      startTimestamp: monthStart.toISOString(),
-    });
+    const timeline = buildUnifiedTimeline(
+      events,
+      {
+        endTimestamp: nextMonthStart.toISOString(),
+        resolution,
+        startTimestamp: monthStart.toISOString(),
+      },
+      normalizationEvents,
+    );
     const summary = summarizeTimeline(timeline);
 
     cells.push(

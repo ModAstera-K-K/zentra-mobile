@@ -1,12 +1,19 @@
 import type {
   DailyAggregateRecord,
   HeatmapCell,
+  TrendDetailBar,
   TrendSeries,
   TrendSeriesGroup,
   TrendSeriesGroupKey,
+  TrendSurface,
   ZentraEventRecord,
 } from "@/types/zentra";
 import { enumerateISODateRange, parseISODate } from "@/utils/dates";
+import { formatMinutes, formatNumber } from "@/utils/format";
+import {
+  buildNormalizationMaxima,
+  buildUnifiedDailyTimeline,
+} from "@/utils/unified-timeline";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HEATMAP_HOURS = [
@@ -122,6 +129,410 @@ function buildDaysWithDataLabel(
   return `${coveredDays}/${dates.length} days ${qualifier}`;
 }
 
+function titleCase(value: string): string {
+  return value
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function getHealthSourceLabel(
+  events: ZentraEventRecord[],
+  fallback: string,
+): string {
+  for (const event of events) {
+    if (typeof event.metadata.health_platform === "string") {
+      return event.metadata.health_platform;
+    }
+  }
+
+  return fallback;
+}
+
+function getDaypartLabel(date: Date): string {
+  const hour = date.getHours();
+
+  if (hour < 6) {
+    return "Night";
+  }
+
+  if (hour < 12) {
+    return "Morning";
+  }
+
+  if (hour < 18) {
+    return "Afternoon";
+  }
+
+  return "Evening";
+}
+
+function buildSleepStartHeatmap(
+  events: ZentraEventRecord[],
+): TrendSurface | null {
+  const cells = DAY_LABELS.flatMap((dayLabel) =>
+    HEATMAP_HOURS.map((hourLabel) => ({
+      dayLabel,
+      hourLabel,
+      value: 0,
+    })),
+  );
+  const cellMap = new Map(
+    cells.map((cell) => [`${cell.dayLabel}-${cell.hourLabel}`, cell]),
+  );
+  const sleepEvents = events.filter(
+    (event) =>
+      event.dataType === "sleep_inferred" &&
+      typeof event.valueNumeric === "number",
+  );
+
+  if (!sleepEvents.length) {
+    return null;
+  }
+
+  const sources = new Set<string>();
+  for (const event of sleepEvents) {
+    const bucket = getHeatmapBucket(new Date(event.timestampStart));
+    const cell = cellMap.get(`${bucket.dayLabel}-${bucket.hourLabel}`);
+    if (!cell) {
+      continue;
+    }
+
+    cell.value += 1;
+    sources.add(event.source === "health_connect" ? "imported" : "inferred");
+  }
+
+  const normalizedCells = cells.filter((cell) => cell.value > 0);
+  const maxValue = Math.max(...normalizedCells.map((cell) => cell.value), 0);
+  if (maxValue <= 0) {
+    return null;
+  }
+
+  const strongestCell = normalizedCells.reduce((best, cell) =>
+    cell.value > best.value ? cell : best,
+  );
+  const sourceLabel =
+    sources.size > 1
+      ? "Sleep history"
+      : sources.has("imported")
+        ? getHealthSourceLabel(sleepEvents, "Health import")
+        : "Local inference";
+
+  return {
+    key: "sleepStartHeatmap",
+    title: "Sleep Timing",
+    summary: `Sleep windows most often begin around ${strongestCell.hourLabel}:00.`,
+    tone: "human",
+    group: "health",
+    valueLabel: `${sleepEvents.length}`,
+    metaLabel: "sleep windows",
+    coverageLabel: `${sleepEvents.length} recorded sleep window${sleepEvents.length === 1 ? "" : "s"} in range`,
+    sourceLabel,
+    visual: {
+      type: "heatmap",
+      annotation: "When sleep windows usually begin across this range.",
+      cells: cells.map((cell) => ({
+        ...cell,
+        value: Math.round((cell.value / maxValue) * 100),
+      })),
+    },
+  };
+}
+
+function buildHeartRateDaypartSurface(
+  events: ZentraEventRecord[],
+): TrendSurface | null {
+  const heartRateEvents = events.filter(
+    (event) =>
+      event.dataType === "heart_rate" && typeof event.valueNumeric === "number",
+  );
+
+  if (!heartRateEvents.length) {
+    return null;
+  }
+
+  const buckets = new Map<string, number[]>();
+  for (const event of heartRateEvents) {
+    const label = getDaypartLabel(new Date(event.timestampStart));
+    buckets.set(label, [
+      ...(buckets.get(label) ?? []),
+      event.valueNumeric ?? 0,
+    ]);
+  }
+
+  const bars: TrendDetailBar[] = ["Night", "Morning", "Afternoon", "Evening"]
+    .map((label) => {
+      const values = buckets.get(label) ?? [];
+      if (!values.length) {
+        return null;
+      }
+
+      const average = Math.round(
+        values.reduce((total, value) => total + value, 0) / values.length,
+      );
+
+      return {
+        label,
+        value: average,
+        valueLabel: `${average} bpm`,
+      };
+    })
+    .filter((entry): entry is TrendDetailBar => entry !== null);
+
+  if (!bars.length) {
+    return null;
+  }
+
+  const peak = bars.reduce((best, bar) =>
+    bar.value > best.value ? bar : best,
+  );
+
+  return {
+    key: "heartRateDayparts",
+    title: "Heart Rate Dayparts",
+    summary: `${peak.label} ran highest at ${peak.valueLabel} on average.`,
+    tone: "human",
+    group: "health",
+    valueLabel: bars[0]?.valueLabel,
+    metaLabel: `${heartRateEvents.length} readings`,
+    coverageLabel: `${heartRateEvents.length} imported reading${heartRateEvents.length === 1 ? "" : "s"} across ${bars.length} dayparts`,
+    sourceLabel: getHealthSourceLabel(heartRateEvents, "Health import"),
+    visual: {
+      type: "distribution",
+      annotation: "Average imported heart rate by part of day.",
+      bars,
+    },
+  };
+}
+
+function getExerciseDurationMinutes(event: ZentraEventRecord): number {
+  if (typeof event.valueNumeric !== "number") {
+    return 0;
+  }
+
+  if (event.unit === "seconds") {
+    return Math.round(event.valueNumeric / 60);
+  }
+
+  return Math.round(event.valueNumeric);
+}
+
+function buildExerciseMixSurface(
+  events: ZentraEventRecord[],
+): TrendSurface | null {
+  const exerciseEvents = events.filter(
+    (event) => event.dataType === "exercise_session",
+  );
+
+  if (!exerciseEvents.length) {
+    return null;
+  }
+
+  const durationByType = new Map<string, number>();
+  for (const event of exerciseEvents) {
+    const label = titleCase(event.valueText ?? "session");
+    durationByType.set(
+      label,
+      (durationByType.get(label) ?? 0) + getExerciseDurationMinutes(event),
+    );
+  }
+
+  const bars = Array.from(durationByType.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, minutes]) => ({
+      label,
+      value: minutes,
+      valueLabel: formatMinutes(minutes),
+    }));
+
+  if (!bars.length) {
+    return null;
+  }
+
+  const leader = bars[0];
+
+  return {
+    key: "exerciseMix",
+    title: "Exercise Mix",
+    summary: `${leader.label} led the range with ${leader.valueLabel}.`,
+    tone: "physical",
+    group: "health",
+    valueLabel: leader.valueLabel,
+    metaLabel: leader.label,
+    coverageLabel: `${formatNumber(exerciseEvents.length)} imported session${exerciseEvents.length === 1 ? "" : "s"} in range`,
+    sourceLabel: getHealthSourceLabel(exerciseEvents, "Health import"),
+    visual: {
+      type: "distribution",
+      annotation: "Total imported exercise minutes by session type.",
+      bars,
+    },
+  };
+}
+
+function buildDailyCompositeValues(
+  dates: string[],
+  events: ZentraEventRecord[],
+): {
+  intensityValues: number[];
+  restValues: number[];
+} {
+  const eventsByDate = dates.reduce<Record<string, ZentraEventRecord[]>>(
+    (result, date) => {
+      result[date] = [];
+      return result;
+    },
+    {},
+  );
+
+  for (const event of events) {
+    const startKey = event.timestampStart.slice(0, 10);
+    const endKey = event.timestampEnd.slice(0, 10);
+
+    if (startKey === endKey) {
+      if (eventsByDate[startKey]) {
+        eventsByDate[startKey].push(event);
+      }
+    } else {
+      for (const date of dates) {
+        if (date >= startKey && date <= endKey && eventsByDate[date]) {
+          eventsByDate[date].push(event);
+        }
+      }
+    }
+  }
+
+  // Hoist normalization maxima outside the loop — each date used to recompute
+  // this from all events, making the loop O(N_days × N_events). Now it's O(N_events)
+  // once, then O(n_day_events) per day.
+  const normalizationMaxima = buildNormalizationMaxima(events, "hour");
+
+  return dates.reduce<{
+    intensityValues: number[];
+    restValues: number[];
+  }>(
+    (result, date) => {
+      const dayEvents = eventsByDate[date] ?? [];
+      const timeline = buildUnifiedDailyTimeline(
+        dayEvents,
+        date,
+        "hour",
+        events,
+        normalizationMaxima,
+      );
+      const bucketsWithData = timeline.filter((bucket) => bucket.hasAnyData);
+
+      if (!bucketsWithData.length) {
+        result.intensityValues.push(0);
+        result.restValues.push(0);
+        return result;
+      }
+
+      const averageIntensity =
+        bucketsWithData.reduce(
+          (total, bucket) => total + bucket.intensityScore,
+          0,
+        ) / bucketsWithData.length;
+      const averageRest =
+        bucketsWithData.reduce(
+          (total, bucket) => total + bucket.restCompositeScore,
+          0,
+        ) / bucketsWithData.length;
+
+      result.intensityValues.push(Math.round(averageIntensity));
+      result.restValues.push(Math.round(averageRest));
+      return result;
+    },
+    { intensityValues: [], restValues: [] },
+  );
+}
+
+function buildDailySleepValues(
+  dates: string[],
+  events: ZentraEventRecord[],
+): {
+  importedSleepValues: number[];
+  importedSleepSourceLabel: string;
+  inferredSleepValues: number[];
+} {
+  const importedByDate = dates.reduce<Record<string, number>>(
+    (result, date) => {
+      result[date] = 0;
+      return result;
+    },
+    {},
+  );
+  const inferredByDate = dates.reduce<Record<string, number>>(
+    (result, date) => {
+      result[date] = 0;
+      return result;
+    },
+    {},
+  );
+  let importedSleepSourceLabel = "Health import";
+
+  for (const event of events) {
+    if (
+      event.dataType !== "sleep_inferred" ||
+      typeof event.valueNumeric !== "number"
+    ) {
+      continue;
+    }
+
+    if (event.source === "health_connect") {
+      if (typeof event.metadata.health_platform === "string") {
+        importedSleepSourceLabel = event.metadata.health_platform;
+      }
+    }
+
+    const startKey = event.timestampStart.slice(0, 10);
+    const endKey = event.timestampEnd.slice(0, 10);
+    const totalMinutes = Math.round(event.valueNumeric);
+    const isImported = event.source === "health_connect";
+    const target = isImported ? importedByDate : inferredByDate;
+
+    if (startKey === endKey) {
+      if (target[startKey] !== undefined) {
+        target[startKey] += totalMinutes;
+      }
+      continue;
+    }
+
+    const startMs = new Date(event.timestampStart).getTime();
+    const endMs = new Date(event.timestampEnd).getTime();
+    const spanMs = endMs - startMs;
+
+    if (spanMs <= 0) {
+      if (target[startKey] !== undefined) {
+        target[startKey] += totalMinutes;
+      }
+      continue;
+    }
+
+    for (const date of dates) {
+      if (date < startKey || date > endKey) {
+        continue;
+      }
+      if (target[date] === undefined) {
+        continue;
+      }
+      const dayStartMs = new Date(`${date}T00:00:00`).getTime();
+      const dayEndMs = dayStartMs + 86_400_000;
+      const overlapStart = Math.max(startMs, dayStartMs);
+      const overlapEnd = Math.min(endMs, dayEndMs);
+      if (overlapEnd > overlapStart) {
+        target[date] += Math.round(
+          totalMinutes * ((overlapEnd - overlapStart) / spanMs),
+        );
+      }
+    }
+  }
+
+  return {
+    importedSleepValues: dates.map((date) => importedByDate[date] ?? 0),
+    importedSleepSourceLabel,
+    inferredSleepValues: dates.map((date) => inferredByDate[date] ?? 0),
+  };
+}
+
 export function buildLiveTrendSeries(
   aggregates: DailyAggregateRecord[],
   rangeSelection: { start: string; end: string },
@@ -226,6 +637,12 @@ export function buildLiveTrendSeries(
   });
 
   const exerciseValues = dates.map((date) => exerciseByDate[date] ?? 0);
+  const { intensityValues, restValues } = buildDailyCompositeValues(
+    dates,
+    events,
+  );
+  const { importedSleepValues, importedSleepSourceLabel, inferredSleepValues } =
+    buildDailySleepValues(dates, events);
   const completenessLabel = buildAverageCompletenessLabel(normalizedAggregates);
 
   const series = [
@@ -252,12 +669,23 @@ export function buildLiveTrendSeries(
       "Activity recognition",
     ),
     createTrendSeries(
+      "activityIntensity",
+      "Activity Intensity",
+      "%",
+      "physical",
+      intensityValues,
+      dates,
+      "body",
+      buildDaysWithDataLabel(intensityValues, dates, "with composite activity"),
+      "Local composite",
+    ),
+    createTrendSeries(
       "distanceMeters",
       "Distance",
       "km",
       "human",
-      normalizedAggregates.map((record) =>
-        Math.round(((record.distanceMeters ?? 0) / 1000) * 10) / 10,
+      normalizedAggregates.map(
+        (record) => Math.round(((record.distanceMeters ?? 0) / 1000) * 10) / 10,
       ),
       dates,
       "body",
@@ -293,17 +721,37 @@ export function buildLiveTrendSeries(
       "Usage Access",
     ),
     createTrendSeries(
-      "sleepEstimate",
-      "Sleep Estimate",
+      "inferredSleep",
+      "Inferred Sleep",
       "min",
       "human",
-      normalizedAggregates.map((record) =>
-        Math.round(record.sleepEstimateMinutes ?? 0),
-      ),
+      inferredSleepValues,
       dates,
-      "body",
-      completenessLabel,
+      "health",
+      buildDaysWithDataLabel(inferredSleepValues, dates, "with inferred sleep"),
       "Local inference",
+    ),
+    createTrendSeries(
+      "importedSleep",
+      "Imported Sleep",
+      "min",
+      "human",
+      importedSleepValues,
+      dates,
+      "health",
+      buildDaysWithDataLabel(importedSleepValues, dates, "with imported sleep"),
+      importedSleepSourceLabel,
+    ),
+    createTrendSeries(
+      "restScore",
+      "Rest Score",
+      "%",
+      "human",
+      restValues,
+      dates,
+      "health",
+      buildDaysWithDataLabel(restValues, dates, "with composite rest"),
+      "Local composite",
     ),
     createTrendSeries(
       "mobilityRadius",
@@ -382,14 +830,24 @@ export function buildLiveTrendSeries(
   return series.filter((entry): entry is TrendSeries => entry !== null);
 }
 
-const GROUP_ORDER: TrendSeriesGroupKey[] = [
+export function buildLiveTrendSurfaces(
+  events: ZentraEventRecord[] = [],
+): TrendSurface[] {
+  return [
+    buildSleepStartHeatmap(events),
+    buildHeartRateDaypartSurface(events),
+    buildExerciseMixSurface(events),
+  ].filter((entry): entry is TrendSurface => entry !== null);
+}
+
+export const GROUP_ORDER: TrendSeriesGroupKey[] = [
   "body",
   "device",
   "health",
   "environment",
   "quality",
 ];
-const GROUP_LABELS: Record<TrendSeriesGroupKey, string> = {
+export const GROUP_LABELS: Record<TrendSeriesGroupKey, string> = {
   body: "Body & Movement",
   device: "Device Behavior",
   health: "Health & Recovery",

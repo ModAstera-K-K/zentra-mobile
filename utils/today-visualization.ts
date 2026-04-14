@@ -70,6 +70,11 @@ export type TodayDetailVisual =
       points: TodayDetailChartPoint[];
     }
   | {
+      type: "vertical_bar";
+      annotation: string;
+      points: TodayDetailChartPoint[];
+    }
+  | {
       type: "distribution";
       annotation: string;
       bars: TodayDetailBar[];
@@ -115,6 +120,19 @@ interface TodayVisualizationContext {
   todayEvents: ZentraEventRecord[];
   todaySnapshot: TodayLiveSnapshot;
 }
+
+export interface TodayDerivedEvents {
+  eventsByTypeDescending: Map<EventDataType, ZentraEventRecord[]>;
+  exerciseEvents: ZentraEventRecord[];
+  heartRateEvents: ZentraEventRecord[];
+  sortedDescending: ZentraEventRecord[];
+  unlockCount: number;
+}
+
+const todayDerivedEventsCache = new WeakMap<
+  ZentraEventRecord[],
+  TodayDerivedEvents
+>();
 
 interface LocationPayload {
   latitude: number;
@@ -194,6 +212,7 @@ function getMetricEventTypes(key: string): EventDataType[] {
       return ["steps"];
     case "activeMinutes":
     case "topActivity":
+    case "activitySummary":
       return ["activity", "motion_context"];
     case "screenTime":
       return ["app_usage", "screen_state", "unlock_event"];
@@ -206,6 +225,8 @@ function getMetricEventTypes(key: string): EventDataType[] {
       return CORE_SIGNAL_TYPES;
     case "deviceContext":
       return ["charging_state"];
+    case "connectivity":
+      return ["connectivity_state"];
     case "heartRate":
       return ["heart_rate"];
     case "exerciseSessions":
@@ -222,6 +243,8 @@ function getMetricSourceLabel(key: string): string {
     case "activeMinutes":
     case "topActivity":
       return getActivitySourceLabel();
+    case "activitySummary":
+      return "Activity recognition + accelerometer";
     case "screenTime":
     case "unlockCount":
       return Platform.OS === "ios"
@@ -234,6 +257,8 @@ function getMetricSourceLabel(key: string): string {
       return "Repository aggregate";
     case "deviceContext":
       return "Battery monitoring";
+    case "connectivity":
+      return "Network reachability";
     case "heartRate":
     case "exerciseSessions":
       return getHealthPlatformName();
@@ -247,6 +272,7 @@ function getEventTone(event: ZentraEventRecord): MetricTone {
     case "steps":
       return "hero";
     case "activity":
+    case "motion_context":
       return "physical";
     case "location":
     case "sleep_inferred":
@@ -273,6 +299,42 @@ function getSourceLabel(event: ZentraEventRecord): string {
       return "Local inference";
     default:
       return "On-device repository";
+  }
+}
+
+function getEventProvenanceLabel(event: ZentraEventRecord): string {
+  switch (event.dataType) {
+    case "steps":
+      return "Pedometer reading";
+    case "activity":
+      return getActivitySourceLabel();
+    case "app_usage":
+      return "Foreground session history";
+    case "unlock_event":
+    case "screen_state":
+      return "Android usage history";
+    case "charging_state":
+      return "Battery monitoring";
+    case "ambient_light":
+      return "Light sensor";
+    case "motion_context":
+      return "Accelerometer + gyroscope";
+    case "connectivity_state":
+      return "Network reachability";
+    case "sleep_inferred":
+      if (typeof event.metadata.health_platform === "string") {
+        return `Imported via ${event.metadata.health_platform}`;
+      }
+      return typeof event.metadata.heuristic === "string"
+        ? titleCase(event.metadata.heuristic)
+        : "Local sleep inference";
+    case "heart_rate":
+    case "exercise_session":
+      return typeof event.metadata.health_platform === "string"
+        ? `Imported via ${event.metadata.health_platform}`
+        : `Imported via ${getHealthPlatformName()}`;
+    default:
+      return getSourceLabel(event);
   }
 }
 
@@ -444,6 +506,45 @@ function sortEventsAscending(events: ZentraEventRecord[]): ZentraEventRecord[] {
     );
 }
 
+export function buildTodayDerivedEvents(
+  todayEvents: ZentraEventRecord[],
+): TodayDerivedEvents {
+  const cached = todayDerivedEventsCache.get(todayEvents);
+  if (cached) {
+    return cached;
+  }
+
+  const sortedDescending = sortEventsDescending(todayEvents);
+  const eventsByTypeDescending = new Map<EventDataType, ZentraEventRecord[]>();
+
+  for (const event of sortedDescending) {
+    const existing = eventsByTypeDescending.get(event.dataType);
+    if (existing) {
+      existing.push(event);
+      continue;
+    }
+
+    eventsByTypeDescending.set(event.dataType, [event]);
+  }
+
+  const heartRateEvents = (
+    eventsByTypeDescending.get("heart_rate") ?? []
+  ).filter((event) => typeof event.valueNumeric === "number");
+  const exerciseEvents = eventsByTypeDescending.get("exercise_session") ?? [];
+  const unlockCount = (eventsByTypeDescending.get("unlock_event") ?? []).length;
+
+  const derived: TodayDerivedEvents = {
+    eventsByTypeDescending,
+    exerciseEvents,
+    heartRateEvents,
+    sortedDescending,
+    unlockCount,
+  };
+
+  todayDerivedEventsCache.set(todayEvents, derived);
+  return derived;
+}
+
 function getRelatedEvents(
   events: ZentraEventRecord[],
   metricKey: string,
@@ -484,21 +585,75 @@ function buildDeviceContextValue(todaySnapshot: TodayLiveSnapshot): string {
 function buildStepsVisual(
   events: ZentraEventRecord[],
 ): TodayDetailVisual | null {
-  const points = sortEventsAscending(events)
-    .filter((event) => typeof event.valueNumeric === "number")
-    .map((event) => ({
-      label: formatTimestampLabel(event.timestampStart),
-      value: clampPositive(Math.round(event.valueNumeric ?? 0)),
-      valueLabel: formatNumber(Math.round(event.valueNumeric ?? 0)),
-    }));
+  const stepEvents = sortEventsAscending(events).filter(
+    (event) => typeof event.valueNumeric === "number",
+  );
 
-  if (!points.length) {
+  if (!stepEvents.length) {
     return null;
   }
 
+  // Compute deltas for sensor-sourced step events (cumulative counters)
+  const sensorEvents = stepEvents
+    .filter((e) => e.source === "sensor")
+    .sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+  const sensorDeltas = new Map<string, number>();
+  let prevCount: number | null = null;
+  for (const event of sensorEvents) {
+    const current = Math.max(0, Math.round(event.valueNumeric ?? 0));
+    const delta = prevCount === null ? 0 : Math.max(0, current - prevCount);
+    sensorDeltas.set(event.id, delta);
+    prevCount = current;
+  }
+
+  // Bucket steps into 24 hourly slots using deltas for sensors, raw for others
+  const hourlySteps = new Array<number>(24).fill(0);
+  for (const event of stepEvents) {
+    const hour = new Date(event.timestampStart).getHours();
+    const value =
+      event.source === "sensor"
+        ? (sensorDeltas.get(event.id) ?? 0)
+        : clampPositive(Math.round(event.valueNumeric ?? 0));
+    hourlySteps[hour] += value;
+  }
+
+  const HOUR_LABELS = [
+    "12 AM",
+    "1 AM",
+    "2 AM",
+    "3 AM",
+    "4 AM",
+    "5 AM",
+    "6 AM",
+    "7 AM",
+    "8 AM",
+    "9 AM",
+    "10 AM",
+    "11 AM",
+    "12 PM",
+    "1 PM",
+    "2 PM",
+    "3 PM",
+    "4 PM",
+    "5 PM",
+    "6 PM",
+    "7 PM",
+    "8 PM",
+    "9 PM",
+    "10 PM",
+    "11 PM",
+  ];
+
+  const points = hourlySteps.map((steps, hour) => ({
+    label: HOUR_LABELS[hour],
+    value: steps,
+    valueLabel: formatNumber(steps),
+    normalizedX: hour / 23,
+  }));
+
   return {
-    type: "line",
-    annotation: "Step readings across the current day.",
+    type: "vertical_bar",
+    annotation: "Steps per hour across the current day.",
     points,
   };
 }
@@ -925,6 +1080,115 @@ function buildMotionContextVisual(
   };
 }
 
+function buildConnectivityVisual(
+  events: ZentraEventRecord[],
+): TodayDetailVisual | null {
+  const connectivityEvents = events.filter(
+    (event) =>
+      event.dataType === "connectivity_state" &&
+      typeof event.valueText === "string",
+  );
+  if (!connectivityEvents.length) {
+    return null;
+  }
+
+  const counts = new Map<string, number>();
+  connectivityEvents.forEach((event) => {
+    const label = titleCase(event.valueText ?? "unknown");
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  });
+
+  return {
+    type: "distribution",
+    annotation: "Connectivity changes captured from the active network path.",
+    bars: Array.from(counts.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map(([label, count]) => ({
+        label,
+        value: count,
+        valueLabel: `${count} change${count === 1 ? "" : "s"}`,
+      })),
+  };
+}
+
+interface MotionContextSummary {
+  averageBurstRatio: number;
+  averageSedentaryRatio: number;
+  averageStability: number;
+  dominantLabel: string;
+  eventCount: number;
+  latestTimestamp: string;
+}
+
+function buildMotionContextSummary(
+  events: ZentraEventRecord[],
+): MotionContextSummary | null {
+  const motionEvents = sortEventsDescending(
+    events.filter((event) => event.dataType === "motion_context"),
+  );
+  if (!motionEvents.length) {
+    return null;
+  }
+
+  const labelCounts = new Map<string, number>();
+  let totalSedentaryRatio = 0;
+  let totalBurstRatio = 0;
+  let totalStability = 0;
+
+  motionEvents.forEach((event) => {
+    const label = titleCase(event.valueText ?? "unknown");
+    labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+    totalSedentaryRatio += Number(event.metadata.sedentary_ratio ?? 0);
+    totalBurstRatio += Number(event.metadata.burst_ratio ?? 0);
+    totalStability += Number(event.metadata.stability ?? event.confidence ?? 0);
+  });
+
+  const dominantLabel =
+    Array.from(labelCounts.entries()).sort(
+      (left, right) => right[1] - left[1],
+    )[0]?.[0] ?? "Unknown";
+
+  return {
+    averageBurstRatio: totalBurstRatio / motionEvents.length,
+    averageSedentaryRatio: totalSedentaryRatio / motionEvents.length,
+    averageStability: totalStability / motionEvents.length,
+    dominantLabel,
+    eventCount: motionEvents.length,
+    latestTimestamp: motionEvents[0].timestampStart,
+  };
+}
+
+interface ConnectivitySummary {
+  eventCount: number;
+  latestState: string;
+  latestTimestamp: string;
+  uniqueStateCount: number;
+}
+
+function buildConnectivitySummary(
+  events: ZentraEventRecord[],
+): ConnectivitySummary | null {
+  const connectivityEvents = sortEventsDescending(
+    events.filter(
+      (event) =>
+        event.dataType === "connectivity_state" &&
+        typeof event.valueText === "string",
+    ),
+  );
+  if (!connectivityEvents.length) {
+    return null;
+  }
+
+  return {
+    eventCount: connectivityEvents.length,
+    latestState: titleCase(connectivityEvents[0].valueText ?? "online"),
+    latestTimestamp: connectivityEvents[0].timestampStart,
+    uniqueStateCount: new Set(
+      connectivityEvents.map((event) => event.valueText ?? "unknown"),
+    ).size,
+  };
+}
+
 function buildVisualForMetric(
   metricKey: string,
   events: ZentraEventRecord[],
@@ -942,11 +1206,14 @@ function buildVisualForMetric(
     case "distanceMeters":
       return buildLocationRadiusVisual(events);
     case "topActivity":
+    case "activitySummary":
       return buildTopActivityVisual(events);
     case "dataCompleteness":
       return buildCompletenessVisual(events);
     case "deviceContext":
       return buildBatteryVisual(events);
+    case "connectivity":
+      return buildConnectivityVisual(events);
     case "heartRate":
       return buildHeartRateVisual(events);
     case "exerciseSessions":
@@ -981,6 +1248,8 @@ function buildVisualForEventType(
       return buildExerciseVisual(events);
     case "motion_context":
       return buildMotionContextVisual(events);
+    case "connectivity_state":
+      return buildConnectivityVisual(events);
     default:
       return null;
   }
@@ -994,6 +1263,8 @@ function buildMetricFacts(
   const latestEvent = relatedEvents[0];
   const currentActivityLabel = getCurrentActivityLabel(context.todayEvents);
   const latestActivityEvent = getLatestActivityEvent(context.todayEvents);
+  const motionSummary = buildMotionContextSummary(context.todayEvents);
+  const connectivitySummary = buildConnectivitySummary(context.todayEvents);
 
   switch (metric.key) {
     case "steps":
@@ -1068,8 +1339,15 @@ function buildMetricFacts(
         { label: "Events stored", value: formatNumber(relatedEvents.length) },
       ];
     case "topActivity":
+    case "activitySummary":
       return [
         { label: "Source", value: getMetricSourceLabel(metric.key) },
+        {
+          label: "Top activity",
+          value: context.todayAggregate?.topActivity
+            ? formatActivityLabel(context.todayAggregate.topActivity)
+            : "No dominant pattern yet",
+        },
         {
           label: "Activity samples",
           value: formatNumber(relatedEvents.length),
@@ -1082,6 +1360,22 @@ function buildMetricFacts(
               ? formatDateTimeLabel(relatedEvents[0].timestampStart)
               : "No data captured",
         },
+        ...(motionSummary
+          ? [
+              {
+                label: "Sedentary share",
+                value: formatPercent(motionSummary.averageSedentaryRatio * 100),
+              },
+              {
+                label: "Burst share",
+                value: formatPercent(motionSummary.averageBurstRatio * 100),
+              },
+              {
+                label: "Stability",
+                value: formatPercent(motionSummary.averageStability * 100),
+              },
+            ]
+          : []),
       ];
     case "dataCompleteness":
       return [
@@ -1107,6 +1401,27 @@ function buildMetricFacts(
         {
           label: "Low power",
           value: context.todaySnapshot.lowPowerMode ? "On" : "Off",
+        },
+      ];
+    case "connectivity":
+      return [
+        { label: "Source", value: getMetricSourceLabel(metric.key) },
+        {
+          label: "Latest state",
+          value:
+            connectivitySummary?.latestState ?? "Waiting for network state",
+        },
+        {
+          label: "Captured",
+          value: connectivitySummary
+            ? formatNumber(connectivitySummary.eventCount)
+            : "0",
+        },
+        {
+          label: "State variety",
+          value: connectivitySummary
+            ? formatNumber(connectivitySummary.uniqueStateCount)
+            : "0",
         },
       ];
     case "heartRate":
@@ -1171,10 +1486,10 @@ export function buildTodaySecondaryMetrics(
   todayAggregate: DailyAggregateRecord | null,
   todaySnapshot: TodayLiveSnapshot,
   todayEvents: ZentraEventRecord[],
+  derivedEvents?: TodayDerivedEvents,
 ): TodaySummaryMetric[] {
-  const unlockCount =
-    todayAggregate?.unlockCount ??
-    todayEvents.filter((event) => event.dataType === "unlock_event").length;
+  const derived = derivedEvents ?? buildTodayDerivedEvents(todayEvents);
+  const unlockCount = todayAggregate?.unlockCount ?? derived.unlockCount;
   const topActivity = todayAggregate?.topActivity
     ? formatActivityLabel(todayAggregate.topActivity)
     : "Waiting";
@@ -1184,17 +1499,14 @@ export function buildTodaySecondaryMetrics(
       ? getCoverageCount(todayEvents) / CORE_SIGNAL_TYPES.length
       : 0);
 
-  const heartRateEvents = todayEvents.filter(
-    (event) =>
-      event.dataType === "heart_rate" && typeof event.valueNumeric === "number",
-  );
-  const exerciseEvents = todayEvents.filter(
-    (event) => event.dataType === "exercise_session",
-  );
+  const heartRateEvents = derived.heartRateEvents;
+  const exerciseEvents = derived.exerciseEvents;
   const latestHeartRate = heartRateEvents.length
-    ? Math.round(heartRateEvents[heartRateEvents.length - 1]!.valueNumeric ?? 0)
+    ? Math.round(heartRateEvents[0]!.valueNumeric ?? 0)
     : null;
   const exerciseCount = exerciseEvents.length;
+  const motionSummary = buildMotionContextSummary(todayEvents);
+  const connectivitySummary = buildConnectivitySummary(todayEvents);
 
   const metrics: TodaySummaryMetric[] = [
     {
@@ -1209,14 +1521,16 @@ export function buildTodaySecondaryMetrics(
       available: Platform.OS !== "ios" && unlockCount > 0,
     },
     {
-      key: "topActivity",
-      label: "Top Activity",
-      value: topActivity,
-      detail: todayAggregate?.topActivity
-        ? "Most frequent movement pattern captured so far today."
-        : "No dominant movement pattern has surfaced yet.",
+      key: "activitySummary",
+      label: "Activity",
+      value: motionSummary?.dominantLabel ?? topActivity,
+      detail: motionSummary
+        ? `${motionSummary.eventCount} motion window${motionSummary.eventCount === 1 ? "" : "s"} today · ${formatPercent(motionSummary.averageSedentaryRatio * 100)} sedentary · ${formatPercent(motionSummary.averageBurstRatio * 100)} bursts.`
+        : todayAggregate?.topActivity
+          ? "Most frequent movement pattern captured so far today."
+          : "No activity or motion data has surfaced yet.",
       tone: "physical",
-      available: Boolean(todayAggregate?.topActivity),
+      available: Boolean(motionSummary) || Boolean(todayAggregate?.topActivity),
     },
     {
       key: "dataCompleteness",
@@ -1262,6 +1576,17 @@ export function buildTodaySecondaryMetrics(
     });
   }
 
+  if (connectivitySummary) {
+    metrics.push({
+      key: "connectivity",
+      label: "Connectivity",
+      value: connectivitySummary.latestState,
+      detail: `${connectivitySummary.eventCount} network change${connectivitySummary.eventCount === 1 ? "" : "s"} captured today from system reachability.`,
+      tone: "cool",
+      available: true,
+    });
+  }
+
   return metrics;
 }
 
@@ -1287,8 +1612,11 @@ export function buildTodayMetricDetailPayload(
 
 export function buildRecentSignalRows(
   todayEvents: ZentraEventRecord[],
+  derivedEvents?: TodayDerivedEvents,
 ): TodayRecentSignalRow[] {
-  return sortEventsDescending(todayEvents)
+  const derived = derivedEvents ?? buildTodayDerivedEvents(todayEvents);
+
+  return derived.sortedDescending
     .slice(0, RECENT_SIGNAL_LIMIT)
     .map((event) => ({
       id: event.id,
@@ -1296,19 +1624,83 @@ export function buildRecentSignalRows(
       value: formatEventValue(event),
       detail: formatEventDetail(event),
       timestampLabel: formatTimestampLabel(event.timestampStart),
-      sourceLabel: getSourceLabel(event),
+      sourceLabel: getEventProvenanceLabel(event),
       tone: getEventTone(event),
       event,
     }));
 }
 
+function buildEventSpecificFacts(event: ZentraEventRecord): TodayDetailFact[] {
+  switch (event.dataType) {
+    case "sleep_inferred":
+      return [
+        ...(typeof event.metadata.health_platform === "string"
+          ? [
+              {
+                label: "Platform",
+                value: String(event.metadata.health_platform),
+              },
+            ]
+          : []),
+        ...(typeof event.metadata.heuristic === "string"
+          ? [
+              {
+                label: "Heuristic",
+                value: titleCase(String(event.metadata.heuristic)),
+              },
+            ]
+          : []),
+      ];
+    case "motion_context":
+      return [
+        ...(typeof event.metadata.stability === "number"
+          ? [
+              {
+                label: "Stability",
+                value: formatPercent(Number(event.metadata.stability) * 100),
+              },
+            ]
+          : []),
+        ...(typeof event.metadata.sedentary_ratio === "number"
+          ? [
+              {
+                label: "Sedentary share",
+                value: formatPercent(
+                  Number(event.metadata.sedentary_ratio) * 100,
+                ),
+              },
+            ]
+          : []),
+        ...(typeof event.metadata.burst_ratio === "number"
+          ? [
+              {
+                label: "Burst share",
+                value: formatPercent(Number(event.metadata.burst_ratio) * 100),
+              },
+            ]
+          : []),
+      ];
+    case "heart_rate":
+    case "exercise_session":
+      return typeof event.metadata.health_platform === "string"
+        ? [{ label: "Platform", value: String(event.metadata.health_platform) }]
+        : [];
+    default:
+      return [];
+  }
+}
+
 export function buildRecentSignalDetailPayload(
   event: ZentraEventRecord,
   todayEvents: ZentraEventRecord[],
+  derivedEvents?: TodayDerivedEvents,
 ): TodayDetailPayload {
-  const relatedEvents = sortEventsDescending(
-    todayEvents.filter((candidate) => candidate.dataType === event.dataType),
-  );
+  const derived = derivedEvents ?? buildTodayDerivedEvents(todayEvents);
+  const relatedEvents =
+    derived.eventsByTypeDescending.get(event.dataType) ??
+    sortEventsDescending(
+      todayEvents.filter((candidate) => candidate.dataType === event.dataType),
+    );
   const metadataFacts = Object.entries(event.metadata)
     .slice(0, 2)
     .map(([label, value]) => ({
@@ -1323,12 +1715,14 @@ export function buildRecentSignalDetailPayload(
     value: formatEventValue(event),
     summary: formatEventDetail(event),
     tone: getEventTone(event),
-    meta: `Stored from ${getSourceLabel(event)} at ${formatDateTimeLabel(event.timestampStart)}`,
+    meta: `Stored from ${getEventProvenanceLabel(event)} at ${formatDateTimeLabel(event.timestampStart)}`,
     visual: buildVisualForEventType(event.dataType, relatedEvents),
     facts: [
       { label: "Source", value: getSourceLabel(event) },
+      { label: "Provenance", value: getEventProvenanceLabel(event) },
       { label: "Captured", value: formatDateTimeLabel(event.timestampStart) },
       { label: "Confidence", value: formatPercent(event.confidence * 100) },
+      ...buildEventSpecificFacts(event),
       ...metadataFacts,
     ],
     rows: buildRecentRows(

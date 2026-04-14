@@ -23,6 +23,7 @@ export type MetricIconKey =
   | "distanceMeters"
   | "unlockCount"
   | "topActivity"
+  | "activitySummary"
   | "dataCompleteness"
   | "deviceContext"
   | "sleepEstimate"
@@ -30,7 +31,8 @@ export type MetricIconKey =
   | "heartRate"
   | "exerciseSession"
   | "exerciseSessions"
-  | "motionContext";
+  | "motionContext"
+  | "connectivity";
 
 export type ActionIconKey =
   | "openSettings"
@@ -56,6 +58,7 @@ const METRIC_ICONS: Record<MetricIconKey, AppIconName> = {
   distanceMeters: "map-outline",
   unlockCount: "lock-open-outline",
   topActivity: "body-outline",
+  activitySummary: "body-outline",
   dataCompleteness: "shield-checkmark-outline",
   deviceContext: "battery-half-outline",
   sleepEstimate: "moon-outline",
@@ -64,6 +67,7 @@ const METRIC_ICONS: Record<MetricIconKey, AppIconName> = {
   exerciseSession: "barbell-outline",
   exerciseSessions: "barbell-outline",
   motionContext: "speedometer-outline",
+  connectivity: "wifi-outline",
 };
 
 const COLLECTOR_ICONS: Record<CollectorKey, AppIconName> = {
@@ -71,6 +75,7 @@ const COLLECTOR_ICONS: Record<CollectorKey, AppIconName> = {
   activity: "body-outline",
   appUsage: "phone-portrait-outline",
   deviceState: "battery-half-outline",
+  connectivity: "wifi-outline",
   healthConnect: "fitness-outline",
   location: "locate-outline",
   sleep: "moon-outline",
@@ -158,6 +163,8 @@ const EVENT_TYPE_KEYS = new Set<EventDataType>([
   "heart_rate",
   "exercise_session",
   "ambient_light",
+  "motion_context",
+  "connectivity_state",
 ]);
 
 const METRIC_ICON_KEYS = new Set<MetricIconKey>([
@@ -168,12 +175,16 @@ const METRIC_ICON_KEYS = new Set<MetricIconKey>([
   "distanceMeters",
   "unlockCount",
   "topActivity",
+  "activitySummary",
   "dataCompleteness",
   "deviceContext",
   "sleepEstimate",
   "ambientLight",
   "heartRate",
   "exerciseSession",
+  "exerciseSessions",
+  "motionContext",
+  "connectivity",
 ]);
 
 export function isMetricIconKey(value: string): value is MetricIconKey {
