@@ -93,13 +93,10 @@ export function createAmbientLightEvent(
 
 export function createActivityEvent(
   transition: NativeActivityTransition,
+  source: EventSource = "activity_recognition",
 ): ZentraEventRecord {
   return {
-    ...createBaseEvent(
-      "activity",
-      "activity_recognition",
-      transition.timestamp,
-    ),
+    ...createBaseEvent("activity", source, transition.timestamp),
     id: transition.id,
     valueText: transition.activityType,
     unit: "transition",

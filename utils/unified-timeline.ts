@@ -9,6 +9,7 @@ import type {
   ZentraEventRecord,
 } from "@/types/zentra";
 import {
+  buildDailyRhythmMovementScore,
   buildActivityScoreMaxima,
   buildBucketCompositeScores,
   buildNormalizedScreenScore,
@@ -76,6 +77,7 @@ function createEmptyBucket(
     batteryLevel: null,
     chargingStateLabel: null,
     dataCompleteness: 0,
+    dailyRhythmMovementScore: 0,
     dataTypeCoverage: createCoverageRecord<EventDataType>(),
     dominantKind: "rest",
     exerciseSeconds: 0,
@@ -565,6 +567,7 @@ function applyMaxima(
     const composite = buildBucketCompositeScores(bucket, maxima);
     return {
       ...bucket,
+      dailyRhythmMovementScore: buildDailyRhythmMovementScore(bucket, maxima),
       intensityScore: composite.intensityScore,
       normalizedScreenScore: buildNormalizedScreenScore(
         bucket.screenScore,

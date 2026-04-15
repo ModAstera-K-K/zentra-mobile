@@ -11,6 +11,7 @@ import {
   Spacing,
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import type { ReconcileOutcome, ReconcileTrigger } from "@/types/zentra";
 
 interface BackgroundStatusCardProps {
   backgroundTaskRegistrationCheckedAt: string | null;
@@ -19,12 +20,42 @@ interface BackgroundStatusCardProps {
   bufferedActivityQueueDepth: number;
   lastBackgroundTaskFailureAt: string | null;
   lastBackgroundTaskFailureMessage: string | null;
+  lastBackgroundReconcileAt: string | null;
   lastBackgroundTaskSuccessAt: string | null;
+  lastForegroundResumeReconcileAt: string | null;
+  lastHealthSyncWindowEndAt: string | null;
+  lastNativeIngestionCount: number | null;
+  lastReconcileBoundedReason: string | null;
+  lastReconcileDurationMs: number | null;
+  lastReconcileFailureMessage: string | null;
+  lastReconcileFinishedAt: string | null;
+  lastReconcileOutcome: ReconcileOutcome | null;
   lastReconcileRunAt: string | null;
+  lastReconcileStartedAt: string | null;
+  lastReconcileTrigger: ReconcileTrigger | null;
 }
 
 function formatTimestamp(timestamp: string | null): string {
   return timestamp ? new Date(timestamp).toLocaleString() : "Not yet";
+}
+
+function formatDuration(durationMs: number | null): string {
+  return durationMs != null ? `${Math.round(durationMs)} ms` : "Not yet";
+}
+
+function formatOutcome(
+  outcome: ReconcileOutcome | null,
+  boundedReason: string | null,
+): string {
+  if (!outcome) {
+    return "Not yet";
+  }
+
+  if (outcome !== "bounded" || !boundedReason) {
+    return outcome;
+  }
+
+  return `${outcome} (${boundedReason})`;
 }
 
 export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
@@ -34,12 +65,29 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
   bufferedActivityQueueDepth,
   lastBackgroundTaskFailureAt,
   lastBackgroundTaskFailureMessage,
+  lastBackgroundReconcileAt,
   lastBackgroundTaskSuccessAt,
+  lastForegroundResumeReconcileAt,
+  lastHealthSyncWindowEndAt,
+  lastNativeIngestionCount,
+  lastReconcileBoundedReason,
+  lastReconcileDurationMs,
+  lastReconcileFailureMessage,
+  lastReconcileFinishedAt,
+  lastReconcileOutcome,
   lastReconcileRunAt,
+  lastReconcileStartedAt,
+  lastReconcileTrigger,
 }: BackgroundStatusCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
-  const hasFailure = Boolean(lastBackgroundTaskFailureAt);
+  const hasFailure = Boolean(
+    lastBackgroundTaskFailureAt || lastReconcileOutcome === "failure",
+  );
+  const failureTimestamp =
+    lastBackgroundTaskFailureAt ?? lastReconcileFinishedAt;
+  const failureMessage =
+    lastBackgroundTaskFailureMessage ?? lastReconcileFailureMessage;
 
   return (
     <Card elevated>
@@ -76,10 +124,13 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
         <Text style={[styles.summaryDetail, { color: palette.textSecondary }]}>
           Last background success {formatTimestamp(lastBackgroundTaskSuccessAt)}
         </Text>
+        <Text style={[styles.summaryDetail, { color: palette.textSecondary }]}>
+          Last outcome{" "}
+          {formatOutcome(lastReconcileOutcome, lastReconcileBoundedReason)}
+        </Text>
         {hasFailure ? (
           <Text style={[styles.summaryDetail, { color: palette.destructive }]}>
-            Last background failure{" "}
-            {formatTimestamp(lastBackgroundTaskFailureAt)}
+            Last failure {formatTimestamp(failureTimestamp)}
           </Text>
         ) : null}
       </View>
@@ -112,6 +163,80 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
         </View>
         <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
           <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Background run
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {formatTimestamp(lastBackgroundReconcileAt)}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Resume run
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {formatTimestamp(lastForegroundResumeReconcileAt)}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Native drain
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {lastNativeIngestionCount != null
+              ? `${lastNativeIngestionCount} event${lastNativeIngestionCount === 1 ? "" : "s"}`
+              : "Not yet"}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Health sync
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {formatTimestamp(lastHealthSyncWindowEndAt)}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Trigger
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {lastReconcileTrigger ?? "Not yet"}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Outcome
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {formatOutcome(lastReconcileOutcome, lastReconcileBoundedReason)}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Started
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {formatTimestamp(lastReconcileStartedAt)}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Finished
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {formatTimestamp(lastReconcileFinishedAt)}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Duration
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {formatDuration(lastReconcileDurationMs)}
+          </Text>
+        </View>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
             Task status
           </Text>
           <View style={styles.failureCopy}>
@@ -135,23 +260,29 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
             ) : null}
           </View>
         </View>
-        {lastBackgroundTaskFailureAt ? (
+        {hasFailure ? (
           <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
             <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
               Failure
             </Text>
             <View style={styles.failureCopy}>
               <Text style={[styles.factValue, { color: palette.destructive }]}>
-                {formatTimestamp(lastBackgroundTaskFailureAt)}
+                {formatTimestamp(failureTimestamp)}
               </Text>
-              {lastBackgroundTaskFailureMessage ? (
+              {failureMessage ? (
                 <Text
                   style={[
                     styles.failureMessage,
-                    { color: palette.textSecondary },
+                    {
+                      color:
+                        lastBackgroundTaskFailureAt ||
+                        lastReconcileOutcome === "failure"
+                          ? palette.destructive
+                          : palette.textSecondary,
+                    },
                   ]}
                 >
-                  {lastBackgroundTaskFailureMessage}
+                  {failureMessage}
                 </Text>
               ) : null}
             </View>

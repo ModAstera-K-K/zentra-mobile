@@ -10,6 +10,7 @@ import {
 import { buildSeedEventsFromSignals } from "@/utils/live-event-builders";
 import { getLocationRetentionDays } from "@/utils/location-retention";
 import {
+  hasEnabledCollectorCapability,
   startActivityCollectorModule,
   startAmbientLightCollectorModule,
   startAppUsageCollectorModule,
@@ -35,6 +36,7 @@ export function useSignalBootstrap(): void {
     (state) => state.hasSeenLocationBackgroundPermissionRationale,
   );
   const isHydrated = useSignalStore((state) => state.isHydrated);
+  const lowPowerMode = useSignalStore((state) => state.lowPowerMode);
   const bootstrap = useSignalStore((state) => state.bootstrap);
   const setStepSupport = useSignalStore((state) => state.setStepSupport);
   const setStepPermissionStatus = useSignalStore(
@@ -76,8 +78,22 @@ export function useSignalBootstrap(): void {
   );
   const refreshSleep = useRepositoryStore((state) => state.refreshSleep);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const bootstrapTaskQueueRef = useRef<Promise<void>>(Promise.resolve());
   const reconcileInFlightRef = useRef<Promise<void> | null>(null);
   const lastResumeReconcileAtRef = useRef(0);
+  const hasResumeReconcileCollectors = hasEnabledCollectorCapability(
+    collectors,
+    ["backgroundPeriodic", "nativeBuffered"],
+  );
+
+  function enqueueBootstrapTask(task: () => Promise<void>): Promise<void> {
+    const nextTask = bootstrapTaskQueueRef.current.then(task, task);
+    bootstrapTaskQueueRef.current = nextTask.then(
+      () => undefined,
+      () => undefined,
+    );
+    return nextTask;
+  }
 
   useEffect(() => {
     void bootstrap();
@@ -119,7 +135,7 @@ export function useSignalBootstrap(): void {
   }, [isHydrated, refreshAll, repositoryHydrated]);
 
   useEffect(() => {
-    if (!isHydrated || !repositoryHydrated) {
+    if (!isHydrated || !repositoryHydrated || !hasResumeReconcileCollectors) {
       return;
     }
 
@@ -163,15 +179,24 @@ export function useSignalBootstrap(): void {
     let handle: CollectorHandle | null = null;
 
     async function startSteps(): Promise<void> {
-      if (isCancelled) {
-        return;
-      }
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
 
-      handle = await startStepCollectorModule({
-        refreshRepository: refreshTodayData,
-        setStepSupport,
-        setStepPermissionStatus,
-        setStepCount,
+        const nextHandle = await startStepCollectorModule({
+          refreshRepository: refreshTodayData,
+          setStepSupport,
+          setStepPermissionStatus,
+          setStepCount,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     }
 
@@ -200,14 +225,23 @@ export function useSignalBootstrap(): void {
     let handle: CollectorHandle | null = null;
 
     async function startBattery(): Promise<void> {
-      if (isCancelled) {
-        return;
-      }
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
 
-      handle = await startDeviceStateCollectorModule({
-        refreshRepository: refreshTodayData,
-        setBatterySupport,
-        setBatterySnapshot,
+        const nextHandle = await startDeviceStateCollectorModule({
+          refreshRepository: refreshTodayData,
+          setBatterySupport,
+          setBatterySnapshot,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     }
 
@@ -231,14 +265,29 @@ export function useSignalBootstrap(): void {
       return;
     }
 
+    let isCancelled = false;
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startConnectivityCollectorModule({
-        refreshRepository: refreshTodayData,
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextHandle = await startConnectivityCollectorModule({
+          refreshRepository: refreshTodayData,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     })();
 
     return () => {
+      isCancelled = true;
       handle?.stop();
     };
   }, [
@@ -257,18 +306,27 @@ export function useSignalBootstrap(): void {
     let handle: CollectorHandle | null = null;
 
     async function startLocation(): Promise<void> {
-      if (isCancelled) {
-        return;
-      }
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
 
-      handle = await startLocationCollectorModule({
-        hasSeenBackgroundPermissionRationale:
-          hasSeenLocationBackgroundPermissionRationale,
-        refreshRepository: refreshTodayData,
-        setLocationSupport,
-        setLocationPermissionStatus,
-        setLocationServicesEnabled,
-        addLocationSample,
+        const nextHandle = await startLocationCollectorModule({
+          hasSeenBackgroundPermissionRationale:
+            hasSeenLocationBackgroundPermissionRationale,
+          refreshRepository: refreshTodayData,
+          setLocationSupport,
+          setLocationPermissionStatus,
+          setLocationServicesEnabled,
+          addLocationSample,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     }
 
@@ -295,15 +353,30 @@ export function useSignalBootstrap(): void {
       return;
     }
 
+    let isCancelled = false;
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startActivityCollectorModule({
-        drainBufferedEvents: drainBufferedActivityTransitions,
-        refreshRepository: refreshTodayData,
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextHandle = await startActivityCollectorModule({
+          drainBufferedEvents: drainBufferedActivityTransitions,
+          refreshRepository: refreshTodayData,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     })();
 
     return () => {
+      isCancelled = true;
       handle?.stop();
     };
   }, [
@@ -319,14 +392,29 @@ export function useSignalBootstrap(): void {
       return;
     }
 
+    let isCancelled = false;
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startAppUsageCollectorModule({
-        refreshRepository: refreshTodayData,
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextHandle = await startAppUsageCollectorModule({
+          refreshRepository: refreshTodayData,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     })();
 
     return () => {
+      isCancelled = true;
       handle?.stop();
     };
   }, [
@@ -341,14 +429,31 @@ export function useSignalBootstrap(): void {
       return;
     }
 
+    let isCancelled = false;
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startHealthConnectCollectorModule({
-        refreshRepository: refreshAll,
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextHandle = await startHealthConnectCollectorModule({
+          noteSyncWindowEnd:
+            useRepositoryStore.getState().noteHealthSyncWindowEnd,
+          refreshRepository: refreshAll,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     })();
 
     return () => {
+      isCancelled = true;
       handle?.stop();
     };
   }, [
@@ -363,17 +468,32 @@ export function useSignalBootstrap(): void {
       return;
     }
 
+    let isCancelled = false;
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startSleepCollectorModule({
-        refreshRepository: async () => {
-          await refreshSleep();
-          await refreshTodayData();
-        },
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextHandle = await startSleepCollectorModule({
+          refreshRepository: async () => {
+            await refreshSleep();
+            await refreshTodayData();
+          },
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     })();
 
     return () => {
+      isCancelled = true;
       handle?.stop();
     };
   }, [
@@ -389,16 +509,31 @@ export function useSignalBootstrap(): void {
       return;
     }
 
+    let isCancelled = false;
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startAmbientLightCollectorModule({
-        refreshRepository: refreshTodayData,
-        setAmbientLightSupport,
-        setAmbientLightLux,
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextHandle = await startAmbientLightCollectorModule({
+          refreshRepository: refreshTodayData,
+          setAmbientLightSupport,
+          setAmbientLightLux,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     })();
 
     return () => {
+      isCancelled = true;
       handle?.stop();
     };
   }, [
@@ -415,14 +550,29 @@ export function useSignalBootstrap(): void {
       return;
     }
 
+    let isCancelled = false;
     let handle: CollectorHandle | null = null;
     void (async () => {
-      handle = await startMotionContextCollectorModule({
-        refreshRepository: refreshTodayData,
+      await enqueueBootstrapTask(async () => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextHandle = await startMotionContextCollectorModule({
+          refreshRepository: refreshTodayData,
+        });
+
+        if (isCancelled) {
+          nextHandle.stop();
+          return;
+        }
+
+        handle = nextHandle;
       });
     })();
 
     return () => {
+      isCancelled = true;
       handle?.stop();
     };
   }, [
@@ -446,10 +596,12 @@ export function useSignalBootstrap(): void {
         return;
       }
 
-      const task = (async () => {
+      const task = enqueueBootstrapTask(async () => {
         lastResumeReconcileAtRef.current = Date.now();
-        await runImportantCollectorReconcile();
-      })();
+        await runImportantCollectorReconcile({
+          trigger: "foregroundResume",
+        });
+      });
 
       reconcileInFlightRef.current = task;
 
@@ -476,11 +628,8 @@ export function useSignalBootstrap(): void {
       subscription.remove();
     };
   }, [
-    collectors.activity.enabled,
-    collectors.appUsage.enabled,
-    collectors.healthConnect.enabled,
-    collectors.sleep.enabled,
     drainBufferedActivityTransitions,
+    hasResumeReconcileCollectors,
     isHydrated,
     refreshAll,
     refreshSleep,
@@ -494,5 +643,5 @@ export function useSignalBootstrap(): void {
     }
 
     void syncBackgroundReconcileTaskRegistration(collectors);
-  }, [collectors, isHydrated, repositoryHydrated]);
+  }, [collectors, isHydrated, lowPowerMode, repositoryHydrated]);
 }

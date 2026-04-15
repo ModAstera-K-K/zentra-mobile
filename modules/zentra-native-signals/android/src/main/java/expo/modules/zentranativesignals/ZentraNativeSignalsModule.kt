@@ -89,6 +89,29 @@ class ZentraNativeSignalsModule : Module() {
       }
     }
 
+    AsyncFunction("readBufferedActivityTransitionsSinceAsync") { cursorExclusive: Double?, limit: Int? ->
+      val context = getContext() ?: return@AsyncFunction emptyList<Map<String, Any>>()
+      BufferedActivityTransitionStore.getBufferedTransitionsSince(
+        context,
+        cursorExclusive?.toLong(),
+        limit ?: 250,
+      ).map { record ->
+        mapOf(
+          "cursor" to record.cursor,
+          "id" to record.payload.id,
+          "activityType" to record.payload.activityType,
+          "transitionType" to record.payload.transitionType,
+          "confidence" to record.payload.confidence,
+          "timestamp" to record.payload.timestamp,
+        )
+      }
+    }
+
+    AsyncFunction("getBufferedActivityTransitionCountAsync") {
+      val context = getContext() ?: return@AsyncFunction 0
+      BufferedActivityTransitionStore.getBufferedTransitionCount(context)
+    }
+
     AsyncFunction("acknowledgeBufferedActivityTransitionsAsync") { ids: ArrayList<String> ->
       val context = getContext() ?: return@AsyncFunction 0
       BufferedActivityTransitionStore.acknowledgeTransitions(context, ids)

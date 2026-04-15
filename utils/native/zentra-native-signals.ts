@@ -4,6 +4,7 @@ import { Platform } from "react-native";
 import type { PermissionStatus } from "@/types/zentra";
 
 export interface NativeActivityTransition {
+  cursor?: number;
   id: string;
   activityType: string;
   transitionType: "enter" | "exit";
@@ -55,6 +56,11 @@ interface NativeSignalsModule {
   readBufferedActivityTransitionsAsync?: () => Promise<
     NativeActivityTransition[]
   >;
+  readBufferedActivityTransitionsSinceAsync?: (
+    cursorExclusive: number | null,
+    limit?: number,
+  ) => Promise<NativeActivityTransition[]>;
+  getBufferedActivityTransitionCountAsync?: () => Promise<number>;
   acknowledgeBufferedActivityTransitionsAsync?: (
     ids: string[],
   ) => Promise<number>;
@@ -148,6 +154,36 @@ export async function readBufferedActivityTransitionsAsync(): Promise<
   }
 
   return module.readBufferedActivityTransitionsAsync();
+}
+
+export async function readBufferedActivityTransitionsSinceAsync(
+  cursorExclusive: number | null,
+  limit = 250,
+): Promise<NativeActivityTransition[]> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.readBufferedActivityTransitionsSinceAsync !== "function"
+  ) {
+    return [];
+  }
+
+  return module.readBufferedActivityTransitionsSinceAsync(
+    cursorExclusive,
+    limit,
+  );
+}
+
+export async function getBufferedActivityTransitionCountAsync(): Promise<number> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.getBufferedActivityTransitionCountAsync !== "function"
+  ) {
+    return 0;
+  }
+
+  return module.getBufferedActivityTransitionCountAsync();
 }
 
 export async function acknowledgeBufferedActivityTransitionsAsync(
