@@ -58,6 +58,7 @@ export function buildActivityScoreMaxima(
         result.nonSedentaryActivityCount,
         bucket.nonSedentaryActivityCount,
       ),
+      screenScore: Math.max(result.screenScore, bucket.screenScore),
       sleepMinutes: Math.max(result.sleepMinutes, bucket.sleepMinutes),
       steps: Math.max(result.steps, bucket.steps),
       unlockCount: Math.max(result.unlockCount, bucket.unlockCount),
@@ -68,10 +69,20 @@ export function buildActivityScoreMaxima(
       idleSignals: 0,
       movementSignals: 0,
       nonSedentaryActivityCount: 0,
+      screenScore: 0,
       sleepMinutes: 0,
       steps: 0,
       unlockCount: 0,
     },
+  );
+}
+
+export function buildNormalizedScreenScore(
+  screenScore: number,
+  maxima: ActivityScoreMaxima,
+): number {
+  return Math.round(
+    clampNormalizedValue(screenScore, maxima.screenScore) * 100,
   );
 }
 

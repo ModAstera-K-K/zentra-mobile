@@ -215,6 +215,7 @@ export interface UnifiedTimelineBucket {
   movementSignals: number;
   movementScore: number;
   nonSedentaryActivityCount: number;
+  normalizedScreenScore: number;
   resolution: UnifiedTimelineResolution;
   restCompositeScore: number;
   restScore: number;
@@ -234,6 +235,7 @@ export interface ActivityScoreMaxima {
   idleSignals: number;
   movementSignals: number;
   nonSedentaryActivityCount: number;
+  screenScore: number;
   sleepMinutes: number;
   steps: number;
   unlockCount: number;

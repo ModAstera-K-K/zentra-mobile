@@ -127,6 +127,19 @@ restCompositeScore = round(restScore × 100)
 
 ---
 
+## Daily Rhythm Screen Series
+
+The Daily rhythm chart's screen line uses the same historical normalization
+window as intensity and rest. Raw `screenScore` values are accumulated per
+bucket from app-usage duration, screen-state transitions, and unlock events,
+then normalized against the strongest observed `screenScore` bucket in the
+selected normalization window (month, year, or all-time).
+
+This makes the screen line comparable across days instead of rescaling each day
+to its own local maximum.
+
+---
+
 ## Activity Pattern Visualization
 
 The activity pattern grid (heatmap) maps each cell's color using two
