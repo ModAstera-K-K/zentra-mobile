@@ -1,4 +1,4 @@
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { StyleProp, ViewStyle } from "react-native";
 
 export type OnLoadEventPayload = {
   url: string;
@@ -11,18 +11,18 @@ export type ZentraNativeSignalsModuleEvents = {
 export type ActivityTransitionEventPayload = {
   id: string;
   activityType: string;
-  transitionType: 'enter' | 'exit';
+  transitionType: "enter" | "exit";
   confidence: number;
   timestamp: string;
 };
 
 export type UsageEventPayload = {
   eventType:
-    | 'activity_resumed'
-    | 'activity_paused'
-    | 'screen_interactive'
-    | 'screen_non_interactive'
-    | 'keyguard_hidden';
+    | "activity_resumed"
+    | "activity_paused"
+    | "screen_interactive"
+    | "screen_non_interactive"
+    | "keyguard_hidden";
   packageName?: string | null;
   className?: string | null;
   timestamp: string;

@@ -269,7 +269,9 @@ const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
   return (
     <View style={styles.sectionBlock}>
       <BackgroundStatusCard
-        backgroundTaskRegistrationCheckedAt={backgroundTaskRegistrationCheckedAt}
+        backgroundTaskRegistrationCheckedAt={
+          backgroundTaskRegistrationCheckedAt
+        }
         backgroundTaskRegistrationMessage={backgroundTaskRegistrationMessage}
         backgroundTaskRegistrationStatus={backgroundTaskRegistrationStatus}
         bufferedActivityQueueDepth={bufferedActivityQueueDepth}
@@ -296,7 +298,8 @@ export default function TodayScreen() {
       isHydrated: state.isHydrated,
       backgroundTaskRegistrationCheckedAt:
         state.backgroundTaskRegistrationCheckedAt,
-      backgroundTaskRegistrationMessage: state.backgroundTaskRegistrationMessage,
+      backgroundTaskRegistrationMessage:
+        state.backgroundTaskRegistrationMessage,
       backgroundTaskRegistrationStatus: state.backgroundTaskRegistrationStatus,
       todayDataUpdatedAt: state.todayDataUpdatedAt,
       todaySnapshot: state.todaySnapshot,
@@ -989,13 +992,25 @@ export default function TodayScreen() {
         case "backgroundStatus":
           return (
             <BackgroundStatusSection
-              backgroundTaskRegistrationCheckedAt={repository.backgroundTaskRegistrationCheckedAt}
-              backgroundTaskRegistrationMessage={repository.backgroundTaskRegistrationMessage}
-              backgroundTaskRegistrationStatus={repository.backgroundTaskRegistrationStatus}
+              backgroundTaskRegistrationCheckedAt={
+                repository.backgroundTaskRegistrationCheckedAt
+              }
+              backgroundTaskRegistrationMessage={
+                repository.backgroundTaskRegistrationMessage
+              }
+              backgroundTaskRegistrationStatus={
+                repository.backgroundTaskRegistrationStatus
+              }
               bufferedActivityQueueDepth={repository.bufferedActivityQueueDepth}
-              lastBackgroundTaskFailureAt={repository.lastBackgroundTaskFailureAt}
-              lastBackgroundTaskFailureMessage={repository.lastBackgroundTaskFailureMessage}
-              lastBackgroundTaskSuccessAt={repository.lastBackgroundTaskSuccessAt}
+              lastBackgroundTaskFailureAt={
+                repository.lastBackgroundTaskFailureAt
+              }
+              lastBackgroundTaskFailureMessage={
+                repository.lastBackgroundTaskFailureMessage
+              }
+              lastBackgroundTaskSuccessAt={
+                repository.lastBackgroundTaskSuccessAt
+              }
               lastReconcileRunAt={repository.lastReconcileRunAt}
             />
           );

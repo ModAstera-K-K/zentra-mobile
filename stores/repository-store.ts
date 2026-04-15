@@ -98,7 +98,9 @@ interface RepositoryStoreState {
   clearRepositoryData: () => Promise<void>;
 }
 
-async function persistRepositoryMeta(state: RepositoryStoreState): Promise<void> {
+async function persistRepositoryMeta(
+  state: RepositoryStoreState,
+): Promise<void> {
   await savePersistedRepositoryMeta({
     backgroundTaskRegistrationCheckedAt:
       state.backgroundTaskRegistrationCheckedAt,
@@ -140,8 +142,9 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     await initializeEventRepository();
     const persistedMeta = await loadPersistedRepositoryMeta();
-    const bufferedActivityQueueDepth =
-      (await readBufferedActivityTransitionsAsync()).length;
+    const bufferedActivityQueueDepth = (
+      await readBufferedActivityTransitionsAsync()
+    ).length;
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -192,8 +195,9 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
   refreshAll: async () => {
     await initializeEventRepository();
-    const bufferedActivityQueueDepth =
-      (await readBufferedActivityTransitionsAsync()).length;
+    const bufferedActivityQueueDepth = (
+      await readBufferedActivityTransitionsAsync()
+    ).length;
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -271,8 +275,9 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   },
 
   refreshDiagnostics: async () => {
-    const bufferedActivityQueueDepth =
-      (await readBufferedActivityTransitionsAsync()).length;
+    const bufferedActivityQueueDepth = (
+      await readBufferedActivityTransitionsAsync()
+    ).length;
     const [diagnostics, diagnosticsHistory] = await Promise.all([
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
@@ -362,8 +367,9 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   },
 
   refreshBufferedActivityQueueDepth: async () => {
-    const bufferedActivityQueueDepth =
-      (await readBufferedActivityTransitionsAsync()).length;
+    const bufferedActivityQueueDepth = (
+      await readBufferedActivityTransitionsAsync()
+    ).length;
     set({ bufferedActivityQueueDepth });
     await persistRepositoryMeta(get());
     return bufferedActivityQueueDepth;

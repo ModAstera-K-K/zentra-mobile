@@ -3,7 +3,13 @@ import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { Card } from "@/components/ui/Card";
-import { Colors, Fonts, FontSizes, IconSizes, Spacing } from "@/constants/theme";
+import {
+  Colors,
+  Fonts,
+  FontSizes,
+  IconSizes,
+  Spacing,
+} from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 interface BackgroundStatusCardProps {
@@ -72,55 +78,79 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
         </Text>
         {hasFailure ? (
           <Text style={[styles.summaryDetail, { color: palette.destructive }]}>
-            Last background failure {formatTimestamp(lastBackgroundTaskFailureAt)}
+            Last background failure{" "}
+            {formatTimestamp(lastBackgroundTaskFailureAt)}
           </Text>
         ) : null}
       </View>
 
       <View style={styles.factsColumn}>
-        <View style={[styles.factRow, { borderBottomColor: palette.border }]}> 
-          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>Queue</Text>
-          <Text style={[styles.factValue, { color: palette.foreground }]}> 
-            {bufferedActivityQueueDepth} buffered activity event{bufferedActivityQueueDepth === 1 ? "" : "s"}
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Queue
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
+            {bufferedActivityQueueDepth} buffered activity event
+            {bufferedActivityQueueDepth === 1 ? "" : "s"}
           </Text>
         </View>
-        <View style={[styles.factRow, { borderBottomColor: palette.border }]}> 
-          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>Last run</Text>
-          <Text style={[styles.factValue, { color: palette.foreground }]}> 
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Last run
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
             {formatTimestamp(lastReconcileRunAt)}
           </Text>
         </View>
-        <View style={[styles.factRow, { borderBottomColor: palette.border }]}> 
-          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>Last success</Text>
-          <Text style={[styles.factValue, { color: palette.foreground }]}> 
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Last success
+          </Text>
+          <Text style={[styles.factValue, { color: palette.foreground }]}>
             {formatTimestamp(lastBackgroundTaskSuccessAt)}
           </Text>
         </View>
-        <View style={[styles.factRow, { borderBottomColor: palette.border }]}> 
-          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>Task status</Text>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Task status
+          </Text>
           <View style={styles.failureCopy}>
-            <Text style={[styles.factValue, { color: palette.foreground }]}> 
+            <Text style={[styles.factValue, { color: palette.foreground }]}>
               {backgroundTaskRegistrationStatus ?? "Not checked"}
             </Text>
-            <Text style={[styles.failureMessage, { color: palette.textSecondary }]}> 
+            <Text
+              style={[styles.failureMessage, { color: palette.textSecondary }]}
+            >
               Checked {formatTimestamp(backgroundTaskRegistrationCheckedAt)}
             </Text>
             {backgroundTaskRegistrationMessage ? (
-              <Text style={[styles.failureMessage, { color: palette.textSecondary }]}> 
+              <Text
+                style={[
+                  styles.failureMessage,
+                  { color: palette.textSecondary },
+                ]}
+              >
                 {backgroundTaskRegistrationMessage}
               </Text>
             ) : null}
           </View>
         </View>
         {lastBackgroundTaskFailureAt ? (
-          <View style={[styles.factRow, { borderBottomColor: palette.border }]}> 
-            <Text style={[styles.factLabel, { color: palette.textSecondary }]}>Failure</Text>
+          <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+            <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+              Failure
+            </Text>
             <View style={styles.failureCopy}>
-              <Text style={[styles.factValue, { color: palette.destructive }]}> 
+              <Text style={[styles.factValue, { color: palette.destructive }]}>
                 {formatTimestamp(lastBackgroundTaskFailureAt)}
               </Text>
               {lastBackgroundTaskFailureMessage ? (
-                <Text style={[styles.failureMessage, { color: palette.textSecondary }]}> 
+                <Text
+                  style={[
+                    styles.failureMessage,
+                    { color: palette.textSecondary },
+                  ]}
+                >
                   {lastBackgroundTaskFailureMessage}
                 </Text>
               ) : null}

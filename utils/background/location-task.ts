@@ -4,8 +4,7 @@ import * as TaskManager from "expo-task-manager";
 import { appendEventsForCollector } from "@/utils/event-repository";
 import { createLocationEvent } from "@/utils/live-event-builders";
 
-export const ZENTRA_BACKGROUND_LOCATION_TASK =
-  "zentra-background-location";
+export const ZENTRA_BACKGROUND_LOCATION_TASK = "zentra-background-location";
 
 type LocationTaskData = {
   locations?: Location.LocationObject[];

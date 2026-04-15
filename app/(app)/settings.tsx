@@ -712,45 +712,46 @@ export default function SettingsScreen() {
           Activity normalization{" "}
           {getActivityNormalizationLabel(activityNormalizationWindow)}
         </Text>
-        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Last reconcile run{" "}
           {lastReconcileRunAt
             ? new Date(lastReconcileRunAt).toLocaleString()
             : "No reconcile run yet"}
         </Text>
-        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Last background reconcile success{" "}
           {lastBackgroundTaskSuccessAt
             ? new Date(lastBackgroundTaskSuccessAt).toLocaleString()
             : "No background reconcile success yet"}
         </Text>
-        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Last background reconcile failure{" "}
           {lastBackgroundTaskFailureAt
             ? new Date(lastBackgroundTaskFailureAt).toLocaleString()
             : "No background reconcile failure yet"}
         </Text>
-        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Background task registration status{" "}
           {backgroundTaskRegistrationStatus ?? "Not checked"}
         </Text>
-        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Background task registration checked{" "}
           {backgroundTaskRegistrationCheckedAt
             ? new Date(backgroundTaskRegistrationCheckedAt).toLocaleString()
             : "No registration check yet"}
         </Text>
         {backgroundTaskRegistrationMessage ? (
-          <Text style={[styles.detail, { color: palette.textSecondary }]}> 
-            Background task registration detail {backgroundTaskRegistrationMessage}
+          <Text style={[styles.detail, { color: palette.textSecondary }]}>
+            Background task registration detail{" "}
+            {backgroundTaskRegistrationMessage}
           </Text>
         ) : null}
         {lastBackgroundTaskFailureMessage ? (
-          <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+          <Text style={[styles.detail, { color: palette.textSecondary }]}>
             Background failure detail {lastBackgroundTaskFailureMessage}
           </Text>
         ) : null}
-        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Buffered activity queue depth {bufferedActivityQueueDepth}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
