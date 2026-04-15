@@ -11,6 +11,7 @@ import type {
 import {
   buildActivityScoreMaxima,
   buildBucketCompositeScores,
+  buildNormalizedScreenScore,
 } from "@/utils/activity-intensity";
 import type { ActivityScoreMaxima } from "@/types/zentra";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
@@ -88,6 +89,7 @@ function createEmptyBucket(
     movementSignals: 0,
     movementScore: 0,
     nonSedentaryActivityCount: 0,
+    normalizedScreenScore: 0,
     resolution,
     restCompositeScore: 0,
     restScore: 0,
@@ -564,6 +566,10 @@ function applyMaxima(
     return {
       ...bucket,
       intensityScore: composite.intensityScore,
+      normalizedScreenScore: buildNormalizedScreenScore(
+        bucket.screenScore,
+        maxima,
+      ),
       restCompositeScore: composite.restCompositeScore,
     };
   });

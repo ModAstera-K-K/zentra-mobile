@@ -47,28 +47,15 @@ function getModeColor(mode: ActivityMode, palette: AppPalette): string {
   }
 }
 
-/** Normalize raw screen scores to 0–100 across the given buckets. */
-function normalizeScreenScores(
-  buckets: UnifiedTimelineBucket[],
-): Map<UnifiedTimelineBucket, number> {
-  const maxScreen = Math.max(...buckets.map((b) => b.screenScore), 1);
-  const result = new Map<UnifiedTimelineBucket, number>();
-  for (const b of buckets) {
-    result.set(b, Math.round((b.screenScore / maxScreen) * 100));
-  }
-  return result;
-}
-
 function getNormalizedModeValue(
   bucket: UnifiedTimelineBucket,
   mode: ActivityMode,
-  normalizedScreen: Map<UnifiedTimelineBucket, number>,
 ): number {
   switch (mode) {
     case "movement":
       return bucket.intensityScore;
     case "screen":
-      return normalizedScreen.get(bucket) ?? 0;
+      return bucket.normalizedScreenScore;
     default:
       return bucket.restCompositeScore;
   }
@@ -77,19 +64,37 @@ function getNormalizedModeValue(
 function buildNormalizedPoints(
   buckets: UnifiedTimelineBucket[],
   mode: ActivityMode,
-  normalizedScreen: Map<UnifiedTimelineBucket, number>,
 ): { label: string; value: number }[] {
   return buckets.map((bucket) => ({
     label: bucket.label,
-    value: getNormalizedModeValue(bucket, mode, normalizedScreen),
+    value: getNormalizedModeValue(bucket, mode),
   }));
 }
 
 function getInitialSelectedIndex(buckets: UnifiedTimelineBucket[]): number {
-  const selected = buckets
-    .map((bucket, index) => ({ index, value: bucket.steps }))
-    .sort((left, right) => right.value - left.value)[0];
-  return selected?.index ?? 0;
+  const now = Date.now();
+  const currentBucketIndex = buckets.findIndex((bucket) => {
+    const start = new Date(bucket.timestampStart).getTime();
+    const end = new Date(bucket.timestampEnd).getTime();
+    return now >= start && now < end;
+  });
+
+  if (currentBucketIndex >= 0) {
+    return currentBucketIndex;
+  }
+
+  const latestStartedBucketIndex = buckets.reduce<number>(
+    (best, bucket, index) => {
+      const start = new Date(bucket.timestampStart).getTime();
+      if (start <= now) {
+        return index;
+      }
+      return best;
+    },
+    -1,
+  );
+
+  return latestStartedBucketIndex >= 0 ? latestStartedBucketIndex : 0;
 }
 
 export const ActivityStrip = React.memo(function ActivityStrip({
@@ -103,17 +108,12 @@ export const ActivityStrip = React.memo(function ActivityStrip({
   const innerWidth = Math.max(chartWidth - CHART_INSET_X * 2, 0);
   const innerHeight = CHART_HEIGHT - CHART_INSET_Y * 2;
 
-  const normalizedScreen = React.useMemo(
-    () => normalizeScreenScores(buckets),
-    [buckets],
-  );
-
   const seriesData = React.useMemo(() => {
     return MODES.map((m) => ({
       ...m,
-      points: buildNormalizedPoints(buckets, m.key, normalizedScreen),
+      points: buildNormalizedPoints(buckets, m.key),
     }));
-  }, [buckets, normalizedScreen]);
+  }, [buckets]);
 
   const seriesCoordinates = React.useMemo(() => {
     if (innerWidth <= 0)
@@ -289,11 +289,7 @@ export const ActivityStrip = React.memo(function ActivityStrip({
         </Text>
         {MODES.map((m) => {
           const color = getModeColor(m.key, palette);
-          const value = getNormalizedModeValue(
-            selectedBucket,
-            m.key,
-            normalizedScreen,
-          );
+          const value = getNormalizedModeValue(selectedBucket, m.key);
           return (
             <View key={m.key} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: color }]} />
