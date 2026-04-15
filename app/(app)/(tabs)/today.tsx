@@ -247,6 +247,9 @@ const CompletenessSection = React.memo(function CompletenessSection({
 });
 
 const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
+  backgroundTaskRegistrationCheckedAt,
+  backgroundTaskRegistrationMessage,
+  backgroundTaskRegistrationStatus,
   bufferedActivityQueueDepth,
   lastBackgroundTaskFailureAt,
   lastBackgroundTaskFailureMessage,
