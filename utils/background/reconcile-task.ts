@@ -5,8 +5,7 @@ import { useRepositoryStore } from "@/stores";
 import type { CollectorState } from "@/types/zentra";
 import { runImportantCollectorReconcile } from "@/utils/background/reconcile";
 
-export const ZENTRA_BACKGROUND_RECONCILE_TASK =
-  "zentra-background-reconcile";
+export const ZENTRA_BACKGROUND_RECONCILE_TASK = "zentra-background-reconcile";
 const MINIMUM_INTERVAL_MINUTES = 15;
 
 function hasPeriodicReconcileCollectors(
@@ -27,9 +26,13 @@ if (!TaskManager.isTaskDefined(ZENTRA_BACKGROUND_RECONCILE_TASK)) {
       await useRepositoryStore.getState().noteBackgroundTaskSuccess();
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch (error) {
-      await useRepositoryStore.getState().noteBackgroundTaskFailure(
-        error instanceof Error ? error.message : "Background reconcile failed",
-      );
+      await useRepositoryStore
+        .getState()
+        .noteBackgroundTaskFailure(
+          error instanceof Error
+            ? error.message
+            : "Background reconcile failed",
+        );
       return BackgroundTask.BackgroundTaskResult.Failed;
     }
   });
@@ -51,9 +54,7 @@ export async function syncBackgroundReconcileTaskRegistration(
 
   const backgroundTaskStatus = await BackgroundTask.getStatusAsync();
 
-  if (
-    backgroundTaskStatus !== BackgroundTask.BackgroundTaskStatus.Available
-  ) {
+  if (backgroundTaskStatus !== BackgroundTask.BackgroundTaskStatus.Available) {
     await repositoryStore.noteBackgroundTaskRegistrationState(
       "restricted",
       `BackgroundTask status ${backgroundTaskStatus}`,
@@ -79,7 +80,9 @@ export async function syncBackgroundReconcileTaskRegistration(
     }
 
     if (!shouldRegister && isRegistered) {
-      await BackgroundTask.unregisterTaskAsync(ZENTRA_BACKGROUND_RECONCILE_TASK);
+      await BackgroundTask.unregisterTaskAsync(
+        ZENTRA_BACKGROUND_RECONCILE_TASK,
+      );
       await repositoryStore.noteBackgroundTaskRegistrationState(
         "disabled",
         "No periodic reconcile collectors enabled.",

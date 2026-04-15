@@ -18,9 +18,8 @@ export async function runImportantCollectorReconcile(): Promise<void> {
   }
 
   if (collectors.appUsage.enabled) {
-    const latestDiagnostic = await getLatestCollectorDiagnosticForKey(
-      "appUsage",
-    );
+    const latestDiagnostic =
+      await getLatestCollectorDiagnosticForKey("appUsage");
     await syncAppUsageCollector(
       { refreshRepository: repositoryStore.refreshTodayData },
       latestDiagnostic?.lastSuccessfulSyncAt ?? null,

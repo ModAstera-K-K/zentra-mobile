@@ -67,8 +67,8 @@ export async function startActivityCollector(
     await deps.drainBufferedEvents();
   } catch {
     await ensureCollectorFailureState(
-      'activity',
-      'Failed to import buffered activity transitions',
+      "activity",
+      "Failed to import buffered activity transitions",
     );
   }
 

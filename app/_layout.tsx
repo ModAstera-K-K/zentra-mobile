@@ -1,21 +1,24 @@
-import { useEffect } from 'react';
-import { ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
+import { useEffect } from "react";
+import { ThemeProvider } from "@react-navigation/native";
+import { useFonts } from "expo-font";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import {
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+} from "@expo-google-fonts/jetbrains-mono";
 import {
   SpaceGrotesk_300Light,
   SpaceGrotesk_400Regular,
   SpaceGrotesk_500Medium,
-} from '@expo-google-fonts/space-grotesk';
+} from "@expo-google-fonts/space-grotesk";
 
-import { NavigationThemes } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAppearanceStore, useAppStore } from '@/stores';
-import '@/utils/background/location-task';
-import '@/utils/background/reconcile-task';
+import { NavigationThemes } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useAppearanceStore, useAppStore } from "@/stores";
+import "@/utils/background/location-task";
+import "@/utils/background/reconcile-task";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -52,13 +55,17 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? NavigationThemes.dark : NavigationThemes.light}>
+    <ThemeProvider
+      value={
+        colorScheme === "dark" ? NavigationThemes.dark : NavigationThemes.light
+      }
+    >
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(app)" />
       </Stack>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
     </ThemeProvider>
   );
 }

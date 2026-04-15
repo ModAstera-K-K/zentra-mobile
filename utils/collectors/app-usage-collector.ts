@@ -3,14 +3,17 @@ import {
   ensureCollectorFailureState,
   getLatestCollectorDiagnosticForKey,
   logCollectorSuccess,
-} from '@/utils/event-repository';
+} from "@/utils/event-repository";
 import {
   getUsageAccessPermissionStatusAsync,
   readUsageEventsAsync,
-} from '@/utils/native/zentra-native-signals';
-import { createUsageDerivedEvents } from '@/utils/live-event-builders';
-import type { AppUsageCollectorDeps, CollectorHandle } from '@/utils/collectors/types';
-import { getAppUsageUnsupportedMessage } from '@/utils/platform-capabilities';
+} from "@/utils/native/zentra-native-signals";
+import { createUsageDerivedEvents } from "@/utils/live-event-builders";
+import type {
+  AppUsageCollectorDeps,
+  CollectorHandle,
+} from "@/utils/collectors/types";
+import { getAppUsageUnsupportedMessage } from "@/utils/platform-capabilities";
 
 function getSyncWindowStart(lastSyncedAt: string | null): string {
   if (lastSyncedAt) {
@@ -28,40 +31,63 @@ export async function syncAppUsageCollector(
 ): Promise<string> {
   const permissionStatus = await getUsageAccessPermissionStatusAsync();
 
-  if (permissionStatus === 'unsupported') {
+  if (permissionStatus === "unsupported") {
     await ensureCollectorFailureState(
-      'appUsage',
+      "appUsage",
       getAppUsageUnsupportedMessage(),
     );
     await ensureCollectorFailureState(
-      'deviceState',
+      "deviceState",
       getAppUsageUnsupportedMessage(),
     );
     await deps.refreshRepository();
     return lastSyncedAt ?? new Date().toISOString();
   }
 
-  if (permissionStatus !== 'granted') {
-    await ensureCollectorFailureState('appUsage', 'Usage access not granted');
-    await ensureCollectorFailureState('deviceState', 'Usage access not granted for screen and unlock events');
+  if (permissionStatus !== "granted") {
+    await ensureCollectorFailureState("appUsage", "Usage access not granted");
+    await ensureCollectorFailureState(
+      "deviceState",
+      "Usage access not granted for screen and unlock events",
+    );
     await deps.refreshRepository();
     return lastSyncedAt ?? new Date().toISOString();
   }
 
   const endIso = new Date().toISOString();
-  const usageEvents = await readUsageEventsAsync(getSyncWindowStart(lastSyncedAt), endIso);
-  const { appUsageEvents, deviceStateEvents } = createUsageDerivedEvents(usageEvents);
+  const usageEvents = await readUsageEventsAsync(
+    getSyncWindowStart(lastSyncedAt),
+    endIso,
+  );
+  const { appUsageEvents, deviceStateEvents } =
+    createUsageDerivedEvents(usageEvents);
 
   if (appUsageEvents.length) {
-    await appendEventsForCollector('appUsage', appUsageEvents, `Usage stats stored ${appUsageEvents.length} event(s)`);
+    await appendEventsForCollector(
+      "appUsage",
+      appUsageEvents,
+      `Usage stats stored ${appUsageEvents.length} event(s)`,
+    );
   } else {
-    await logCollectorSuccess('appUsage', 'Usage access granted with no app sessions in this window', 0);
+    await logCollectorSuccess(
+      "appUsage",
+      "Usage access granted with no app sessions in this window",
+      0,
+    );
   }
 
   if (deviceStateEvents.length) {
-    await appendEventsForCollector('deviceState', deviceStateEvents, `Screen and unlock events stored ${deviceStateEvents.length} event(s)`);
+    await appendEventsForCollector(
+      "deviceState",
+      deviceStateEvents,
+      `Screen and unlock events stored ${deviceStateEvents.length} event(s)`,
+    );
   } else {
-    await logCollectorSuccess('deviceState', 'Usage access granted with no screen-state events in this window', 0);
+    await logCollectorSuccess(
+      "deviceState",
+      "Usage access granted with no screen-state events in this window",
+      0,
+    );
   }
 
   await deps.refreshRepository();
@@ -69,7 +95,8 @@ export async function syncAppUsageCollector(
 }
 
 async function getInitialAppUsageSyncCursor(): Promise<string | null> {
-  const latestAppUsageDiagnostic = await getLatestCollectorDiagnosticForKey('appUsage');
+  const latestAppUsageDiagnostic =
+    await getLatestCollectorDiagnosticForKey("appUsage");
   return latestAppUsageDiagnostic?.lastSuccessfulSyncAt ?? null;
 }
 

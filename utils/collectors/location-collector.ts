@@ -1,10 +1,16 @@
-import * as Location from 'expo-location';
+import * as Location from "expo-location";
 
-import { appendEventsForCollector, ensureCollectorFailureState } from '@/utils/event-repository';
-import { ZENTRA_BACKGROUND_LOCATION_TASK } from '@/utils/background/location-task';
-import { createLocationEvent } from '@/utils/live-event-builders';
-import { mapExpoPermissionStatus } from '@/utils/device-signals';
-import type { CollectorHandle, LocationCollectorDeps } from '@/utils/collectors/types';
+import {
+  appendEventsForCollector,
+  ensureCollectorFailureState,
+} from "@/utils/event-repository";
+import { ZENTRA_BACKGROUND_LOCATION_TASK } from "@/utils/background/location-task";
+import { createLocationEvent } from "@/utils/live-event-builders";
+import { mapExpoPermissionStatus } from "@/utils/device-signals";
+import type {
+  CollectorHandle,
+  LocationCollectorDeps,
+} from "@/utils/collectors/types";
 
 async function persistLocationSample(
   deps: LocationCollectorDeps,
@@ -15,7 +21,11 @@ async function persistLocationSample(
   },
 ): Promise<void> {
   await deps.addLocationSample(sample);
-  await appendEventsForCollector('location', [createLocationEvent(sample)], 'Location sample stored');
+  await appendEventsForCollector(
+    "location",
+    [createLocationEvent(sample)],
+    "Location sample stored",
+  );
   await deps.refreshRepository();
 }
 
@@ -32,12 +42,12 @@ async function ensureBackgroundLocationUpdatesAsync(
   const existingBackgroundPermission =
     await Location.getBackgroundPermissionsAsync();
   const backgroundPermission =
-    existingBackgroundPermission.status === 'granted' ||
+    existingBackgroundPermission.status === "granted" ||
     !existingBackgroundPermission.canAskAgain
       ? existingBackgroundPermission
       : await Location.requestBackgroundPermissionsAsync();
 
-  if (backgroundPermission.status !== 'granted') {
+  if (backgroundPermission.status !== "granted") {
     return;
   }
 
@@ -56,9 +66,9 @@ async function ensureBackgroundLocationUpdatesAsync(
     pausesUpdatesAutomatically: true,
     showsBackgroundLocationIndicator: false,
     foregroundService: {
-      notificationTitle: 'Zentra background location',
+      notificationTitle: "Zentra background location",
       notificationBody:
-        'Zentra is collecting periodic location samples for mobility radius.',
+        "Zentra is collecting periodic location samples for mobility radius.",
       killServiceOnDestroy: false,
     },
   });
@@ -72,18 +82,21 @@ export async function startLocationCollector(
   await deps.setLocationServicesEnabled(supported);
 
   const existingPermission = await Location.getForegroundPermissionsAsync();
-  const permission = existingPermission.status === 'granted' || !existingPermission.canAskAgain
-    ? existingPermission
-    : await Location.requestForegroundPermissionsAsync();
+  const permission =
+    existingPermission.status === "granted" || !existingPermission.canAskAgain
+      ? existingPermission
+      : await Location.requestForegroundPermissionsAsync();
 
-  await deps.setLocationPermissionStatus(mapExpoPermissionStatus(permission.status));
+  await deps.setLocationPermissionStatus(
+    mapExpoPermissionStatus(permission.status),
+  );
 
-  if (!supported || permission.status !== 'granted') {
+  if (!supported || permission.status !== "granted") {
     await ensureCollectorFailureState(
-      'location',
+      "location",
       supported
-        ? 'Foreground location permission is required for mobility radius'
-        : 'Location services are disabled',
+        ? "Foreground location permission is required for mobility radius"
+        : "Location services are disabled",
     );
     await deps.refreshRepository();
     return { stop: () => undefined };
