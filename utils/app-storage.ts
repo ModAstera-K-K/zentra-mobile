@@ -6,6 +6,8 @@ import type {
   CollectorState,
   DataMode,
   LocationRetentionPreference,
+  ReconcileOutcome,
+  ReconcileTrigger,
   SignalStoreState,
 } from "@/types/zentra";
 
@@ -28,10 +30,23 @@ export interface PersistedRepositoryMeta {
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
   bufferedActivityQueueDepth: number;
+  lastBufferedActivityCursor: number | null;
+  lastBackgroundReconcileAt: string | null;
   lastBackgroundTaskFailureAt: string | null;
   lastBackgroundTaskFailureMessage: string | null;
   lastBackgroundTaskSuccessAt: string | null;
+  lastForegroundResumeReconcileAt: string | null;
+  lastHealthSyncWindowEndAt: string | null;
+  lastNativeIngestionCount: number | null;
+  lastNativeDrainAt: string | null;
+  lastReconcileBoundedReason: string | null;
+  lastReconcileDurationMs: number | null;
+  lastReconcileFailureMessage: string | null;
+  lastReconcileFinishedAt: string | null;
+  lastReconcileOutcome: ReconcileOutcome | null;
   lastReconcileRunAt: string | null;
+  lastReconcileStartedAt: string | null;
+  lastReconcileTrigger: ReconcileTrigger | null;
 }
 
 export async function loadPersistedAppState(): Promise<PersistedAppState | null> {

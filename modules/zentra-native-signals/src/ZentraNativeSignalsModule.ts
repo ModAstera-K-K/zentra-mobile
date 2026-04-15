@@ -18,6 +18,20 @@ declare class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignals
       timestamp: string;
     }>
   >;
+  readBufferedActivityTransitionsSinceAsync(
+    cursorExclusive: number | null,
+    limit?: number,
+  ): Promise<
+    Array<{
+      cursor: number;
+      id: string;
+      activityType: string;
+      transitionType: "enter" | "exit";
+      confidence: number;
+      timestamp: string;
+    }>
+  >;
+  getBufferedActivityTransitionCountAsync(): Promise<number>;
   acknowledgeBufferedActivityTransitionsAsync(ids: string[]): Promise<number>;
   startActivityRecognitionUpdatesAsync(): Promise<boolean>;
   stopActivityRecognitionUpdatesAsync(): Promise<void>;

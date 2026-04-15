@@ -53,7 +53,7 @@ function getNormalizedModeValue(
 ): number {
   switch (mode) {
     case "movement":
-      return bucket.intensityScore;
+      return bucket.dailyRhythmMovementScore;
     case "screen":
       return bucket.normalizedScreenScore;
     default:

@@ -3,6 +3,8 @@ import { create } from "zustand";
 import type {
   CollectorDiagnosticRecord,
   DailyAggregateRecord,
+  ReconcileOutcome,
+  ReconcileTrigger,
   TodayLiveSnapshot,
   ZentraEventRecord,
 } from "@/types/zentra";
@@ -24,7 +26,9 @@ import {
 import { createActivityEvent } from "@/utils/live-event-builders";
 import {
   acknowledgeBufferedActivityTransitionsAsync,
+  getBufferedActivityTransitionCountAsync,
   readBufferedActivityTransitionsAsync,
+  readBufferedActivityTransitionsSinceAsync,
 } from "@/utils/native/zentra-native-signals";
 import { toISODate } from "@/utils/dates";
 
@@ -61,16 +65,43 @@ function stableEvents(
 let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
 
+interface DrainBufferedActivityOptions {
+  batchSize?: number;
+  maxBatches?: number;
+}
+
+interface ReconcileCompletionMeta {
+  boundedReason?: string | null;
+  durationMs: number;
+  errorMessage?: string | null;
+  finishedAt?: string;
+  outcome: ReconcileOutcome;
+  trigger: ReconcileTrigger;
+}
+
 interface RepositoryStoreState {
   backgroundTaskRegistrationCheckedAt: string | null;
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
   bufferedActivityQueueDepth: number;
   isHydrated: boolean;
+  lastBufferedActivityCursor: number | null;
+  lastBackgroundReconcileAt: string | null;
   lastBackgroundTaskFailureAt: string | null;
   lastBackgroundTaskFailureMessage: string | null;
   lastBackgroundTaskSuccessAt: string | null;
+  lastForegroundResumeReconcileAt: string | null;
+  lastHealthSyncWindowEndAt: string | null;
+  lastNativeIngestionCount: number | null;
+  lastNativeDrainAt: string | null;
+  lastReconcileBoundedReason: string | null;
+  lastReconcileDurationMs: number | null;
+  lastReconcileFailureMessage: string | null;
+  lastReconcileFinishedAt: string | null;
+  lastReconcileOutcome: ReconcileOutcome | null;
   lastReconcileRunAt: string | null;
+  lastReconcileStartedAt: string | null;
+  lastReconcileTrigger: ReconcileTrigger | null;
   lastUpdatedAt: string | null;
   todayDataUpdatedAt: string | null;
   diagnosticsUpdatedAt: string | null;
@@ -86,14 +117,18 @@ interface RepositoryStoreState {
   refreshTodayData: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
   refreshSleep: () => Promise<void>;
-  drainBufferedActivityTransitions: () => Promise<number>;
+  drainBufferedActivityTransitions: (
+    options?: DrainBufferedActivityOptions,
+  ) => Promise<number>;
   noteBackgroundTaskFailure: (message: string) => Promise<void>;
   noteBackgroundTaskRegistrationState: (
     status: string,
     message?: string | null,
   ) => Promise<void>;
+  noteHealthSyncWindowEnd: (timestamp: string) => Promise<void>;
   noteBackgroundTaskSuccess: () => Promise<void>;
-  noteReconcileRun: () => Promise<void>;
+  noteReconcileFinish: (details: ReconcileCompletionMeta) => Promise<void>;
+  noteReconcileStart: (trigger: ReconcileTrigger) => Promise<void>;
   refreshBufferedActivityQueueDepth: () => Promise<number>;
   clearRepositoryData: () => Promise<void>;
 }
@@ -107,10 +142,23 @@ async function persistRepositoryMeta(
     backgroundTaskRegistrationMessage: state.backgroundTaskRegistrationMessage,
     backgroundTaskRegistrationStatus: state.backgroundTaskRegistrationStatus,
     bufferedActivityQueueDepth: state.bufferedActivityQueueDepth,
+    lastBufferedActivityCursor: state.lastBufferedActivityCursor,
+    lastBackgroundReconcileAt: state.lastBackgroundReconcileAt,
     lastBackgroundTaskFailureAt: state.lastBackgroundTaskFailureAt,
     lastBackgroundTaskFailureMessage: state.lastBackgroundTaskFailureMessage,
     lastBackgroundTaskSuccessAt: state.lastBackgroundTaskSuccessAt,
+    lastForegroundResumeReconcileAt: state.lastForegroundResumeReconcileAt,
+    lastHealthSyncWindowEndAt: state.lastHealthSyncWindowEndAt,
+    lastNativeIngestionCount: state.lastNativeIngestionCount,
+    lastNativeDrainAt: state.lastNativeDrainAt,
+    lastReconcileBoundedReason: state.lastReconcileBoundedReason,
+    lastReconcileDurationMs: state.lastReconcileDurationMs,
+    lastReconcileFailureMessage: state.lastReconcileFailureMessage,
+    lastReconcileFinishedAt: state.lastReconcileFinishedAt,
+    lastReconcileOutcome: state.lastReconcileOutcome,
     lastReconcileRunAt: state.lastReconcileRunAt,
+    lastReconcileStartedAt: state.lastReconcileStartedAt,
+    lastReconcileTrigger: state.lastReconcileTrigger,
   });
 }
 
@@ -120,10 +168,23 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   backgroundTaskRegistrationStatus: null,
   bufferedActivityQueueDepth: 0,
   isHydrated: false,
+  lastBufferedActivityCursor: null,
+  lastBackgroundReconcileAt: null,
   lastBackgroundTaskFailureAt: null,
   lastBackgroundTaskFailureMessage: null,
   lastBackgroundTaskSuccessAt: null,
+  lastForegroundResumeReconcileAt: null,
+  lastHealthSyncWindowEndAt: null,
+  lastNativeIngestionCount: null,
+  lastNativeDrainAt: null,
+  lastReconcileBoundedReason: null,
+  lastReconcileDurationMs: null,
+  lastReconcileFailureMessage: null,
+  lastReconcileFinishedAt: null,
+  lastReconcileOutcome: null,
   lastReconcileRunAt: null,
+  lastReconcileStartedAt: null,
+  lastReconcileTrigger: null,
   lastUpdatedAt: null,
   todayDataUpdatedAt: null,
   diagnosticsUpdatedAt: null,
@@ -142,9 +203,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     await initializeEventRepository();
     const persistedMeta = await loadPersistedRepositoryMeta();
-    const bufferedActivityQueueDepth = (
-      await readBufferedActivityTransitionsAsync()
-    ).length;
+    const bufferedActivityQueueDepth =
+      await getBufferedActivityTransitionCountAsync();
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -173,13 +233,32 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
         persistedMeta?.backgroundTaskRegistrationStatus ?? null,
       isHydrated: true,
       bufferedActivityQueueDepth,
+      lastBufferedActivityCursor:
+        persistedMeta?.lastBufferedActivityCursor ?? null,
+      lastBackgroundReconcileAt:
+        persistedMeta?.lastBackgroundReconcileAt ?? null,
       lastBackgroundTaskFailureAt:
         persistedMeta?.lastBackgroundTaskFailureAt ?? null,
       lastBackgroundTaskFailureMessage:
         persistedMeta?.lastBackgroundTaskFailureMessage ?? null,
       lastBackgroundTaskSuccessAt:
         persistedMeta?.lastBackgroundTaskSuccessAt ?? null,
+      lastForegroundResumeReconcileAt:
+        persistedMeta?.lastForegroundResumeReconcileAt ?? null,
+      lastHealthSyncWindowEndAt:
+        persistedMeta?.lastHealthSyncWindowEndAt ?? null,
+      lastNativeIngestionCount: persistedMeta?.lastNativeIngestionCount ?? null,
+      lastNativeDrainAt: persistedMeta?.lastNativeDrainAt ?? null,
+      lastReconcileBoundedReason:
+        persistedMeta?.lastReconcileBoundedReason ?? null,
+      lastReconcileDurationMs: persistedMeta?.lastReconcileDurationMs ?? null,
+      lastReconcileFailureMessage:
+        persistedMeta?.lastReconcileFailureMessage ?? null,
+      lastReconcileFinishedAt: persistedMeta?.lastReconcileFinishedAt ?? null,
+      lastReconcileOutcome: persistedMeta?.lastReconcileOutcome ?? null,
       lastReconcileRunAt: persistedMeta?.lastReconcileRunAt ?? null,
+      lastReconcileStartedAt: persistedMeta?.lastReconcileStartedAt ?? null,
+      lastReconcileTrigger: persistedMeta?.lastReconcileTrigger ?? null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: updatedAt,
       diagnosticsUpdatedAt: updatedAt,
@@ -195,9 +274,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
   refreshAll: async () => {
     await initializeEventRepository();
-    const bufferedActivityQueueDepth = (
-      await readBufferedActivityTransitionsAsync()
-    ).length;
+    const bufferedActivityQueueDepth =
+      await getBufferedActivityTransitionCountAsync();
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -275,9 +353,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   },
 
   refreshDiagnostics: async () => {
-    const bufferedActivityQueueDepth = (
-      await readBufferedActivityTransitionsAsync()
-    ).length;
+    const bufferedActivityQueueDepth =
+      await getBufferedActivityTransitionCountAsync();
     const [diagnostics, diagnosticsHistory] = await Promise.all([
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
@@ -311,28 +388,63 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     });
   },
 
-  drainBufferedActivityTransitions: async () => {
-    const transitions = await readBufferedActivityTransitionsAsync();
+  drainBufferedActivityTransitions: async (options) => {
+    const batchSize = options?.batchSize ?? 250;
+    const maxBatches = options?.maxBatches ?? Number.POSITIVE_INFINITY;
+    let cursor = get().lastBufferedActivityCursor;
+    let totalDrained = 0;
+    let latestDrainAt: string | null = null;
+    let drainedBatches = 0;
 
-    if (!transitions.length) {
-      set({ bufferedActivityQueueDepth: 0 });
+    while (drainedBatches < maxBatches) {
+      const transitions = await readBufferedActivityTransitionsSinceAsync(
+        cursor,
+        batchSize,
+      );
+
+      if (!transitions.length) {
+        break;
+      }
+
+      await appendEventsForCollector(
+        "activity",
+        transitions.map((transition) =>
+          createActivityEvent(transition, "native_buffered"),
+        ),
+        `Buffered activity transitions drained ${transitions.length} event(s)`,
+      );
+      await acknowledgeBufferedActivityTransitionsAsync(
+        transitions.map((transition) => transition.id),
+      );
+
+      cursor = transitions.at(-1)?.cursor ?? cursor;
+      totalDrained += transitions.length;
+      drainedBatches += 1;
+      latestDrainAt = new Date().toISOString();
+
+      if (transitions.length < batchSize) {
+        break;
+      }
+    }
+
+    const bufferedActivityQueueDepth =
+      await getBufferedActivityTransitionCountAsync();
+
+    if (!totalDrained) {
+      set({ bufferedActivityQueueDepth });
       await persistRepositoryMeta(get());
       return 0;
     }
 
-    await appendEventsForCollector(
-      "activity",
-      transitions.map(createActivityEvent),
-      `Buffered activity transitions drained ${transitions.length} event(s)`,
-    );
-    await acknowledgeBufferedActivityTransitionsAsync(
-      transitions.map((transition) => transition.id),
-    );
-
-    set({ bufferedActivityQueueDepth: 0 });
+    set({
+      bufferedActivityQueueDepth,
+      lastBufferedActivityCursor: cursor,
+      lastNativeIngestionCount: totalDrained,
+      lastNativeDrainAt: latestDrainAt,
+    });
     await persistRepositoryMeta(get());
 
-    return transitions.length;
+    return totalDrained;
   },
 
   noteBackgroundTaskSuccess: async () => {
@@ -361,15 +473,56 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     await persistRepositoryMeta(get());
   },
 
-  noteReconcileRun: async () => {
-    set({ lastReconcileRunAt: new Date().toISOString() });
+  noteHealthSyncWindowEnd: async (timestamp) => {
+    set({ lastHealthSyncWindowEndAt: timestamp });
+    await persistRepositoryMeta(get());
+  },
+
+  noteReconcileStart: async (trigger) => {
+    set({
+      lastReconcileBoundedReason: null,
+      lastReconcileDurationMs: null,
+      lastReconcileFailureMessage: null,
+      lastReconcileFinishedAt: null,
+      lastReconcileOutcome: null,
+      lastReconcileStartedAt: new Date().toISOString(),
+      lastReconcileTrigger: trigger,
+    });
+    await persistRepositoryMeta(get());
+  },
+
+  noteReconcileFinish: async ({
+    boundedReason = null,
+    durationMs,
+    errorMessage = null,
+    finishedAt,
+    outcome,
+    trigger,
+  }) => {
+    const completedAt = finishedAt ?? new Date().toISOString();
+    set({
+      lastBackgroundReconcileAt:
+        trigger === "backgroundTask"
+          ? completedAt
+          : get().lastBackgroundReconcileAt,
+      lastForegroundResumeReconcileAt:
+        trigger === "foregroundResume"
+          ? completedAt
+          : get().lastForegroundResumeReconcileAt,
+      lastReconcileBoundedReason: boundedReason,
+      lastReconcileDurationMs: durationMs,
+      lastReconcileFailureMessage: errorMessage,
+      lastReconcileFinishedAt: completedAt,
+      lastReconcileOutcome: outcome,
+      lastReconcileRunAt: completedAt,
+      lastReconcileTrigger: trigger,
+    });
     await persistRepositoryMeta(get());
   },
 
   refreshBufferedActivityQueueDepth: async () => {
-    const bufferedActivityQueueDepth = (
-      await readBufferedActivityTransitionsAsync()
-    ).length;
+    const bufferedActivityQueueDepth =
+      await getBufferedActivityTransitionCountAsync();
     set({ bufferedActivityQueueDepth });
     await persistRepositoryMeta(get());
     return bufferedActivityQueueDepth;
@@ -385,10 +538,23 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       backgroundTaskRegistrationStatus: null,
       bufferedActivityQueueDepth: 0,
       isHydrated: true,
+      lastBufferedActivityCursor: null,
+      lastBackgroundReconcileAt: null,
       lastBackgroundTaskFailureAt: null,
       lastBackgroundTaskFailureMessage: null,
       lastBackgroundTaskSuccessAt: null,
+      lastForegroundResumeReconcileAt: null,
+      lastHealthSyncWindowEndAt: null,
+      lastNativeIngestionCount: null,
+      lastNativeDrainAt: null,
+      lastReconcileBoundedReason: null,
+      lastReconcileDurationMs: null,
+      lastReconcileFailureMessage: null,
+      lastReconcileFinishedAt: null,
+      lastReconcileOutcome: null,
       lastReconcileRunAt: null,
+      lastReconcileStartedAt: null,
+      lastReconcileTrigger: null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: updatedAt,
       diagnosticsUpdatedAt: updatedAt,

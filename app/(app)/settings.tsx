@@ -173,6 +173,9 @@ export default function SettingsScreen() {
   const bufferedActivityQueueDepth = useRepositoryStore(
     (state) => state.bufferedActivityQueueDepth,
   );
+  const lastBackgroundReconcileAt = useRepositoryStore(
+    (state) => state.lastBackgroundReconcileAt,
+  );
   const lastBackgroundTaskFailureAt = useRepositoryStore(
     (state) => state.lastBackgroundTaskFailureAt,
   );
@@ -182,8 +185,38 @@ export default function SettingsScreen() {
   const lastBackgroundTaskSuccessAt = useRepositoryStore(
     (state) => state.lastBackgroundTaskSuccessAt,
   );
+  const lastForegroundResumeReconcileAt = useRepositoryStore(
+    (state) => state.lastForegroundResumeReconcileAt,
+  );
+  const lastHealthSyncWindowEndAt = useRepositoryStore(
+    (state) => state.lastHealthSyncWindowEndAt,
+  );
+  const lastNativeIngestionCount = useRepositoryStore(
+    (state) => state.lastNativeIngestionCount,
+  );
+  const lastReconcileBoundedReason = useRepositoryStore(
+    (state) => state.lastReconcileBoundedReason,
+  );
+  const lastReconcileDurationMs = useRepositoryStore(
+    (state) => state.lastReconcileDurationMs,
+  );
+  const lastReconcileFailureMessage = useRepositoryStore(
+    (state) => state.lastReconcileFailureMessage,
+  );
+  const lastReconcileFinishedAt = useRepositoryStore(
+    (state) => state.lastReconcileFinishedAt,
+  );
+  const lastReconcileOutcome = useRepositoryStore(
+    (state) => state.lastReconcileOutcome,
+  );
   const lastReconcileRunAt = useRepositoryStore(
     (state) => state.lastReconcileRunAt,
+  );
+  const lastReconcileStartedAt = useRepositoryStore(
+    (state) => state.lastReconcileStartedAt,
+  );
+  const lastReconcileTrigger = useRepositoryStore(
+    (state) => state.lastReconcileTrigger,
   );
   const [pendingActionKey, setPendingActionKey] = React.useState<string | null>(
     null,
@@ -473,7 +506,7 @@ export default function SettingsScreen() {
     setIsReconcilingNow(true);
 
     try {
-      await runImportantCollectorReconcile();
+      await runImportantCollectorReconcile({ trigger: "manual" });
       await refreshNativePermissionStatuses();
       Alert.alert(
         "Reconcile finished",
@@ -725,10 +758,64 @@ export default function SettingsScreen() {
             : "No background reconcile success yet"}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last background reconcile run{" "}
+          {lastBackgroundReconcileAt
+            ? new Date(lastBackgroundReconcileAt).toLocaleString()
+            : "No background reconcile run yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Last background reconcile failure{" "}
           {lastBackgroundTaskFailureAt
             ? new Date(lastBackgroundTaskFailureAt).toLocaleString()
             : "No background reconcile failure yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last foreground resume reconcile{" "}
+          {lastForegroundResumeReconcileAt
+            ? new Date(lastForegroundResumeReconcileAt).toLocaleString()
+            : "No foreground resume reconcile yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last native drain{" "}
+          {lastNativeDrainAt
+            ? `${new Date(lastNativeDrainAt).toLocaleString()}${lastNativeIngestionCount != null ? ` (${lastNativeIngestionCount} event${lastNativeIngestionCount === 1 ? "" : "s"})` : ""}`
+            : "No native drain yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last health sync window end{" "}
+          {lastHealthSyncWindowEndAt
+            ? new Date(lastHealthSyncWindowEndAt).toLocaleString()
+            : "No health sync window recorded yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last reconcile trigger {lastReconcileTrigger ?? "Not recorded"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last reconcile outcome {lastReconcileOutcome ?? "Not recorded"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last reconcile started{" "}
+          {lastReconcileStartedAt
+            ? new Date(lastReconcileStartedAt).toLocaleString()
+            : "No reconcile start recorded"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last reconcile finished{" "}
+          {lastReconcileFinishedAt
+            ? new Date(lastReconcileFinishedAt).toLocaleString()
+            : "No reconcile finish recorded"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last reconcile duration{" "}
+          {lastReconcileDurationMs != null
+            ? `${Math.round(lastReconcileDurationMs)} ms`
+            : "No reconcile duration recorded"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last bounded reason {lastReconcileBoundedReason ?? "None"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Last reconcile failure message {lastReconcileFailureMessage ?? "None"}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Background task registration status{" "}

@@ -4,6 +4,17 @@ import type {
   PermissionStatus,
 } from "@/types/zentra";
 
+export type CollectorCapability =
+  | "foregroundOnly"
+  | "backgroundContinuous"
+  | "backgroundPeriodic"
+  | "nativeBuffered";
+
+export interface CollectorRuntimeDescriptor {
+  capability: CollectorCapability;
+  collectorKey: CollectorKey;
+}
+
 export interface CollectorHandle {
   stop: () => void;
 }
@@ -52,6 +63,7 @@ export interface ActivityCollectorDeps {
 }
 
 export interface HealthConnectCollectorDeps {
+  noteSyncWindowEnd: (timestamp: string) => Promise<void>;
   refreshRepository: () => Promise<void>;
 }
 

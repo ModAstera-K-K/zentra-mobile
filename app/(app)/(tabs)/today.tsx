@@ -252,19 +252,41 @@ const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
   backgroundTaskRegistrationMessage,
   backgroundTaskRegistrationStatus,
   bufferedActivityQueueDepth,
+  lastBackgroundReconcileAt,
   lastBackgroundTaskFailureAt,
   lastBackgroundTaskFailureMessage,
   lastBackgroundTaskSuccessAt,
+  lastForegroundResumeReconcileAt,
+  lastHealthSyncWindowEndAt,
+  lastNativeIngestionCount,
+  lastReconcileBoundedReason,
+  lastReconcileDurationMs,
+  lastReconcileFailureMessage,
+  lastReconcileFinishedAt,
+  lastReconcileOutcome,
   lastReconcileRunAt,
+  lastReconcileStartedAt,
+  lastReconcileTrigger,
 }: {
   backgroundTaskRegistrationCheckedAt: string | null;
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
   bufferedActivityQueueDepth: number;
+  lastBackgroundReconcileAt: string | null;
   lastBackgroundTaskFailureAt: string | null;
   lastBackgroundTaskFailureMessage: string | null;
   lastBackgroundTaskSuccessAt: string | null;
+  lastForegroundResumeReconcileAt: string | null;
+  lastHealthSyncWindowEndAt: string | null;
+  lastNativeIngestionCount: number | null;
+  lastReconcileBoundedReason: string | null;
+  lastReconcileDurationMs: number | null;
+  lastReconcileFailureMessage: string | null;
+  lastReconcileFinishedAt: string | null;
+  lastReconcileOutcome: string | null;
   lastReconcileRunAt: string | null;
+  lastReconcileStartedAt: string | null;
+  lastReconcileTrigger: string | null;
 }) {
   return (
     <View style={styles.sectionBlock}>
@@ -275,10 +297,21 @@ const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
         backgroundTaskRegistrationMessage={backgroundTaskRegistrationMessage}
         backgroundTaskRegistrationStatus={backgroundTaskRegistrationStatus}
         bufferedActivityQueueDepth={bufferedActivityQueueDepth}
+        lastBackgroundReconcileAt={lastBackgroundReconcileAt}
         lastBackgroundTaskFailureAt={lastBackgroundTaskFailureAt}
         lastBackgroundTaskFailureMessage={lastBackgroundTaskFailureMessage}
         lastBackgroundTaskSuccessAt={lastBackgroundTaskSuccessAt}
+        lastForegroundResumeReconcileAt={lastForegroundResumeReconcileAt}
+        lastHealthSyncWindowEndAt={lastHealthSyncWindowEndAt}
+        lastNativeIngestionCount={lastNativeIngestionCount}
+        lastReconcileBoundedReason={lastReconcileBoundedReason}
+        lastReconcileDurationMs={lastReconcileDurationMs}
+        lastReconcileFailureMessage={lastReconcileFailureMessage}
+        lastReconcileFinishedAt={lastReconcileFinishedAt}
+        lastReconcileOutcome={lastReconcileOutcome}
         lastReconcileRunAt={lastReconcileRunAt}
+        lastReconcileStartedAt={lastReconcileStartedAt}
+        lastReconcileTrigger={lastReconcileTrigger}
       />
     </View>
   );
@@ -307,10 +340,21 @@ export default function TodayScreen() {
       todayEvents: state.todayEvents,
       latestSleepEvent: state.latestSleepEvent,
       diagnostics: state.diagnostics,
+      lastBackgroundReconcileAt: state.lastBackgroundReconcileAt,
       lastBackgroundTaskFailureAt: state.lastBackgroundTaskFailureAt,
       lastBackgroundTaskFailureMessage: state.lastBackgroundTaskFailureMessage,
       lastBackgroundTaskSuccessAt: state.lastBackgroundTaskSuccessAt,
+      lastForegroundResumeReconcileAt: state.lastForegroundResumeReconcileAt,
+      lastHealthSyncWindowEndAt: state.lastHealthSyncWindowEndAt,
+      lastNativeIngestionCount: state.lastNativeIngestionCount,
+      lastReconcileBoundedReason: state.lastReconcileBoundedReason,
+      lastReconcileDurationMs: state.lastReconcileDurationMs,
+      lastReconcileFailureMessage: state.lastReconcileFailureMessage,
+      lastReconcileFinishedAt: state.lastReconcileFinishedAt,
+      lastReconcileOutcome: state.lastReconcileOutcome,
       lastReconcileRunAt: state.lastReconcileRunAt,
+      lastReconcileStartedAt: state.lastReconcileStartedAt,
+      lastReconcileTrigger: state.lastReconcileTrigger,
       bufferedActivityQueueDepth: state.bufferedActivityQueueDepth,
     })),
   );
@@ -1002,6 +1046,7 @@ export default function TodayScreen() {
                 repository.backgroundTaskRegistrationStatus
               }
               bufferedActivityQueueDepth={repository.bufferedActivityQueueDepth}
+              lastBackgroundReconcileAt={repository.lastBackgroundReconcileAt}
               lastBackgroundTaskFailureAt={
                 repository.lastBackgroundTaskFailureAt
               }
@@ -1011,7 +1056,21 @@ export default function TodayScreen() {
               lastBackgroundTaskSuccessAt={
                 repository.lastBackgroundTaskSuccessAt
               }
+              lastForegroundResumeReconcileAt={
+                repository.lastForegroundResumeReconcileAt
+              }
+              lastHealthSyncWindowEndAt={repository.lastHealthSyncWindowEndAt}
+              lastNativeIngestionCount={repository.lastNativeIngestionCount}
+              lastReconcileBoundedReason={repository.lastReconcileBoundedReason}
+              lastReconcileDurationMs={repository.lastReconcileDurationMs}
+              lastReconcileFailureMessage={
+                repository.lastReconcileFailureMessage
+              }
+              lastReconcileFinishedAt={repository.lastReconcileFinishedAt}
+              lastReconcileOutcome={repository.lastReconcileOutcome}
               lastReconcileRunAt={repository.lastReconcileRunAt}
+              lastReconcileStartedAt={repository.lastReconcileStartedAt}
+              lastReconcileTrigger={repository.lastReconcileTrigger}
             />
           );
         case "recentSignals":

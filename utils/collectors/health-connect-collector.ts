@@ -85,6 +85,7 @@ export async function syncHealthConnectCollector(
   }
 
   const events = createHealthConnectEvents(records);
+  await deps.noteSyncWindowEnd(endIso);
 
   if (!events.length) {
     await logCollectorSuccess(

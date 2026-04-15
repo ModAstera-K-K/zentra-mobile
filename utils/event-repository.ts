@@ -60,6 +60,43 @@ interface DiagnosticRow {
 }
 
 let databaseOperationQueue: Promise<void> = Promise.resolve();
+const WRITE_LOCK_RETRY_DELAYS_MS = [150, 300, 600, 1200];
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isDatabaseLockedError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /database is locked|sqlite_busy/i.test(error.message);
+}
+
+async function retryLockedWrite<T>(task: () => Promise<T>): Promise<T> {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await task();
+    } catch (error) {
+      if (
+        !isDatabaseLockedError(error) ||
+        attempt >= WRITE_LOCK_RETRY_DELAYS_MS.length
+      ) {
+        throw error;
+      }
+
+      await wait(WRITE_LOCK_RETRY_DELAYS_MS[attempt] ?? 0);
+      attempt += 1;
+    }
+  }
+}
+
+function enqueueRetriedWrite<T>(task: () => Promise<T>): Promise<T> {
+  return enqueueWrite(() => retryLockedWrite(task));
+}
 
 function enqueueDatabaseOperation<T>(task: () => Promise<T>): Promise<T> {
   const nextTask = databaseOperationQueue.then(task, task);
@@ -339,7 +376,7 @@ export async function logCollectorSuccess(
   message: string,
   eventCount: number,
 ): Promise<void> {
-  await enqueueWrite(async () => {
+  await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     const timestamp = new Date().toISOString();
     const importedRecordCount =
@@ -375,7 +412,7 @@ export async function logCollectorFailure(
   collectorKey: CollectorKey,
   message: string,
 ): Promise<void> {
-  await enqueueWrite(async () => {
+  await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     const previousFailures = await getLastConsecutiveFailures(
       database,
@@ -422,7 +459,7 @@ export async function ensureCollectorFailureState(
   collectorKey: CollectorKey,
   message: string,
 ): Promise<void> {
-  await enqueueWrite(async () => {
+  await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     const row = await database.getFirstAsync<DiagnosticRow>(
       `SELECT *
@@ -492,14 +529,14 @@ export async function appendEventsForCollector(
     return;
   }
 
-  await enqueueWrite(async () => {
+  await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     const affectedDates = getLocalDatesForEvents(events);
     const timestamp = new Date().toISOString();
     const importedRecordCount =
       collectorKey === "healthConnect" ? events.length : null;
 
-    await database.execAsync("BEGIN");
+    await database.execAsync("BEGIN IMMEDIATE");
     try {
       for (const event of events) {
         await database.runAsync(
@@ -577,11 +614,11 @@ export async function seedRepositoryEvents(
     return;
   }
 
-  await enqueueWrite(async () => {
+  await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     const affectedDates = getLocalDatesForEvents(events);
 
-    await database.execAsync("BEGIN");
+    await database.execAsync("BEGIN IMMEDIATE");
     try {
       for (const event of events) {
         await database.runAsync(
@@ -793,7 +830,7 @@ export async function getGroupedEventsForRange(
 }
 
 export async function clearRepositoryData(): Promise<void> {
-  await enqueueWrite(async () => {
+  await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
 
     await database.runAsync("DELETE FROM events");
@@ -806,7 +843,7 @@ export async function recomputeDailyAggregatesForRange(
   start: string,
   end: string,
 ): Promise<void> {
-  await enqueueWrite(async () => {
+  await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     let current = start;
 
@@ -847,7 +884,7 @@ export async function getLatestEventByType(
 export async function pruneLocationEventsBefore(
   cutoffIso: string,
 ): Promise<number> {
-  return enqueueWrite(async () => {
+  return enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     const countRow = await database.getFirstAsync<{ count: number }>(
       `SELECT COUNT(*) as count
