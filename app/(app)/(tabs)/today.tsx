@@ -13,6 +13,7 @@ import {
 
 import { ActivityPatternCard } from "@/components/zentra/ActivityPatternCard";
 import { ActivityStrip } from "@/components/zentra/ActivityStrip";
+import { BackgroundStatusCard } from "@/components/zentra/BackgroundStatusCard";
 import { CompletenessCard } from "@/components/zentra/CompletenessCard";
 import { DetailSheet } from "@/components/zentra/DetailSheet";
 import { EmptyState } from "@/components/zentra/EmptyState";
@@ -95,6 +96,7 @@ type TodaySectionKey =
   | "pattern"
   | "metrics"
   | "activityStrip"
+  | "backgroundStatus"
   | "secondaryMetrics"
   | "sleep"
   | "recentSignals"
@@ -245,6 +247,38 @@ const CompletenessSection = React.memo(function CompletenessSection({
   );
 });
 
+const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
+  bufferedActivityQueueDepth,
+  lastBackgroundTaskFailureAt,
+  lastBackgroundTaskFailureMessage,
+  lastBackgroundTaskSuccessAt,
+  lastReconcileRunAt,
+}: {
+  backgroundTaskRegistrationCheckedAt: string | null;
+  backgroundTaskRegistrationMessage: string | null;
+  backgroundTaskRegistrationStatus: string | null;
+  bufferedActivityQueueDepth: number;
+  lastBackgroundTaskFailureAt: string | null;
+  lastBackgroundTaskFailureMessage: string | null;
+  lastBackgroundTaskSuccessAt: string | null;
+  lastReconcileRunAt: string | null;
+}) {
+  return (
+    <View style={styles.sectionBlock}>
+      <BackgroundStatusCard
+        backgroundTaskRegistrationCheckedAt={backgroundTaskRegistrationCheckedAt}
+        backgroundTaskRegistrationMessage={backgroundTaskRegistrationMessage}
+        backgroundTaskRegistrationStatus={backgroundTaskRegistrationStatus}
+        bufferedActivityQueueDepth={bufferedActivityQueueDepth}
+        lastBackgroundTaskFailureAt={lastBackgroundTaskFailureAt}
+        lastBackgroundTaskFailureMessage={lastBackgroundTaskFailureMessage}
+        lastBackgroundTaskSuccessAt={lastBackgroundTaskSuccessAt}
+        lastReconcileRunAt={lastReconcileRunAt}
+      />
+    </View>
+  );
+});
+
 export default function TodayScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -257,12 +291,21 @@ export default function TodayScreen() {
   const repository = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
+      backgroundTaskRegistrationCheckedAt:
+        state.backgroundTaskRegistrationCheckedAt,
+      backgroundTaskRegistrationMessage: state.backgroundTaskRegistrationMessage,
+      backgroundTaskRegistrationStatus: state.backgroundTaskRegistrationStatus,
       todayDataUpdatedAt: state.todayDataUpdatedAt,
       todaySnapshot: state.todaySnapshot,
       todayAggregate: state.todayAggregate,
       todayEvents: state.todayEvents,
       latestSleepEvent: state.latestSleepEvent,
       diagnostics: state.diagnostics,
+      lastBackgroundTaskFailureAt: state.lastBackgroundTaskFailureAt,
+      lastBackgroundTaskFailureMessage: state.lastBackgroundTaskFailureMessage,
+      lastBackgroundTaskSuccessAt: state.lastBackgroundTaskSuccessAt,
+      lastReconcileRunAt: state.lastReconcileRunAt,
+      bufferedActivityQueueDepth: state.bufferedActivityQueueDepth,
     })),
   );
   const refreshTodayData = useRepositoryStore(
@@ -897,6 +940,7 @@ export default function TodayScreen() {
       "metrics",
       "activityStrip",
       "sleep",
+      "backgroundStatus",
       "recentSignals",
       "completeness",
     ];
@@ -939,6 +983,19 @@ export default function TodayScreen() {
           );
         case "sleep":
           return <SleepSection sleepEstimate={sleepEstimate} />;
+        case "backgroundStatus":
+          return (
+            <BackgroundStatusSection
+              backgroundTaskRegistrationCheckedAt={repository.backgroundTaskRegistrationCheckedAt}
+              backgroundTaskRegistrationMessage={repository.backgroundTaskRegistrationMessage}
+              backgroundTaskRegistrationStatus={repository.backgroundTaskRegistrationStatus}
+              bufferedActivityQueueDepth={repository.bufferedActivityQueueDepth}
+              lastBackgroundTaskFailureAt={repository.lastBackgroundTaskFailureAt}
+              lastBackgroundTaskFailureMessage={repository.lastBackgroundTaskFailureMessage}
+              lastBackgroundTaskSuccessAt={repository.lastBackgroundTaskSuccessAt}
+              lastReconcileRunAt={repository.lastReconcileRunAt}
+            />
+          );
         case "recentSignals":
           return (
             <RecentSignalsSection
@@ -972,6 +1029,14 @@ export default function TodayScreen() {
       palette.mutedForeground,
       palette.textSecondary,
       recentSignals,
+      repository.backgroundTaskRegistrationCheckedAt,
+      repository.backgroundTaskRegistrationMessage,
+      repository.backgroundTaskRegistrationStatus,
+      repository.bufferedActivityQueueDepth,
+      repository.lastBackgroundTaskFailureAt,
+      repository.lastBackgroundTaskFailureMessage,
+      repository.lastBackgroundTaskSuccessAt,
+      repository.lastReconcileRunAt,
       secondaryMetrics,
       signalHealthSummary,
       sleepEstimate,

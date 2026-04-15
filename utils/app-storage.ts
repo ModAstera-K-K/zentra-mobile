@@ -10,15 +10,28 @@ import type {
 } from "@/types/zentra";
 
 const APP_STATE_KEY = "zentra-app-state";
+const REPOSITORY_META_KEY = "zentra-repository-meta";
 const SIGNAL_STATE_KEY = "zentra-signal-state";
 
 export interface PersistedAppState {
   activityNormalizationWindow: ActivityNormalizationWindow;
   hasCompletedOnboarding: boolean;
+  hasSeenLocationBackgroundPermissionRationale: boolean;
   lastExportedAt: string | null;
   dataMode: DataMode;
   locationRetentionPreference: LocationRetentionPreference;
   collectors: Record<CollectorKey, CollectorState>;
+}
+
+export interface PersistedRepositoryMeta {
+  backgroundTaskRegistrationCheckedAt: string | null;
+  backgroundTaskRegistrationMessage: string | null;
+  backgroundTaskRegistrationStatus: string | null;
+  bufferedActivityQueueDepth: number;
+  lastBackgroundTaskFailureAt: string | null;
+  lastBackgroundTaskFailureMessage: string | null;
+  lastBackgroundTaskSuccessAt: string | null;
+  lastReconcileRunAt: string | null;
 }
 
 export async function loadPersistedAppState(): Promise<PersistedAppState | null> {
@@ -38,6 +51,26 @@ export async function savePersistedAppState(
     await AsyncStorage.setItem(APP_STATE_KEY, JSON.stringify(state));
   } catch (error) {
     console.warn("Failed to save app state:", error);
+  }
+}
+
+export async function loadPersistedRepositoryMeta(): Promise<PersistedRepositoryMeta | null> {
+  try {
+    const raw = await AsyncStorage.getItem(REPOSITORY_META_KEY);
+    return raw ? (JSON.parse(raw) as PersistedRepositoryMeta) : null;
+  } catch (error) {
+    console.warn("Failed to load repository meta:", error);
+    return null;
+  }
+}
+
+export async function savePersistedRepositoryMeta(
+  state: PersistedRepositoryMeta,
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(REPOSITORY_META_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn("Failed to save repository meta:", error);
   }
 }
 

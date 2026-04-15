@@ -26,6 +26,7 @@ export interface DeviceStateCollectorDeps {
 }
 
 export interface LocationCollectorDeps {
+  hasSeenBackgroundPermissionRationale: boolean;
   refreshRepository: () => Promise<void>;
   setLocationSupport: (supported: boolean) => Promise<void>;
   setLocationPermissionStatus: (status: PermissionStatus) => Promise<void>;
@@ -46,6 +47,7 @@ export interface AmbientLightCollectorDeps {
 }
 
 export interface ActivityCollectorDeps {
+  drainBufferedEvents: () => Promise<number>;
   refreshRepository: () => Promise<void>;
 }
 

@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 
 import { appendEventsForCollector, ensureCollectorFailureState } from '@/utils/event-repository';
+import { ZENTRA_BACKGROUND_LOCATION_TASK } from '@/utils/background/location-task';
 import { createLocationEvent } from '@/utils/live-event-builders';
 import { mapExpoPermissionStatus } from '@/utils/device-signals';
 import type { CollectorHandle, LocationCollectorDeps } from '@/utils/collectors/types';
@@ -16,6 +17,51 @@ async function persistLocationSample(
   await deps.addLocationSample(sample);
   await appendEventsForCollector('location', [createLocationEvent(sample)], 'Location sample stored');
   await deps.refreshRepository();
+}
+
+async function ensureBackgroundLocationUpdatesAsync(
+  hasSeenBackgroundPermissionRationale: boolean,
+): Promise<void> {
+  const isBackgroundLocationAvailable =
+    await Location.isBackgroundLocationAvailableAsync();
+
+  if (!isBackgroundLocationAvailable || !hasSeenBackgroundPermissionRationale) {
+    return;
+  }
+
+  const existingBackgroundPermission =
+    await Location.getBackgroundPermissionsAsync();
+  const backgroundPermission =
+    existingBackgroundPermission.status === 'granted' ||
+    !existingBackgroundPermission.canAskAgain
+      ? existingBackgroundPermission
+      : await Location.requestBackgroundPermissionsAsync();
+
+  if (backgroundPermission.status !== 'granted') {
+    return;
+  }
+
+  const hasStartedUpdates = await Location.hasStartedLocationUpdatesAsync(
+    ZENTRA_BACKGROUND_LOCATION_TASK,
+  );
+
+  if (hasStartedUpdates) {
+    return;
+  }
+
+  await Location.startLocationUpdatesAsync(ZENTRA_BACKGROUND_LOCATION_TASK, {
+    accuracy: Location.Accuracy.Balanced,
+    timeInterval: 15 * 60 * 1000,
+    distanceInterval: 50,
+    pausesUpdatesAutomatically: true,
+    showsBackgroundLocationIndicator: false,
+    foregroundService: {
+      notificationTitle: 'Zentra background location',
+      notificationBody:
+        'Zentra is collecting periodic location samples for mobility radius.',
+      killServiceOnDestroy: false,
+    },
+  });
 }
 
 export async function startLocationCollector(
@@ -53,6 +99,10 @@ export async function startLocationCollector(
     });
   }
 
+  await ensureBackgroundLocationUpdatesAsync(
+    deps.hasSeenBackgroundPermissionRationale,
+  );
+
   const subscription = await Location.watchPositionAsync(
     {
       accuracy: Location.Accuracy.Balanced,
@@ -69,6 +119,11 @@ export async function startLocationCollector(
   );
 
   return {
-    stop: () => subscription.remove(),
+    stop: () => {
+      subscription.remove();
+      void Location.stopLocationUpdatesAsync(
+        ZENTRA_BACKGROUND_LOCATION_TASK,
+      ).catch(() => undefined);
+    },
   };
 }

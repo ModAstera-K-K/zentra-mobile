@@ -275,7 +275,7 @@ async function getLatestSuccessMetadata(
   };
 }
 
-async function getLatestCollectorDiagnostic(
+export async function getLatestCollectorDiagnosticForKey(
   collectorKey: CollectorKey,
 ): Promise<CollectorDiagnosticRecord | null> {
   const database = await getLocalDatabase();

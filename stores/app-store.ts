@@ -20,6 +20,7 @@ function createInitialAppState() {
   return {
     activityNormalizationWindow: "year" as ActivityNormalizationWindow,
     hasCompletedOnboarding: false,
+    hasSeenLocationBackgroundPermissionRationale: false,
     lastExportedAt: null as string | null,
     dataMode: "live" as DataMode,
     locationRetentionPreference: DEFAULT_LOCATION_RETENTION,
@@ -32,6 +33,7 @@ interface AppState {
   activityNormalizationWindow: ActivityNormalizationWindow;
   isHydrated: boolean;
   hasCompletedOnboarding: boolean;
+  hasSeenLocationBackgroundPermissionRationale: boolean;
   lastExportedAt: string | null;
   dataMode: DataMode;
   locationRetentionPreference: LocationRetentionPreference;
@@ -47,6 +49,7 @@ interface AppState {
   setActivityNormalizationWindow: (
     preference: ActivityNormalizationWindow,
   ) => Promise<void>;
+  noteLocationBackgroundPermissionRationaleSeen: () => Promise<void>;
   clearAllData: () => Promise<void>;
   noteExport: (timestamp: string) => Promise<void>;
   retryCollectors: () => Promise<void>;
@@ -56,6 +59,8 @@ async function persistState(state: AppState): Promise<void> {
   await savePersistedAppState({
     activityNormalizationWindow: state.activityNormalizationWindow,
     hasCompletedOnboarding: state.hasCompletedOnboarding,
+    hasSeenLocationBackgroundPermissionRationale:
+      state.hasSeenLocationBackgroundPermissionRationale,
     lastExportedAt: state.lastExportedAt,
     dataMode: state.dataMode,
     locationRetentionPreference: state.locationRetentionPreference,
@@ -98,6 +103,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       activityNormalizationWindow:
         persisted?.activityNormalizationWindow ?? "year",
       hasCompletedOnboarding: persisted?.hasCompletedOnboarding ?? false,
+      hasSeenLocationBackgroundPermissionRationale:
+        persisted?.hasSeenLocationBackgroundPermissionRationale ?? false,
       lastExportedAt: persisted?.lastExportedAt ?? null,
       dataMode: persisted?.dataMode ?? "live",
       locationRetentionPreference:
@@ -133,6 +140,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActivityNormalizationWindow: async (activityNormalizationWindow) => {
     set({ activityNormalizationWindow });
+    await persistState(get());
+  },
+
+  noteLocationBackgroundPermissionRationaleSeen: async () => {
+    set({ hasSeenLocationBackgroundPermissionRationale: true });
     await persistState(get());
   },
 

@@ -14,6 +14,8 @@ import {
 import { NavigationThemes } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppearanceStore, useAppStore } from '@/stores';
+import '@/utils/background/location-task';
+import '@/utils/background/reconcile-task';
 
 SplashScreen.preventAutoHideAsync();
 

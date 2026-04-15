@@ -9,6 +9,14 @@ declare class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignals
   requestActivityRecognitionPermissionAsync(): Promise<
     'granted' | 'not_requested' | 'blocked' | 'unsupported'
   >;
+  readBufferedActivityTransitionsAsync(): Promise<Array<{
+    id: string;
+    activityType: string;
+    transitionType: 'enter' | 'exit';
+    confidence: number;
+    timestamp: string;
+  }>>;
+  acknowledgeBufferedActivityTransitionsAsync(ids: string[]): Promise<number>;
   startActivityRecognitionUpdatesAsync(): Promise<boolean>;
   stopActivityRecognitionUpdatesAsync(): Promise<void>;
   getHealthConnectAvailabilityAsync(): Promise<'available' | 'not_installed' | 'unsupported'>;

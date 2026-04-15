@@ -1,4 +1,9 @@
-import { appendEventsForCollector, ensureCollectorFailureState, logCollectorSuccess } from '@/utils/event-repository';
+import {
+  appendEventsForCollector,
+  ensureCollectorFailureState,
+  getLatestCollectorDiagnosticForKey,
+  logCollectorSuccess,
+} from '@/utils/event-repository';
 import {
   getUsageAccessPermissionStatusAsync,
   readUsageEventsAsync,
@@ -17,52 +22,64 @@ function getSyncWindowStart(lastSyncedAt: string | null): string {
   return start.toISOString();
 }
 
+export async function syncAppUsageCollector(
+  deps: AppUsageCollectorDeps,
+  lastSyncedAt: string | null,
+): Promise<string> {
+  const permissionStatus = await getUsageAccessPermissionStatusAsync();
+
+  if (permissionStatus === 'unsupported') {
+    await ensureCollectorFailureState(
+      'appUsage',
+      getAppUsageUnsupportedMessage(),
+    );
+    await ensureCollectorFailureState(
+      'deviceState',
+      getAppUsageUnsupportedMessage(),
+    );
+    await deps.refreshRepository();
+    return lastSyncedAt ?? new Date().toISOString();
+  }
+
+  if (permissionStatus !== 'granted') {
+    await ensureCollectorFailureState('appUsage', 'Usage access not granted');
+    await ensureCollectorFailureState('deviceState', 'Usage access not granted for screen and unlock events');
+    await deps.refreshRepository();
+    return lastSyncedAt ?? new Date().toISOString();
+  }
+
+  const endIso = new Date().toISOString();
+  const usageEvents = await readUsageEventsAsync(getSyncWindowStart(lastSyncedAt), endIso);
+  const { appUsageEvents, deviceStateEvents } = createUsageDerivedEvents(usageEvents);
+
+  if (appUsageEvents.length) {
+    await appendEventsForCollector('appUsage', appUsageEvents, `Usage stats stored ${appUsageEvents.length} event(s)`);
+  } else {
+    await logCollectorSuccess('appUsage', 'Usage access granted with no app sessions in this window', 0);
+  }
+
+  if (deviceStateEvents.length) {
+    await appendEventsForCollector('deviceState', deviceStateEvents, `Screen and unlock events stored ${deviceStateEvents.length} event(s)`);
+  } else {
+    await logCollectorSuccess('deviceState', 'Usage access granted with no screen-state events in this window', 0);
+  }
+
+  await deps.refreshRepository();
+  return endIso;
+}
+
+async function getInitialAppUsageSyncCursor(): Promise<string | null> {
+  const latestAppUsageDiagnostic = await getLatestCollectorDiagnosticForKey('appUsage');
+  return latestAppUsageDiagnostic?.lastSuccessfulSyncAt ?? null;
+}
+
 export async function startAppUsageCollector(
   deps: AppUsageCollectorDeps,
 ): Promise<CollectorHandle> {
-  let lastSyncedAt: string | null = null;
+  let lastSyncedAt = await getInitialAppUsageSyncCursor();
 
   async function syncUsageStats(): Promise<void> {
-    const permissionStatus = await getUsageAccessPermissionStatusAsync();
-
-    if (permissionStatus === 'unsupported') {
-      await ensureCollectorFailureState(
-        'appUsage',
-        getAppUsageUnsupportedMessage(),
-      );
-      await ensureCollectorFailureState(
-        'deviceState',
-        getAppUsageUnsupportedMessage(),
-      );
-      await deps.refreshRepository();
-      return;
-    }
-
-    if (permissionStatus !== 'granted') {
-      await ensureCollectorFailureState('appUsage', 'Usage access not granted');
-      await ensureCollectorFailureState('deviceState', 'Usage access not granted for screen and unlock events');
-      await deps.refreshRepository();
-      return;
-    }
-
-    const endIso = new Date().toISOString();
-    const usageEvents = await readUsageEventsAsync(getSyncWindowStart(lastSyncedAt), endIso);
-    const { appUsageEvents, deviceStateEvents } = createUsageDerivedEvents(usageEvents);
-
-    if (appUsageEvents.length) {
-      await appendEventsForCollector('appUsage', appUsageEvents, `Usage stats stored ${appUsageEvents.length} event(s)`);
-    } else {
-      await logCollectorSuccess('appUsage', 'Usage access granted with no app sessions in this window', 0);
-    }
-
-    if (deviceStateEvents.length) {
-      await appendEventsForCollector('deviceState', deviceStateEvents, `Screen and unlock events stored ${deviceStateEvents.length} event(s)`);
-    } else {
-      await logCollectorSuccess('deviceState', 'Usage access granted with no screen-state events in this window', 0);
-    }
-
-    lastSyncedAt = endIso;
-    await deps.refreshRepository();
+    lastSyncedAt = await syncAppUsageCollector(deps, lastSyncedAt);
   }
 
   await syncUsageStats();

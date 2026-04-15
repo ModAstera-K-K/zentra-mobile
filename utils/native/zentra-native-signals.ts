@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import type { PermissionStatus } from '@/types/zentra';
 
 export interface NativeActivityTransition {
+  id: string;
   activityType: string;
   transitionType: 'enter' | 'exit';
   confidence: number;
@@ -48,6 +49,8 @@ interface NativeSignalsModule {
   ) => NativeSignalsSubscription;
   getActivityRecognitionPermissionStatusAsync: () => Promise<PermissionStatus>;
   requestActivityRecognitionPermissionAsync: () => Promise<PermissionStatus>;
+  readBufferedActivityTransitionsAsync?: () => Promise<NativeActivityTransition[]>;
+  acknowledgeBufferedActivityTransitionsAsync?: (ids: string[]) => Promise<number>;
   startActivityRecognitionUpdatesAsync: () => Promise<boolean>;
   stopActivityRecognitionUpdatesAsync: () => Promise<void>;
   getHealthConnectAvailabilityAsync: () => Promise<HealthConnectAvailability>;
@@ -111,6 +114,26 @@ export async function requestActivityRecognitionPermissionAsync(): Promise<Permi
   }
 
   return module.requestActivityRecognitionPermissionAsync();
+}
+
+export async function readBufferedActivityTransitionsAsync(): Promise<NativeActivityTransition[]> {
+  const module = loadNativeSignalsModule();
+  if (!module || typeof module.readBufferedActivityTransitionsAsync !== 'function') {
+    return [];
+  }
+
+  return module.readBufferedActivityTransitionsAsync();
+}
+
+export async function acknowledgeBufferedActivityTransitionsAsync(
+  ids: string[],
+): Promise<number> {
+  const module = loadNativeSignalsModule();
+  if (!module || typeof module.acknowledgeBufferedActivityTransitionsAsync !== 'function') {
+    return 0;
+  }
+
+  return module.acknowledgeBufferedActivityTransitionsAsync(ids);
 }
 
 export async function startActivityRecognitionUpdatesAsync(): Promise<boolean> {

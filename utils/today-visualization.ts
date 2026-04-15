@@ -681,26 +681,58 @@ function buildActiveMinutesVisual(
 function buildUnlockVisual(
   events: ZentraEventRecord[],
 ): TodayDetailVisual | null {
-  let unlockCount = 0;
-  const points = sortEventsAscending(events)
-    .filter((event) => event.dataType === "unlock_event")
-    .map((event) => {
-      unlockCount += 1;
+  const unlockEvents = sortEventsAscending(events).filter(
+    (event) => event.dataType === "unlock_event",
+  );
 
-      return {
-        label: formatTimestampLabel(event.timestampStart),
-        value: unlockCount,
-        valueLabel: formatNumber(unlockCount),
-      };
-    });
-
-  if (!points.length) {
+  if (!unlockEvents.length) {
     return null;
   }
 
+  const hourlyUnlocks = new Array<number>(24).fill(0);
+
+  unlockEvents.forEach((event) => {
+    const hour = new Date(event.timestampStart).getHours();
+    hourlyUnlocks[hour] += 1;
+  });
+
+  const hourLabels = [
+    "12 AM",
+    "1 AM",
+    "2 AM",
+    "3 AM",
+    "4 AM",
+    "5 AM",
+    "6 AM",
+    "7 AM",
+    "8 AM",
+    "9 AM",
+    "10 AM",
+    "11 AM",
+    "12 PM",
+    "1 PM",
+    "2 PM",
+    "3 PM",
+    "4 PM",
+    "5 PM",
+    "6 PM",
+    "7 PM",
+    "8 PM",
+    "9 PM",
+    "10 PM",
+    "11 PM",
+  ];
+
+  const points = hourlyUnlocks.map((unlocks, hour) => ({
+    label: hourLabels[hour],
+    value: unlocks,
+    valueLabel: formatNumber(unlocks),
+    normalizedX: hour / 23,
+  }));
+
   return {
-    type: "line",
-    annotation: "Unlock count accumulated through the day.",
+    type: "vertical_bar",
+    annotation: "Unlocks per hour across the current day.",
     points,
   };
 }
