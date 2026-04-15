@@ -33,6 +33,7 @@ import {
 } from "@/stores";
 import type {
   ActivityNormalizationWindow,
+  CollectorKey,
   DataMode,
   LocationRetentionPreference,
   PermissionStatus,
@@ -45,6 +46,7 @@ import {
 } from "@/utils/collector-actions";
 import { buildDiagnosticTelemetrySummary } from "@/utils/collector-telemetry";
 import { buildCollectorStatuses } from "@/utils/device-signals";
+import { runImportantCollectorReconcile } from "@/utils/background/reconcile";
 import {
   getLocationRetentionDescription,
   getLocationRetentionLabel,
@@ -132,8 +134,14 @@ export default function SettingsScreen() {
   const locationRetentionPreference = useAppStore(
     (state) => state.locationRetentionPreference,
   );
+  const hasSeenLocationBackgroundPermissionRationale = useAppStore(
+    (state) => state.hasSeenLocationBackgroundPermissionRationale,
+  );
   const setLocationRetentionPreference = useAppStore(
     (state) => state.setLocationRetentionPreference,
+  );
+  const noteLocationBackgroundPermissionRationaleSeen = useAppStore(
+    (state) => state.noteLocationBackgroundPermissionRationaleSeen,
   );
   const clearAllData = useAppStore((state) => state.clearAllData);
   const retryCollectors = useAppStore((state) => state.retryCollectors);
@@ -146,6 +154,15 @@ export default function SettingsScreen() {
   const clearRepositoryData = useRepositoryStore(
     (state) => state.clearRepositoryData,
   );
+  const backgroundTaskRegistrationCheckedAt = useRepositoryStore(
+    (state) => state.backgroundTaskRegistrationCheckedAt,
+  );
+  const backgroundTaskRegistrationMessage = useRepositoryStore(
+    (state) => state.backgroundTaskRegistrationMessage,
+  );
+  const backgroundTaskRegistrationStatus = useRepositoryStore(
+    (state) => state.backgroundTaskRegistrationStatus,
+  );
   const diagnostics = useRepositoryStore((state) => state.diagnostics);
   const latestSleepEvent = useRepositoryStore(
     (state) => state.latestSleepEvent,
@@ -153,9 +170,25 @@ export default function SettingsScreen() {
   const diagnosticsHistory = useRepositoryStore(
     (state) => state.diagnosticsHistory,
   );
+  const bufferedActivityQueueDepth = useRepositoryStore(
+    (state) => state.bufferedActivityQueueDepth,
+  );
+  const lastBackgroundTaskFailureAt = useRepositoryStore(
+    (state) => state.lastBackgroundTaskFailureAt,
+  );
+  const lastBackgroundTaskFailureMessage = useRepositoryStore(
+    (state) => state.lastBackgroundTaskFailureMessage,
+  );
+  const lastBackgroundTaskSuccessAt = useRepositoryStore(
+    (state) => state.lastBackgroundTaskSuccessAt,
+  );
+  const lastReconcileRunAt = useRepositoryStore(
+    (state) => state.lastReconcileRunAt,
+  );
   const [pendingActionKey, setPendingActionKey] = React.useState<string | null>(
     null,
   );
+  const [isReconcilingNow, setIsReconcilingNow] = React.useState(false);
   const [activityPermissionStatus, setActivityPermissionStatus] =
     React.useState<PermissionStatus>("not_requested");
   const [healthConnectPermissionStatus, setHealthConnectPermissionStatus] =
@@ -404,6 +437,60 @@ export default function SettingsScreen() {
     }
   }
 
+  async function handleCollectorEnabledChange(
+    collectorKey: CollectorKey,
+    value: boolean,
+  ): Promise<void> {
+    if (
+      collectorKey === "location" &&
+      value &&
+      Platform.OS === "android" &&
+      !hasSeenLocationBackgroundPermissionRationale
+    ) {
+      Alert.alert(
+        "Allow background location?",
+        "Zentra can keep collecting periodic mobility samples while the app is backgrounded. Android may show a system settings screen next, and while background updates are active you'll see a persistent system notification.",
+        [
+          { style: "cancel", text: "Not now" },
+          {
+            text: "Continue",
+            onPress: () => {
+              void (async () => {
+                await noteLocationBackgroundPermissionRationaleSeen();
+                await setCollectorEnabled("location", true);
+              })();
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    await setCollectorEnabled(collectorKey, value);
+  }
+
+  async function runReconcileNow(): Promise<void> {
+    setIsReconcilingNow(true);
+
+    try {
+      await runImportantCollectorReconcile();
+      await refreshNativePermissionStatuses();
+      Alert.alert(
+        "Reconcile finished",
+        "Zentra ran the foreground reconcile flow and refreshed important collectors.",
+      );
+    } catch (error) {
+      Alert.alert(
+        "Reconcile failed",
+        error instanceof Error
+          ? error.message
+          : "The reconcile flow did not complete.",
+      );
+    } finally {
+      setIsReconcilingNow(false);
+    }
+  }
+
   return (
     <ScreenShell
       settingsEnabled={false}
@@ -545,7 +632,7 @@ export default function SettingsScreen() {
                   void runCollectorQuickAction(action.type, collector.key);
                 }}
                 onValueChange={(value) => {
-                  void setCollectorEnabled(collector.key, value);
+                  void handleCollectorEnabledChange(collector.key, value);
 
                   if (value) {
                     // Re-derive the action that would apply once the collector is enabled.
@@ -587,6 +674,14 @@ export default function SettingsScreen() {
           >
             Retry signals
           </Button>
+          <Button
+            disabled={isReconcilingNow}
+            leadingIconName={getActionIcon("retry")}
+            onPress={() => void runReconcileNow()}
+            variant="outline"
+          >
+            {isReconcilingNow ? "Running reconcile..." : "Run reconcile now"}
+          </Button>
         </View>
       </Card>
 
@@ -616,6 +711,47 @@ export default function SettingsScreen() {
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Activity normalization{" "}
           {getActivityNormalizationLabel(activityNormalizationWindow)}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+          Last reconcile run{" "}
+          {lastReconcileRunAt
+            ? new Date(lastReconcileRunAt).toLocaleString()
+            : "No reconcile run yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+          Last background reconcile success{" "}
+          {lastBackgroundTaskSuccessAt
+            ? new Date(lastBackgroundTaskSuccessAt).toLocaleString()
+            : "No background reconcile success yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+          Last background reconcile failure{" "}
+          {lastBackgroundTaskFailureAt
+            ? new Date(lastBackgroundTaskFailureAt).toLocaleString()
+            : "No background reconcile failure yet"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+          Background task registration status{" "}
+          {backgroundTaskRegistrationStatus ?? "Not checked"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+          Background task registration checked{" "}
+          {backgroundTaskRegistrationCheckedAt
+            ? new Date(backgroundTaskRegistrationCheckedAt).toLocaleString()
+            : "No registration check yet"}
+        </Text>
+        {backgroundTaskRegistrationMessage ? (
+          <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+            Background task registration detail {backgroundTaskRegistrationMessage}
+          </Text>
+        ) : null}
+        {lastBackgroundTaskFailureMessage ? (
+          <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+            Background failure detail {lastBackgroundTaskFailureMessage}
+          </Text>
+        ) : null}
+        <Text style={[styles.detail, { color: palette.textSecondary }]}> 
+          Buffered activity queue depth {bufferedActivityQueueDepth}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Repository diagnostics{" "}

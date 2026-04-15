@@ -18,6 +18,7 @@ class ZentraNativeSignalsModule : Module() {
     OnCreate {
       ZentraNativeSignalsEventRegistry.setActivityTransitionListener { payload ->
         sendEvent("onActivityTransition", mapOf(
+          "id" to payload.id,
           "activityType" to payload.activityType,
           "transitionType" to payload.transitionType,
           "confidence" to payload.confidence,
@@ -73,6 +74,24 @@ class ZentraNativeSignalsModule : Module() {
 
     AsyncFunction("stopActivityRecognitionUpdatesAsync") {
       getActivityRecognitionController()?.stopUpdates()
+    }
+
+    AsyncFunction("readBufferedActivityTransitionsAsync") {
+      val context = getContext() ?: return@AsyncFunction emptyList<Map<String, Any>>()
+      BufferedActivityTransitionStore.getBufferedTransitions(context).map { payload ->
+        mapOf(
+          "id" to payload.id,
+          "activityType" to payload.activityType,
+          "transitionType" to payload.transitionType,
+          "confidence" to payload.confidence,
+          "timestamp" to payload.timestamp,
+        )
+      }
+    }
+
+    AsyncFunction("acknowledgeBufferedActivityTransitionsAsync") { ids: ArrayList<String> ->
+      val context = getContext() ?: return@AsyncFunction 0
+      BufferedActivityTransitionStore.acknowledgeTransitions(context, ids)
     }
 
     AsyncFunction("getHealthConnectAvailabilityAsync") {
@@ -158,7 +177,7 @@ class ZentraNativeSignalsModule : Module() {
   }
 
   private fun getActivityRecognitionController(): ActivityRecognitionController? {
-    val context = appContext.reactContext ?: return null
+    val context = getContext() ?: return null
     return ActivityRecognitionController(context, appContext)
   }
 
@@ -168,7 +187,9 @@ class ZentraNativeSignalsModule : Module() {
   }
 
   private fun getUsageStatsController(): UsageStatsController? {
-    val context = appContext.reactContext ?: return null
+    val context = getContext() ?: return null
     return UsageStatsController(context)
   }
+
+  private fun getContext() = appContext.reactContext ?: appContext.currentActivity?.applicationContext
 }

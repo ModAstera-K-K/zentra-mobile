@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import {
@@ -21,12 +22,17 @@ import {
   startStepCollectorModule,
 } from "@/utils/collectors/registry";
 import type { CollectorHandle } from "@/utils/collectors/types";
+import { runImportantCollectorReconcile } from "@/utils/background/reconcile";
+import { syncBackgroundReconcileTaskRegistration } from "@/utils/background/reconcile-task";
 
 export function useSignalBootstrap(): void {
   const collectors = useAppStore((state) => state.collectors);
   const collectorRetryToken = useAppStore((state) => state.collectorRetryToken);
   const locationRetentionPreference = useAppStore(
     (state) => state.locationRetentionPreference,
+  );
+  const hasSeenLocationBackgroundPermissionRationale = useAppStore(
+    (state) => state.hasSeenLocationBackgroundPermissionRationale,
   );
   const isHydrated = useSignalStore((state) => state.isHydrated);
   const bootstrap = useSignalStore((state) => state.bootstrap);
@@ -62,10 +68,16 @@ export function useSignalBootstrap(): void {
   const refreshTodayData = useRepositoryStore(
     (state) => state.refreshTodayData,
   );
+  const drainBufferedActivityTransitions = useRepositoryStore(
+    (state) => state.drainBufferedActivityTransitions,
+  );
   const refreshDiagnostics = useRepositoryStore(
     (state) => state.refreshDiagnostics,
   );
   const refreshSleep = useRepositoryStore((state) => state.refreshSleep);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const reconcileInFlightRef = useRef<Promise<void> | null>(null);
+  const lastResumeReconcileAtRef = useRef(0);
 
   useEffect(() => {
     void bootstrap();
@@ -250,6 +262,8 @@ export function useSignalBootstrap(): void {
       }
 
       handle = await startLocationCollectorModule({
+        hasSeenBackgroundPermissionRationale:
+          hasSeenLocationBackgroundPermissionRationale,
         refreshRepository: refreshTodayData,
         setLocationSupport,
         setLocationPermissionStatus,
@@ -267,6 +281,7 @@ export function useSignalBootstrap(): void {
   }, [
     addLocationSample,
     collectors.location.enabled,
+    hasSeenLocationBackgroundPermissionRationale,
     isHydrated,
     setLocationPermissionStatus,
     setLocationServicesEnabled,
@@ -283,6 +298,7 @@ export function useSignalBootstrap(): void {
     let handle: CollectorHandle | null = null;
     void (async () => {
       handle = await startActivityCollectorModule({
+        drainBufferedEvents: drainBufferedActivityTransitions,
         refreshRepository: refreshTodayData,
       });
     })();
@@ -292,6 +308,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.activity.enabled,
+    drainBufferedActivityTransitions,
     isHydrated,
     refreshTodayData,
     collectorRetryToken,
@@ -414,4 +431,68 @@ export function useSignalBootstrap(): void {
     refreshTodayData,
     collectorRetryToken,
   ]);
+
+  useEffect(() => {
+    if (!isHydrated || !repositoryHydrated) {
+      return;
+    }
+
+    async function runResumeReconcile(): Promise<void> {
+      if (reconcileInFlightRef.current) {
+        return reconcileInFlightRef.current;
+      }
+
+      if (Date.now() - lastResumeReconcileAtRef.current < 10_000) {
+        return;
+      }
+
+      const task = (async () => {
+        lastResumeReconcileAtRef.current = Date.now();
+        await runImportantCollectorReconcile();
+      })();
+
+      reconcileInFlightRef.current = task;
+
+      try {
+        await task;
+      } finally {
+        reconcileInFlightRef.current = null;
+      }
+    }
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (
+        nextState === "active" &&
+        (previousState === "background" || previousState === "inactive")
+      ) {
+        void runResumeReconcile();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [
+    collectors.activity.enabled,
+    collectors.appUsage.enabled,
+    collectors.healthConnect.enabled,
+    collectors.sleep.enabled,
+    drainBufferedActivityTransitions,
+    isHydrated,
+    refreshAll,
+    refreshSleep,
+    refreshTodayData,
+    repositoryHydrated,
+  ]);
+
+  useEffect(() => {
+    if (!isHydrated || !repositoryHydrated) {
+      return;
+    }
+
+    void syncBackgroundReconcileTaskRegistration(collectors);
+  }, [collectors, isHydrated, repositoryHydrated]);
 }

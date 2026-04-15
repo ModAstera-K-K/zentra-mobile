@@ -15,14 +15,17 @@ class ActivityTransitionReceiver : BroadcastReceiver() {
     val result = ActivityTransitionResult.extractResult(intent) ?: return
 
     result.transitionEvents.forEach { event ->
-      ZentraNativeSignalsEventRegistry.dispatchActivityTransition(
-        ActivityTransitionPayload(
+      val payloads = ZentraNativeSignalsEventRegistry.prepareActivityTransition(
+        createActivityTransitionPayload(
           activityType = ActivityRecognitionMappings.mapActivityType(event.activityType),
           transitionType = ActivityRecognitionMappings.mapTransitionType(event.transitionType),
           confidence = 1.0,
           timestamp = Instant.now().toString(),
         ),
       )
+
+      BufferedActivityTransitionStore.appendTransitions(context, payloads)
+      ZentraNativeSignalsEventRegistry.emitActivityTransitions(payloads)
     }
   }
 

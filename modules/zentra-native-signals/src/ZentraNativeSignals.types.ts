@@ -9,6 +9,7 @@ export type ZentraNativeSignalsModuleEvents = {
 };
 
 export type ActivityTransitionEventPayload = {
+  id: string;
   activityType: string;
   transitionType: 'enter' | 'exit';
   confidence: number;

@@ -63,6 +63,15 @@ export async function startActivityCollector(
     return { stop: () => undefined };
   }
 
+  try {
+    await deps.drainBufferedEvents();
+  } catch {
+    await ensureCollectorFailureState(
+      'activity',
+      'Failed to import buffered activity transitions',
+    );
+  }
+
   await deps.refreshRepository();
 
   return {

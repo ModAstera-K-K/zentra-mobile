@@ -15,6 +15,14 @@ class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEv
     return 'unsupported';
   }
 
+  async readBufferedActivityTransitionsAsync(): Promise<[]> {
+    return [];
+  }
+
+  async acknowledgeBufferedActivityTransitionsAsync(): Promise<number> {
+    return 0;
+  }
+
   async startActivityRecognitionUpdatesAsync(): Promise<boolean> {
     return false;
   }

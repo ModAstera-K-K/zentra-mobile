@@ -7,6 +7,7 @@ import type {
   ZentraEventRecord,
 } from "@/types/zentra";
 import {
+  appendEventsForCollector,
   clearRepositoryData as clearRepositoryDataFromDb,
   getCollectorDiagnosticsHistory,
   getDailyAggregateForDate,
@@ -16,6 +17,15 @@ import {
   getTodayLiveSnapshot,
   initializeEventRepository,
 } from "@/utils/event-repository";
+import {
+  loadPersistedRepositoryMeta,
+  savePersistedRepositoryMeta,
+} from "@/utils/app-storage";
+import { createActivityEvent } from "@/utils/live-event-builders";
+import {
+  acknowledgeBufferedActivityTransitionsAsync,
+  readBufferedActivityTransitionsAsync,
+} from "@/utils/native/zentra-native-signals";
 import { toISODate } from "@/utils/dates";
 
 const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
@@ -52,7 +62,15 @@ let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
 
 interface RepositoryStoreState {
+  backgroundTaskRegistrationCheckedAt: string | null;
+  backgroundTaskRegistrationMessage: string | null;
+  backgroundTaskRegistrationStatus: string | null;
+  bufferedActivityQueueDepth: number;
   isHydrated: boolean;
+  lastBackgroundTaskFailureAt: string | null;
+  lastBackgroundTaskFailureMessage: string | null;
+  lastBackgroundTaskSuccessAt: string | null;
+  lastReconcileRunAt: string | null;
   lastUpdatedAt: string | null;
   todayDataUpdatedAt: string | null;
   diagnosticsUpdatedAt: string | null;
@@ -68,11 +86,42 @@ interface RepositoryStoreState {
   refreshTodayData: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
   refreshSleep: () => Promise<void>;
+  drainBufferedActivityTransitions: () => Promise<number>;
+  noteBackgroundTaskFailure: (message: string) => Promise<void>;
+  noteBackgroundTaskRegistrationState: (
+    status: string,
+    message?: string | null,
+  ) => Promise<void>;
+  noteBackgroundTaskSuccess: () => Promise<void>;
+  noteReconcileRun: () => Promise<void>;
+  refreshBufferedActivityQueueDepth: () => Promise<number>;
   clearRepositoryData: () => Promise<void>;
 }
 
+async function persistRepositoryMeta(state: RepositoryStoreState): Promise<void> {
+  await savePersistedRepositoryMeta({
+    backgroundTaskRegistrationCheckedAt:
+      state.backgroundTaskRegistrationCheckedAt,
+    backgroundTaskRegistrationMessage: state.backgroundTaskRegistrationMessage,
+    backgroundTaskRegistrationStatus: state.backgroundTaskRegistrationStatus,
+    bufferedActivityQueueDepth: state.bufferedActivityQueueDepth,
+    lastBackgroundTaskFailureAt: state.lastBackgroundTaskFailureAt,
+    lastBackgroundTaskFailureMessage: state.lastBackgroundTaskFailureMessage,
+    lastBackgroundTaskSuccessAt: state.lastBackgroundTaskSuccessAt,
+    lastReconcileRunAt: state.lastReconcileRunAt,
+  });
+}
+
 export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
+  backgroundTaskRegistrationCheckedAt: null,
+  backgroundTaskRegistrationMessage: null,
+  backgroundTaskRegistrationStatus: null,
+  bufferedActivityQueueDepth: 0,
   isHydrated: false,
+  lastBackgroundTaskFailureAt: null,
+  lastBackgroundTaskFailureMessage: null,
+  lastBackgroundTaskSuccessAt: null,
+  lastReconcileRunAt: null,
   lastUpdatedAt: null,
   todayDataUpdatedAt: null,
   diagnosticsUpdatedAt: null,
@@ -90,6 +139,9 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     }
 
     await initializeEventRepository();
+    const persistedMeta = await loadPersistedRepositoryMeta();
+    const bufferedActivityQueueDepth =
+      (await readBufferedActivityTransitionsAsync()).length;
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -110,7 +162,21 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     const updatedAt = new Date().toISOString();
 
     set({
+      backgroundTaskRegistrationCheckedAt:
+        persistedMeta?.backgroundTaskRegistrationCheckedAt ?? null,
+      backgroundTaskRegistrationMessage:
+        persistedMeta?.backgroundTaskRegistrationMessage ?? null,
+      backgroundTaskRegistrationStatus:
+        persistedMeta?.backgroundTaskRegistrationStatus ?? null,
       isHydrated: true,
+      bufferedActivityQueueDepth,
+      lastBackgroundTaskFailureAt:
+        persistedMeta?.lastBackgroundTaskFailureAt ?? null,
+      lastBackgroundTaskFailureMessage:
+        persistedMeta?.lastBackgroundTaskFailureMessage ?? null,
+      lastBackgroundTaskSuccessAt:
+        persistedMeta?.lastBackgroundTaskSuccessAt ?? null,
+      lastReconcileRunAt: persistedMeta?.lastReconcileRunAt ?? null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: updatedAt,
       diagnosticsUpdatedAt: updatedAt,
@@ -126,6 +192,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
   refreshAll: async () => {
     await initializeEventRepository();
+    const bufferedActivityQueueDepth =
+      (await readBufferedActivityTransitionsAsync()).length;
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -147,6 +215,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     set({
       isHydrated: true,
+      bufferedActivityQueueDepth,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: updatedAt,
       diagnosticsUpdatedAt: updatedAt,
@@ -202,6 +271,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   },
 
   refreshDiagnostics: async () => {
+    const bufferedActivityQueueDepth =
+      (await readBufferedActivityTransitionsAsync()).length;
     const [diagnostics, diagnosticsHistory] = await Promise.all([
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
@@ -211,6 +282,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     set({
       lastUpdatedAt: updatedAt,
+      bufferedActivityQueueDepth,
       diagnosticsUpdatedAt: updatedAt,
       diagnostics,
       diagnosticsHistory,
@@ -234,12 +306,83 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     });
   },
 
+  drainBufferedActivityTransitions: async () => {
+    const transitions = await readBufferedActivityTransitionsAsync();
+
+    if (!transitions.length) {
+      set({ bufferedActivityQueueDepth: 0 });
+      await persistRepositoryMeta(get());
+      return 0;
+    }
+
+    await appendEventsForCollector(
+      "activity",
+      transitions.map(createActivityEvent),
+      `Buffered activity transitions drained ${transitions.length} event(s)`,
+    );
+    await acknowledgeBufferedActivityTransitionsAsync(
+      transitions.map((transition) => transition.id),
+    );
+
+    set({ bufferedActivityQueueDepth: 0 });
+    await persistRepositoryMeta(get());
+
+    return transitions.length;
+  },
+
+  noteBackgroundTaskSuccess: async () => {
+    set({
+      lastBackgroundTaskFailureAt: null,
+      lastBackgroundTaskFailureMessage: null,
+      lastBackgroundTaskSuccessAt: new Date().toISOString(),
+    });
+    await persistRepositoryMeta(get());
+  },
+
+  noteBackgroundTaskFailure: async (message) => {
+    set({
+      lastBackgroundTaskFailureAt: new Date().toISOString(),
+      lastBackgroundTaskFailureMessage: message,
+    });
+    await persistRepositoryMeta(get());
+  },
+
+  noteBackgroundTaskRegistrationState: async (status, message = null) => {
+    set({
+      backgroundTaskRegistrationCheckedAt: new Date().toISOString(),
+      backgroundTaskRegistrationMessage: message,
+      backgroundTaskRegistrationStatus: status,
+    });
+    await persistRepositoryMeta(get());
+  },
+
+  noteReconcileRun: async () => {
+    set({ lastReconcileRunAt: new Date().toISOString() });
+    await persistRepositoryMeta(get());
+  },
+
+  refreshBufferedActivityQueueDepth: async () => {
+    const bufferedActivityQueueDepth =
+      (await readBufferedActivityTransitionsAsync()).length;
+    set({ bufferedActivityQueueDepth });
+    await persistRepositoryMeta(get());
+    return bufferedActivityQueueDepth;
+  },
+
   clearRepositoryData: async () => {
     await clearRepositoryDataFromDb();
     const updatedAt = new Date().toISOString();
 
     set({
+      backgroundTaskRegistrationCheckedAt: null,
+      backgroundTaskRegistrationMessage: null,
+      backgroundTaskRegistrationStatus: null,
+      bufferedActivityQueueDepth: 0,
       isHydrated: true,
+      lastBackgroundTaskFailureAt: null,
+      lastBackgroundTaskFailureMessage: null,
+      lastBackgroundTaskSuccessAt: null,
+      lastReconcileRunAt: null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: updatedAt,
       diagnosticsUpdatedAt: updatedAt,
@@ -251,5 +394,6 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       diagnostics: [],
       diagnosticsHistory: [],
     });
+    await persistRepositoryMeta(get());
   },
 }));
