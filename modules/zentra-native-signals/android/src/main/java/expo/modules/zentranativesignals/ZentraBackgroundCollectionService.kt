@@ -28,7 +28,7 @@ class ZentraBackgroundCollectionService : Service() {
         val trackLocation = intent?.getBooleanExtra(EXTRA_TRACK_LOCATION, false) == true
         val trackActivity = intent?.getBooleanExtra(EXTRA_TRACK_ACTIVITY, false) == true
 
-        if (!trackLocation && !trackActivity) {
+        if (!trackLocation) {
           stopForegroundCompat()
           stopSelf()
           return START_NOT_STICKY
@@ -126,6 +126,11 @@ class ZentraBackgroundCollectionService : Service() {
       trackLocation: Boolean,
       trackActivity: Boolean,
     ) {
+      if (!trackLocation) {
+        stop(context)
+        return
+      }
+
       val intent = Intent(context, ZentraBackgroundCollectionService::class.java).apply {
         action = ACTION_START
         putExtra(EXTRA_TRACK_LOCATION, trackLocation)

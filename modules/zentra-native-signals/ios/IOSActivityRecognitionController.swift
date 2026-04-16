@@ -78,6 +78,11 @@ final class IOSActivityRecognitionController {
     if let previousActivityType = lastActivityType, previousActivityType != nextActivityType {
       DispatchQueue.main.async {
         self.emitTransition([
+          "id": self.transitionId(
+            activityType: previousActivityType,
+            transitionType: "exit",
+            timestamp: timestamp
+          ),
           "activityType": previousActivityType,
           "transitionType": "exit",
           "confidence": confidence,
@@ -89,6 +94,11 @@ final class IOSActivityRecognitionController {
     if lastActivityType != nextActivityType {
       DispatchQueue.main.async {
         self.emitTransition([
+          "id": self.transitionId(
+            activityType: nextActivityType,
+            transitionType: "enter",
+            timestamp: timestamp
+          ),
           "activityType": nextActivityType,
           "transitionType": "enter",
           "confidence": confidence,
@@ -134,5 +144,13 @@ final class IOSActivityRecognitionController {
     @unknown default:
       return 0.5
     }
+  }
+
+  private func transitionId(
+    activityType: String,
+    transitionType: String,
+    timestamp: String
+  ) -> String {
+    return ["activity", activityType, transitionType, timestamp].joined(separator: "-")
   }
 }
