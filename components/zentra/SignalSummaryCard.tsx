@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: Spacing.md,
+    justifyContent: "space-between",
   },
   metricDetail: {
     fontFamily: Fonts.body,
@@ -153,9 +153,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     gap: Spacing.sm,
+    marginBottom: Spacing.md,
     minHeight: 128,
     padding: Spacing.md,
-    width: "48%",
+    width: "49%",
   },
   tilePressed: {
     opacity: 0.92,
