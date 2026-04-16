@@ -159,17 +159,17 @@ to its own local maximum.
 
 ## Activity Pattern Visualization
 
-The activity pattern grid (heatmap) maps each cell's color using two
-dimensions:
+The activity pattern grid (heatmap) maps each cell's color using a single warm
+intensity scale.
 
-### Hue - Dominant Kind
+### Hue - Shared Intensity Tone
 
-Each time bucket is classified by its dominant activity kind. The hue of the
-cell reflects this:
+All activity pattern cells use the same base hue:
 
-- `movement`: `signalPhysical`, meaning physical activity dominated.
-- `screen`: `signalCool`, meaning screen usage dominated.
-- `rest`: `signalHuman`, meaning rest or inactivity dominated.
+- `signalHuman`: a warm tone reused for the entire pattern grid.
+
+Dominant activity kind may still exist in the underlying data model, but it no
+longer changes the visible cell hue in the monthly pattern surface.
 
 ### Opacity — Intensity
 
