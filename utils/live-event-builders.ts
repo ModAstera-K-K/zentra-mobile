@@ -94,7 +94,14 @@ export function createActivityEvent(
 ): ZentraEventRecord {
   return {
     ...createBaseEvent("activity", source, transition.timestamp),
-    id: transition.id,
+    id:
+      transition.id ||
+      createDeterministicEventId([
+        "activity",
+        transition.activityType,
+        transition.transitionType,
+        transition.timestamp,
+      ]),
     valueText: transition.activityType,
     unit: "transition",
     metadata: {

@@ -1,7 +1,10 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 
-import { appendEventsForCollector } from "@/utils/event-repository";
+import {
+  appendEventsForCollector,
+  logCollectorFailure,
+} from "@/utils/event-repository";
 import { createLocationEvent } from "@/utils/live-event-builders";
 
 export const ZENTRA_BACKGROUND_LOCATION_TASK = "zentra-background-location";
@@ -30,11 +33,30 @@ if (!TaskManager.isTaskDefined(ZENTRA_BACKGROUND_LOCATION_TASK)) {
         return;
       }
 
-      await appendEventsForCollector(
-        "location",
-        data.locations.map(mapLocationToSample).map(createLocationEvent),
-        `Background location stored ${data.locations.length} sample(s)`,
-      );
+      try {
+        await appendEventsForCollector(
+          "location",
+          data.locations.map(mapLocationToSample).map(createLocationEvent),
+          `Background location stored ${data.locations.length} sample(s)`,
+        );
+      } catch (taskError) {
+        const message =
+          taskError instanceof Error
+            ? taskError.message
+            : "Unknown background location write failure";
+
+        try {
+          await logCollectorFailure(
+            "location",
+            `Background location storage failed: ${message}`,
+          );
+        } catch {
+          console.error(
+            "Failed to record background location task error",
+            taskError,
+          );
+        }
+      }
     },
   );
 }

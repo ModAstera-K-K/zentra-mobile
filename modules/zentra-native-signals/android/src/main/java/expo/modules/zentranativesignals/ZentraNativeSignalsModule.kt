@@ -119,6 +119,11 @@ class ZentraNativeSignalsModule : Module() {
 
     AsyncFunction("startBackgroundCollectionServiceAsync") { trackLocation: Boolean, trackActivity: Boolean ->
       val context = getContext() ?: return@AsyncFunction false
+      if (!trackLocation) {
+        ZentraBackgroundCollectionService.stop(context)
+        return@AsyncFunction false
+      }
+
       ZentraBackgroundCollectionService.start(context, trackLocation, trackActivity)
       true
     }
