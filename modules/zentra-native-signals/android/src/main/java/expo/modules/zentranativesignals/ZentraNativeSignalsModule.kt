@@ -117,6 +117,22 @@ class ZentraNativeSignalsModule : Module() {
       BufferedActivityTransitionStore.acknowledgeTransitions(context, ids)
     }
 
+    AsyncFunction("startBackgroundCollectionServiceAsync") { trackLocation: Boolean, trackActivity: Boolean ->
+      val context = getContext() ?: return@AsyncFunction false
+      ZentraBackgroundCollectionService.start(context, trackLocation, trackActivity)
+      true
+    }
+
+    AsyncFunction("stopBackgroundCollectionServiceAsync") {
+      val context = getContext() ?: return@AsyncFunction false
+      ZentraBackgroundCollectionService.stop(context)
+      true
+    }
+
+    AsyncFunction("isBackgroundCollectionServiceRunningAsync") {
+      ZentraBackgroundCollectionService.isRunning()
+    }
+
     AsyncFunction("getHealthConnectAvailabilityAsync") {
       getHealthConnectController()?.getAvailability() ?: "unsupported"
     }

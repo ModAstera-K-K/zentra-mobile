@@ -191,6 +191,9 @@ export default function SettingsScreen() {
   const lastHealthSyncWindowEndAt = useRepositoryStore(
     (state) => state.lastHealthSyncWindowEndAt,
   );
+  const lastNativeDrainAt = useRepositoryStore(
+    (state) => state.lastNativeDrainAt,
+  );
   const lastNativeIngestionCount = useRepositoryStore(
     (state) => state.lastNativeIngestionCount,
   );

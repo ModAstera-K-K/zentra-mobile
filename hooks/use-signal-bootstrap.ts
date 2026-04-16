@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { AppState, Platform, type AppStateStatus } from "react-native";
 
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import {
@@ -10,6 +10,7 @@ import {
 import { buildSeedEventsFromSignals } from "@/utils/live-event-builders";
 import { getLocationRetentionDays } from "@/utils/location-retention";
 import {
+  hasEnabledAndroidBackgroundServiceCollector,
   hasEnabledCollectorCapability,
   startActivityCollectorModule,
   startAmbientLightCollectorModule,
@@ -25,6 +26,10 @@ import {
 import type { CollectorHandle } from "@/utils/collectors/types";
 import { runImportantCollectorReconcile } from "@/utils/background/reconcile";
 import { syncBackgroundReconcileTaskRegistration } from "@/utils/background/reconcile-task";
+import {
+  startBackgroundCollectionServiceAsync,
+  stopBackgroundCollectionServiceAsync,
+} from "@/utils/native/zentra-native-signals";
 
 export function useSignalBootstrap(): void {
   const collectors = useAppStore((state) => state.collectors);
@@ -85,6 +90,16 @@ export function useSignalBootstrap(): void {
     collectors,
     ["backgroundPeriodic", "nativeBuffered"],
   );
+  const trackBackgroundLocation =
+    collectors.location.enabled && hasSeenLocationBackgroundPermissionRationale;
+  const trackBackgroundActivity = collectors.activity.enabled;
+  const shouldRunAndroidBackgroundService =
+    Platform.OS === "android" &&
+    hasEnabledAndroidBackgroundServiceCollector(collectors) &&
+    // The current native service is declared as a location foreground service.
+    // Keep startup tied to the location-backed path until an activity-only
+    // foreground-service type is defined and validated separately.
+    trackBackgroundLocation;
 
   function enqueueBootstrapTask(task: () => Promise<void>): Promise<void> {
     const nextTask = bootstrapTaskQueueRef.current.then(task, task);
@@ -644,4 +659,37 @@ export function useSignalBootstrap(): void {
 
     void syncBackgroundReconcileTaskRegistration(collectors);
   }, [collectors, isHydrated, lowPowerMode, repositoryHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated || Platform.OS !== "android") {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void enqueueBootstrapTask(async () => {
+      if (isCancelled) {
+        return;
+      }
+
+      if (!shouldRunAndroidBackgroundService) {
+        await stopBackgroundCollectionServiceAsync();
+        return;
+      }
+
+      await startBackgroundCollectionServiceAsync({
+        trackActivity: trackBackgroundActivity,
+        trackLocation: trackBackgroundLocation,
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    isHydrated,
+    shouldRunAndroidBackgroundService,
+    trackBackgroundActivity,
+    trackBackgroundLocation,
+  ]);
 }

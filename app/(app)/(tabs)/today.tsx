@@ -4,7 +4,6 @@ import {
   AppState,
   FlatList,
   InteractionManager,
-  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -24,7 +23,7 @@ import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { SignalSummaryCard } from "@/components/zentra/SignalSummaryCard";
 import { SleepEstimateCard } from "@/components/zentra/SleepEstimateCard";
 import { Card } from "@/components/ui/Card";
-import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import type {
@@ -33,6 +32,8 @@ import type {
   CollectorState,
   DashboardMetric,
   PermissionStatus,
+  ReconcileOutcome,
+  ReconcileTrigger,
   UnifiedTimelineBucket,
   ZentraEventRecord,
 } from "@/types/zentra";
@@ -283,10 +284,10 @@ const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
   lastReconcileDurationMs: number | null;
   lastReconcileFailureMessage: string | null;
   lastReconcileFinishedAt: string | null;
-  lastReconcileOutcome: string | null;
+  lastReconcileOutcome: ReconcileOutcome | null;
   lastReconcileRunAt: string | null;
   lastReconcileStartedAt: string | null;
-  lastReconcileTrigger: string | null;
+  lastReconcileTrigger: ReconcileTrigger | null;
 }) {
   return (
     <View style={styles.sectionBlock}>
@@ -1110,10 +1111,21 @@ export default function TodayScreen() {
       repository.backgroundTaskRegistrationMessage,
       repository.backgroundTaskRegistrationStatus,
       repository.bufferedActivityQueueDepth,
+      repository.lastBackgroundReconcileAt,
       repository.lastBackgroundTaskFailureAt,
       repository.lastBackgroundTaskFailureMessage,
+      repository.lastForegroundResumeReconcileAt,
+      repository.lastHealthSyncWindowEndAt,
+      repository.lastNativeIngestionCount,
+      repository.lastReconcileBoundedReason,
+      repository.lastReconcileDurationMs,
+      repository.lastReconcileFailureMessage,
+      repository.lastReconcileFinishedAt,
+      repository.lastReconcileOutcome,
       repository.lastBackgroundTaskSuccessAt,
       repository.lastReconcileRunAt,
+      repository.lastReconcileStartedAt,
+      repository.lastReconcileTrigger,
       secondaryMetrics,
       signalHealthSummary,
       sleepEstimate,

@@ -31,6 +31,18 @@ class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEv
     return 0;
   }
 
+  async startBackgroundCollectionServiceAsync(): Promise<boolean> {
+    return false;
+  }
+
+  async stopBackgroundCollectionServiceAsync(): Promise<boolean> {
+    return false;
+  }
+
+  async isBackgroundCollectionServiceRunningAsync(): Promise<boolean> {
+    return false;
+  }
+
   async startActivityRecognitionUpdatesAsync(): Promise<boolean> {
     return false;
   }

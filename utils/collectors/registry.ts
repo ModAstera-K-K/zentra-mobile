@@ -49,6 +49,11 @@ export const collectorCapabilities: Record<CollectorKey, CollectorCapability> =
     steps: "foregroundOnly",
   };
 
+export const androidBackgroundServiceCollectorKeys: CollectorKey[] = [
+  "location",
+  "activity",
+];
+
 export function collectorHasCapability(
   collectorKey: CollectorKey,
   capability: CollectorCapability,
@@ -72,6 +77,14 @@ export function hasEnabledCollectorCapability(
 
       return Boolean(collectors[collectorKey]?.enabled);
     },
+  );
+}
+
+export function hasEnabledAndroidBackgroundServiceCollector(
+  collectors: Record<string, CollectorState>,
+): boolean {
+  return androidBackgroundServiceCollectorKeys.some((collectorKey) =>
+    Boolean(collectors[collectorKey]?.enabled),
   );
 }
 
