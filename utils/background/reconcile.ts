@@ -79,6 +79,7 @@ export async function runImportantCollectorReconcile(
 
     if (!boundedReason && collectors.healthConnect.enabled) {
       await syncHealthConnectCollector({
+        noteSyncWindowEnd: repositoryStore.noteHealthSyncWindowEnd,
         refreshRepository: repositoryStore.refreshAll,
       });
     }

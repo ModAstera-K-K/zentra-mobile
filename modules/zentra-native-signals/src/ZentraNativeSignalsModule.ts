@@ -33,6 +33,12 @@ declare class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignals
   >;
   getBufferedActivityTransitionCountAsync(): Promise<number>;
   acknowledgeBufferedActivityTransitionsAsync(ids: string[]): Promise<number>;
+  startBackgroundCollectionServiceAsync(
+    trackLocation: boolean,
+    trackActivity: boolean,
+  ): Promise<boolean>;
+  stopBackgroundCollectionServiceAsync(): Promise<boolean>;
+  isBackgroundCollectionServiceRunningAsync(): Promise<boolean>;
   startActivityRecognitionUpdatesAsync(): Promise<boolean>;
   stopActivityRecognitionUpdatesAsync(): Promise<void>;
   getHealthConnectAvailabilityAsync(): Promise<

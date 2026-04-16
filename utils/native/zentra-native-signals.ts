@@ -64,6 +64,12 @@ interface NativeSignalsModule {
   acknowledgeBufferedActivityTransitionsAsync?: (
     ids: string[],
   ) => Promise<number>;
+  startBackgroundCollectionServiceAsync?: (
+    trackLocation: boolean,
+    trackActivity: boolean,
+  ) => Promise<boolean>;
+  stopBackgroundCollectionServiceAsync?: () => Promise<boolean>;
+  isBackgroundCollectionServiceRunningAsync?: () => Promise<boolean>;
   startActivityRecognitionUpdatesAsync: () => Promise<boolean>;
   stopActivityRecognitionUpdatesAsync: () => Promise<void>;
   getHealthConnectAvailabilityAsync: () => Promise<HealthConnectAvailability>;
@@ -198,6 +204,48 @@ export async function acknowledgeBufferedActivityTransitionsAsync(
   }
 
   return module.acknowledgeBufferedActivityTransitionsAsync(ids);
+}
+
+export async function startBackgroundCollectionServiceAsync(options: {
+  trackActivity: boolean;
+  trackLocation: boolean;
+}): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.startBackgroundCollectionServiceAsync !== "function"
+  ) {
+    return false;
+  }
+
+  return module.startBackgroundCollectionServiceAsync(
+    options.trackLocation,
+    options.trackActivity,
+  );
+}
+
+export async function stopBackgroundCollectionServiceAsync(): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.stopBackgroundCollectionServiceAsync !== "function"
+  ) {
+    return false;
+  }
+
+  return module.stopBackgroundCollectionServiceAsync();
+}
+
+export async function isBackgroundCollectionServiceRunningAsync(): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.isBackgroundCollectionServiceRunningAsync !== "function"
+  ) {
+    return false;
+  }
+
+  return module.isBackgroundCollectionServiceRunningAsync();
 }
 
 export async function startActivityRecognitionUpdatesAsync(): Promise<boolean> {
