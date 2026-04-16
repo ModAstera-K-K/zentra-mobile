@@ -4,6 +4,17 @@ import type {
   PermissionStatus,
 } from "@/types/zentra";
 
+export type CollectorCapability =
+  | "foregroundOnly"
+  | "backgroundContinuous"
+  | "backgroundPeriodic"
+  | "nativeBuffered";
+
+export interface CollectorRuntimeDescriptor {
+  capability: CollectorCapability;
+  collectorKey: CollectorKey;
+}
+
 export interface CollectorHandle {
   stop: () => void;
 }
@@ -26,6 +37,7 @@ export interface DeviceStateCollectorDeps {
 }
 
 export interface LocationCollectorDeps {
+  hasSeenBackgroundPermissionRationale: boolean;
   refreshRepository: () => Promise<void>;
   setLocationSupport: (supported: boolean) => Promise<void>;
   setLocationPermissionStatus: (status: PermissionStatus) => Promise<void>;
@@ -46,10 +58,12 @@ export interface AmbientLightCollectorDeps {
 }
 
 export interface ActivityCollectorDeps {
+  drainBufferedEvents: () => Promise<number>;
   refreshRepository: () => Promise<void>;
 }
 
 export interface HealthConnectCollectorDeps {
+  noteSyncWindowEnd: (timestamp: string) => Promise<void>;
   refreshRepository: () => Promise<void>;
 }
 

@@ -104,6 +104,7 @@ const EVENT_SOURCE_ICONS: Record<EventSource, AppIconName> = {
   sensor: "hardware-chip-outline",
   health_connect: "fitness-outline",
   activity_recognition: "body-outline",
+  native_buffered: "download-outline",
   usage_stats: "phone-portrait-outline",
   system_broadcast: "settings-outline",
   inferred: "sparkles-outline",

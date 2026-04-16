@@ -30,17 +30,11 @@ const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function getIntensityColor(
   colorScheme: "light" | "dark",
-  dominantKind: ActivityPatternCell["dominantKind"],
   intensity: number,
   palette: (typeof Colors)["light"],
 ): string {
   const alpha = 0.16 + (intensity / 100) * 0.7;
-  const base =
-    dominantKind === "movement"
-      ? palette.signalPhysical
-      : dominantKind === "screen"
-        ? palette.signalCool
-        : palette.signalHuman;
+  const base = palette.signalHuman;
 
   return colorScheme === "light"
     ? hexToRgba(base, Math.min(alpha, 0.82))
@@ -71,6 +65,7 @@ const PatternCell = React.memo(function PatternCell({
             backgroundColor: "transparent",
             borderColor: palette.border,
             borderStyle: "dashed",
+            height: size,
             opacity: 0.35,
             width: size,
           },
@@ -92,13 +87,9 @@ const PatternCell = React.memo(function PatternCell({
       style={[
         styles.patternCell,
         {
-          backgroundColor: getIntensityColor(
-            colorScheme,
-            cell.dominantKind,
-            cell.intensity,
-            palette,
-          ),
+          backgroundColor: getIntensityColor(colorScheme, cell.intensity, palette),
           borderColor: palette.border,
+          height: size,
           width: size,
         },
       ]}
@@ -224,7 +215,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     justifyContent: "flex-end",
-    minHeight: 64,
     padding: Spacing.sm,
   },
   patternLabel: {

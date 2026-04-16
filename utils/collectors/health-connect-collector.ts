@@ -32,9 +32,9 @@ function getHealthConnectWindow(): { startIso: string; endIso: string } {
   return { startIso, endIso };
 }
 
-export async function startHealthConnectCollector(
+export async function syncHealthConnectCollector(
   deps: HealthConnectCollectorDeps,
-): Promise<CollectorHandle> {
+): Promise<void> {
   const availability = await getHealthConnectAvailabilityAsync();
 
   if (availability === "unsupported") {
@@ -43,7 +43,7 @@ export async function startHealthConnectCollector(
       getHealthUnsupportedMessage(),
     );
     await deps.refreshRepository();
-    return { stop: () => undefined };
+    return;
   }
 
   if (availability === "not_installed") {
@@ -54,7 +54,7 @@ export async function startHealthConnectCollector(
         : "Install or update Health Connect before enabling this collector",
     );
     await deps.refreshRepository();
-    return { stop: () => undefined };
+    return;
   }
 
   const grantedPermissions = await getGrantedHealthConnectPermissionsAsync();
@@ -65,7 +65,7 @@ export async function startHealthConnectCollector(
       `${getHealthPlatformName()} permissions not granted`,
     );
     await deps.refreshRepository();
-    return { stop: () => undefined };
+    return;
   }
 
   const { startIso, endIso } = getHealthConnectWindow();
@@ -81,10 +81,11 @@ export async function startHealthConnectCollector(
         : `${getHealthPlatformName()} read failed — check permissions in ${getHealthPlatformName()}`,
     );
     await deps.refreshRepository();
-    return { stop: () => undefined };
+    return;
   }
 
   const events = createHealthConnectEvents(records);
+  await deps.noteSyncWindowEnd(endIso);
 
   if (!events.length) {
     await logCollectorSuccess(
@@ -93,7 +94,7 @@ export async function startHealthConnectCollector(
       0,
     );
     await deps.refreshRepository();
-    return { stop: () => undefined };
+    return;
   }
 
   await appendEventsForCollector(
@@ -102,6 +103,12 @@ export async function startHealthConnectCollector(
     `${getHealthPlatformName()} sync stored ${events.length} event(s)`,
   );
   await deps.refreshRepository();
+}
+
+export async function startHealthConnectCollector(
+  deps: HealthConnectCollectorDeps,
+): Promise<CollectorHandle> {
+  await syncHealthConnectCollector(deps);
 
   return {
     stop: () => undefined,

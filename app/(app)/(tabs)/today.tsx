@@ -4,7 +4,6 @@ import {
   AppState,
   FlatList,
   InteractionManager,
-  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 
 import { ActivityPatternCard } from "@/components/zentra/ActivityPatternCard";
 import { ActivityStrip } from "@/components/zentra/ActivityStrip";
+import { BackgroundStatusCard } from "@/components/zentra/BackgroundStatusCard";
 import { CompletenessCard } from "@/components/zentra/CompletenessCard";
 import { DetailSheet } from "@/components/zentra/DetailSheet";
 import { EmptyState } from "@/components/zentra/EmptyState";
@@ -23,7 +23,7 @@ import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { SignalSummaryCard } from "@/components/zentra/SignalSummaryCard";
 import { SleepEstimateCard } from "@/components/zentra/SleepEstimateCard";
 import { Card } from "@/components/ui/Card";
-import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import type {
@@ -32,6 +32,8 @@ import type {
   CollectorState,
   DashboardMetric,
   PermissionStatus,
+  ReconcileOutcome,
+  ReconcileTrigger,
   UnifiedTimelineBucket,
   ZentraEventRecord,
 } from "@/types/zentra";
@@ -95,6 +97,7 @@ type TodaySectionKey =
   | "pattern"
   | "metrics"
   | "activityStrip"
+  | "backgroundStatus"
   | "secondaryMetrics"
   | "sleep"
   | "recentSignals"
@@ -245,6 +248,84 @@ const CompletenessSection = React.memo(function CompletenessSection({
   );
 });
 
+const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
+  backgroundCollectionServiceCheckedAt,
+  backgroundCollectionServiceState,
+  backgroundTaskRegistrationCheckedAt,
+  backgroundTaskRegistrationMessage,
+  backgroundTaskRegistrationStatus,
+  bufferedActivityQueueDepth,
+  lastBackgroundReconcileAt,
+  lastBackgroundTaskFailureAt,
+  lastBackgroundTaskFailureMessage,
+  lastBackgroundTaskSuccessAt,
+  lastForegroundResumeReconcileAt,
+  lastHealthSyncWindowEndAt,
+  lastNativeIngestionCount,
+  lastReconcileBoundedReason,
+  lastReconcileDurationMs,
+  lastReconcileFailureMessage,
+  lastReconcileFinishedAt,
+  lastReconcileOutcome,
+  lastReconcileRunAt,
+  lastReconcileStartedAt,
+  lastReconcileTrigger,
+}: {
+  backgroundCollectionServiceCheckedAt: string | null;
+  backgroundCollectionServiceState: string | null;
+  backgroundTaskRegistrationCheckedAt: string | null;
+  backgroundTaskRegistrationMessage: string | null;
+  backgroundTaskRegistrationStatus: string | null;
+  bufferedActivityQueueDepth: number;
+  lastBackgroundReconcileAt: string | null;
+  lastBackgroundTaskFailureAt: string | null;
+  lastBackgroundTaskFailureMessage: string | null;
+  lastBackgroundTaskSuccessAt: string | null;
+  lastForegroundResumeReconcileAt: string | null;
+  lastHealthSyncWindowEndAt: string | null;
+  lastNativeIngestionCount: number | null;
+  lastReconcileBoundedReason: string | null;
+  lastReconcileDurationMs: number | null;
+  lastReconcileFailureMessage: string | null;
+  lastReconcileFinishedAt: string | null;
+  lastReconcileOutcome: ReconcileOutcome | null;
+  lastReconcileRunAt: string | null;
+  lastReconcileStartedAt: string | null;
+  lastReconcileTrigger: ReconcileTrigger | null;
+}) {
+  return (
+    <View style={styles.sectionBlock}>
+      <BackgroundStatusCard
+        backgroundCollectionServiceCheckedAt={
+          backgroundCollectionServiceCheckedAt
+        }
+        backgroundCollectionServiceState={backgroundCollectionServiceState}
+        backgroundTaskRegistrationCheckedAt={
+          backgroundTaskRegistrationCheckedAt
+        }
+        backgroundTaskRegistrationMessage={backgroundTaskRegistrationMessage}
+        backgroundTaskRegistrationStatus={backgroundTaskRegistrationStatus}
+        bufferedActivityQueueDepth={bufferedActivityQueueDepth}
+        lastBackgroundReconcileAt={lastBackgroundReconcileAt}
+        lastBackgroundTaskFailureAt={lastBackgroundTaskFailureAt}
+        lastBackgroundTaskFailureMessage={lastBackgroundTaskFailureMessage}
+        lastBackgroundTaskSuccessAt={lastBackgroundTaskSuccessAt}
+        lastForegroundResumeReconcileAt={lastForegroundResumeReconcileAt}
+        lastHealthSyncWindowEndAt={lastHealthSyncWindowEndAt}
+        lastNativeIngestionCount={lastNativeIngestionCount}
+        lastReconcileBoundedReason={lastReconcileBoundedReason}
+        lastReconcileDurationMs={lastReconcileDurationMs}
+        lastReconcileFailureMessage={lastReconcileFailureMessage}
+        lastReconcileFinishedAt={lastReconcileFinishedAt}
+        lastReconcileOutcome={lastReconcileOutcome}
+        lastReconcileRunAt={lastReconcileRunAt}
+        lastReconcileStartedAt={lastReconcileStartedAt}
+        lastReconcileTrigger={lastReconcileTrigger}
+      />
+    </View>
+  );
+});
+
 export default function TodayScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -257,12 +338,36 @@ export default function TodayScreen() {
   const repository = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
+      backgroundCollectionServiceCheckedAt:
+        state.backgroundCollectionServiceCheckedAt,
+      backgroundCollectionServiceState: state.backgroundCollectionServiceState,
+      backgroundTaskRegistrationCheckedAt:
+        state.backgroundTaskRegistrationCheckedAt,
+      backgroundTaskRegistrationMessage:
+        state.backgroundTaskRegistrationMessage,
+      backgroundTaskRegistrationStatus: state.backgroundTaskRegistrationStatus,
       todayDataUpdatedAt: state.todayDataUpdatedAt,
       todaySnapshot: state.todaySnapshot,
       todayAggregate: state.todayAggregate,
       todayEvents: state.todayEvents,
       latestSleepEvent: state.latestSleepEvent,
       diagnostics: state.diagnostics,
+      lastBackgroundReconcileAt: state.lastBackgroundReconcileAt,
+      lastBackgroundTaskFailureAt: state.lastBackgroundTaskFailureAt,
+      lastBackgroundTaskFailureMessage: state.lastBackgroundTaskFailureMessage,
+      lastBackgroundTaskSuccessAt: state.lastBackgroundTaskSuccessAt,
+      lastForegroundResumeReconcileAt: state.lastForegroundResumeReconcileAt,
+      lastHealthSyncWindowEndAt: state.lastHealthSyncWindowEndAt,
+      lastNativeIngestionCount: state.lastNativeIngestionCount,
+      lastReconcileBoundedReason: state.lastReconcileBoundedReason,
+      lastReconcileDurationMs: state.lastReconcileDurationMs,
+      lastReconcileFailureMessage: state.lastReconcileFailureMessage,
+      lastReconcileFinishedAt: state.lastReconcileFinishedAt,
+      lastReconcileOutcome: state.lastReconcileOutcome,
+      lastReconcileRunAt: state.lastReconcileRunAt,
+      lastReconcileStartedAt: state.lastReconcileStartedAt,
+      lastReconcileTrigger: state.lastReconcileTrigger,
+      bufferedActivityQueueDepth: state.bufferedActivityQueueDepth,
     })),
   );
   const refreshTodayData = useRepositoryStore(
@@ -314,6 +419,7 @@ export default function TodayScreen() {
     React.useState(false);
   const [isRefreshingTodayData, setIsRefreshingTodayData] =
     React.useState(false);
+  const latestSignalValuesRef = React.useRef(signalValues);
   const focusReadyStopRef = React.useRef<
     | ((
         endContext?: Record<
@@ -324,6 +430,10 @@ export default function TodayScreen() {
     | null
   >(null);
   const lastFetchedAnchorRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    latestSignalValuesRef.current = signalValues;
+  }, [signalValues]);
   const lastFetchedWindowRef = React.useRef<ActivityNormalizationWindow | null>(
     null,
   );
@@ -595,7 +705,7 @@ export default function TodayScreen() {
         ? buildDashboardMetrics(demoCollectors, true)
         : buildLiveDashboardMetrics(
             collectors,
-            { ...signalMeta, ...signalValues },
+            { ...signalMeta, ...latestSignalValuesRef.current },
             repository.todaySnapshot,
             repository.todayAggregate,
             repository.todayEvents,
@@ -614,7 +724,6 @@ export default function TodayScreen() {
     // signalValues is intentionally omitted — metrics only needs permission/
     // capability fields (signalMeta). Including signalValues would re-trigger
     // this effect on every sensor tick (step, lux, battery).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   ]);
   const sleepEstimate = React.useMemo(
     () =>
@@ -897,6 +1006,7 @@ export default function TodayScreen() {
       "metrics",
       "activityStrip",
       "sleep",
+      "backgroundStatus",
       "recentSignals",
       "completeness",
     ];
@@ -939,6 +1049,52 @@ export default function TodayScreen() {
           );
         case "sleep":
           return <SleepSection sleepEstimate={sleepEstimate} />;
+        case "backgroundStatus":
+          return (
+            <BackgroundStatusSection
+              backgroundCollectionServiceCheckedAt={
+                repository.backgroundCollectionServiceCheckedAt
+              }
+              backgroundCollectionServiceState={
+                repository.backgroundCollectionServiceState
+              }
+              backgroundTaskRegistrationCheckedAt={
+                repository.backgroundTaskRegistrationCheckedAt
+              }
+              backgroundTaskRegistrationMessage={
+                repository.backgroundTaskRegistrationMessage
+              }
+              backgroundTaskRegistrationStatus={
+                repository.backgroundTaskRegistrationStatus
+              }
+              bufferedActivityQueueDepth={repository.bufferedActivityQueueDepth}
+              lastBackgroundReconcileAt={repository.lastBackgroundReconcileAt}
+              lastBackgroundTaskFailureAt={
+                repository.lastBackgroundTaskFailureAt
+              }
+              lastBackgroundTaskFailureMessage={
+                repository.lastBackgroundTaskFailureMessage
+              }
+              lastBackgroundTaskSuccessAt={
+                repository.lastBackgroundTaskSuccessAt
+              }
+              lastForegroundResumeReconcileAt={
+                repository.lastForegroundResumeReconcileAt
+              }
+              lastHealthSyncWindowEndAt={repository.lastHealthSyncWindowEndAt}
+              lastNativeIngestionCount={repository.lastNativeIngestionCount}
+              lastReconcileBoundedReason={repository.lastReconcileBoundedReason}
+              lastReconcileDurationMs={repository.lastReconcileDurationMs}
+              lastReconcileFailureMessage={
+                repository.lastReconcileFailureMessage
+              }
+              lastReconcileFinishedAt={repository.lastReconcileFinishedAt}
+              lastReconcileOutcome={repository.lastReconcileOutcome}
+              lastReconcileRunAt={repository.lastReconcileRunAt}
+              lastReconcileStartedAt={repository.lastReconcileStartedAt}
+              lastReconcileTrigger={repository.lastReconcileTrigger}
+            />
+          );
         case "recentSignals":
           return (
             <RecentSignalsSection
@@ -972,6 +1128,27 @@ export default function TodayScreen() {
       palette.mutedForeground,
       palette.textSecondary,
       recentSignals,
+      repository.backgroundCollectionServiceCheckedAt,
+      repository.backgroundCollectionServiceState,
+      repository.backgroundTaskRegistrationCheckedAt,
+      repository.backgroundTaskRegistrationMessage,
+      repository.backgroundTaskRegistrationStatus,
+      repository.bufferedActivityQueueDepth,
+      repository.lastBackgroundReconcileAt,
+      repository.lastBackgroundTaskFailureAt,
+      repository.lastBackgroundTaskFailureMessage,
+      repository.lastForegroundResumeReconcileAt,
+      repository.lastHealthSyncWindowEndAt,
+      repository.lastNativeIngestionCount,
+      repository.lastReconcileBoundedReason,
+      repository.lastReconcileDurationMs,
+      repository.lastReconcileFailureMessage,
+      repository.lastReconcileFinishedAt,
+      repository.lastReconcileOutcome,
+      repository.lastBackgroundTaskSuccessAt,
+      repository.lastReconcileRunAt,
+      repository.lastReconcileStartedAt,
+      repository.lastReconcileTrigger,
       secondaryMetrics,
       signalHealthSummary,
       sleepEstimate,

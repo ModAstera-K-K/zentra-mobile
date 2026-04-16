@@ -86,6 +86,33 @@ export function buildNormalizedScreenScore(
   );
 }
 
+export function buildDailyRhythmMovementScore(
+  bucket: UnifiedTimelineBucket,
+  maxima: ActivityScoreMaxima,
+): number {
+  if (!bucket.hasAnyData) {
+    return 0;
+  }
+
+  const movementValues = [
+    maxima.steps > 0 ? clampNormalizedValue(bucket.steps, maxima.steps) : null,
+    maxima.movementSignals > 0
+      ? clampNormalizedValue(bucket.movementSignals, maxima.movementSignals)
+      : null,
+    maxima.nonSedentaryActivityCount > 0
+      ? clampNormalizedValue(
+          bucket.nonSedentaryActivityCount,
+          maxima.nonSedentaryActivityCount,
+        )
+      : null,
+    maxima.exerciseSeconds > 0
+      ? clampNormalizedValue(bucket.exerciseSeconds, maxima.exerciseSeconds)
+      : null,
+  ].filter((value): value is number => value !== null);
+
+  return Math.round(average(movementValues) * 100);
+}
+
 export function buildBucketCompositeScores(
   bucket: UnifiedTimelineBucket,
   maxima: ActivityScoreMaxima,

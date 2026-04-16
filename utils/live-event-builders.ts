@@ -63,8 +63,12 @@ export function createBatteryEvent(snapshot: {
 }
 
 export function createLocationEvent(sample: LocationSample): ZentraEventRecord {
+  const latitude = sample.latitude.toFixed(6);
+  const longitude = sample.longitude.toFixed(6);
+
   return {
     ...createBaseEvent("location", "sensor", sample.timestamp),
+    id: `location-${sample.timestamp}-${latitude}-${longitude}`,
     valueJson: JSON.stringify({
       latitude: sample.latitude,
       longitude: sample.longitude,
@@ -86,13 +90,18 @@ export function createAmbientLightEvent(
 
 export function createActivityEvent(
   transition: NativeActivityTransition,
+  source: EventSource = "activity_recognition",
 ): ZentraEventRecord {
   return {
-    ...createBaseEvent(
-      "activity",
-      "activity_recognition",
-      transition.timestamp,
-    ),
+    ...createBaseEvent("activity", source, transition.timestamp),
+    id:
+      transition.id ||
+      createDeterministicEventId([
+        "activity",
+        transition.activityType,
+        transition.transitionType,
+        transition.timestamp,
+      ]),
     valueText: transition.activityType,
     unit: "transition",
     metadata: {

@@ -20,11 +20,14 @@ class ActivityUpdateReceiver : BroadcastReceiver() {
       return
     }
 
-    ZentraNativeSignalsEventRegistry.dispatchActivityObservation(
+    val payloads = ZentraNativeSignalsEventRegistry.prepareActivityObservation(
       activityType = activityType,
       confidence = (probableActivity.confidence / 100.0).coerceIn(0.0, 1.0),
       timestamp = Instant.now().toString(),
     )
+
+    BufferedActivityTransitionStore.appendTransitions(context, payloads)
+    ZentraNativeSignalsEventRegistry.emitActivityTransitions(payloads)
   }
 
   companion object {

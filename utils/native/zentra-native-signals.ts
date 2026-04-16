@@ -1,18 +1,20 @@
-import * as ExpoLinking from 'expo-linking';
-import { Platform } from 'react-native';
+import * as ExpoLinking from "expo-linking";
+import { Platform } from "react-native";
 
-import type { PermissionStatus } from '@/types/zentra';
+import type { PermissionStatus } from "@/types/zentra";
 
 export interface NativeActivityTransition {
+  cursor?: number;
+  id: string;
   activityType: string;
-  transitionType: 'enter' | 'exit';
+  transitionType: "enter" | "exit";
   confidence: number;
   timestamp: string;
 }
 
 export interface NativeHealthConnectRecord {
   id: string;
-  recordType: 'steps' | 'sleep' | 'heart_rate' | 'exercise_session';
+  recordType: "steps" | "sleep" | "heart_rate" | "exercise_session";
   startTime: string;
   endTime: string;
   valueNumeric?: number | null;
@@ -22,16 +24,19 @@ export interface NativeHealthConnectRecord {
   metadata: Record<string, boolean | number | string>;
 }
 
-export type HealthConnectAvailability = 'available' | 'not_installed' | 'unsupported';
+export type HealthConnectAvailability =
+  | "available"
+  | "not_installed"
+  | "unsupported";
 export type UsageAccessPermissionStatus = PermissionStatus;
 
 export interface NativeUsageEvent {
   eventType:
-    | 'activity_resumed'
-    | 'activity_paused'
-    | 'screen_interactive'
-    | 'screen_non_interactive'
-    | 'keyguard_hidden';
+    | "activity_resumed"
+    | "activity_paused"
+    | "screen_interactive"
+    | "screen_non_interactive"
+    | "keyguard_hidden";
   packageName?: string | null;
   className?: string | null;
   timestamp: string;
@@ -43,11 +48,28 @@ interface NativeSignalsSubscription {
 
 interface NativeSignalsModule {
   addListener: (
-    eventName: 'onActivityTransition',
+    eventName: "onActivityTransition",
     listener: (payload: NativeActivityTransition) => void,
   ) => NativeSignalsSubscription;
   getActivityRecognitionPermissionStatusAsync: () => Promise<PermissionStatus>;
   requestActivityRecognitionPermissionAsync: () => Promise<PermissionStatus>;
+  readBufferedActivityTransitionsAsync?: () => Promise<
+    NativeActivityTransition[]
+  >;
+  readBufferedActivityTransitionsSinceAsync?: (
+    cursorExclusive: number | null,
+    limit?: number,
+  ) => Promise<NativeActivityTransition[]>;
+  getBufferedActivityTransitionCountAsync?: () => Promise<number>;
+  acknowledgeBufferedActivityTransitionsAsync?: (
+    ids: string[],
+  ) => Promise<number>;
+  startBackgroundCollectionServiceAsync?: (
+    trackLocation: boolean,
+    trackActivity: boolean,
+  ) => Promise<boolean>;
+  stopBackgroundCollectionServiceAsync?: () => Promise<boolean>;
+  isBackgroundCollectionServiceRunningAsync?: () => Promise<boolean>;
   startActivityRecognitionUpdatesAsync: () => Promise<boolean>;
   stopActivityRecognitionUpdatesAsync: () => Promise<void>;
   getHealthConnectAvailabilityAsync: () => Promise<HealthConnectAvailability>;
@@ -57,29 +79,38 @@ interface NativeSignalsModule {
   requestHealthConnectPermissionsAsync: () => Promise<string[]>;
   getUsageAccessPermissionStatusAsync: () => Promise<UsageAccessPermissionStatus>;
   openUsageAccessSettingsAsync: () => Promise<boolean>;
-  readUsageEventsAsync: (startIso: string, endIso: string) => Promise<NativeUsageEvent[]>;
-  readHealthConnectRecordsAsync: (startIso: string, endIso: string) => Promise<NativeHealthConnectRecord[]>;
+  readUsageEventsAsync: (
+    startIso: string,
+    endIso: string,
+  ) => Promise<NativeUsageEvent[]>;
+  readHealthConnectRecordsAsync: (
+    startIso: string,
+    endIso: string,
+  ) => Promise<NativeHealthConnectRecord[]>;
 }
 
-const REQUIRED_HEALTH_CONNECT_PERMISSIONS = Platform.OS === 'ios'
-  ? [
-    'ios.healthkit.read.steps',
-    'ios.healthkit.read.sleep',
-    'ios.healthkit.read.heart_rate',
-    'ios.healthkit.read.exercise',
-  ] as const
-  : [
-    'android.permission.health.READ_STEPS',
-    'android.permission.health.READ_SLEEP',
-    'android.permission.health.READ_HEART_RATE',
-    'android.permission.health.READ_EXERCISE',
-  ] as const;
+const REQUIRED_HEALTH_CONNECT_PERMISSIONS =
+  Platform.OS === "ios"
+    ? ([
+        "ios.healthkit.read.steps",
+        "ios.healthkit.read.sleep",
+        "ios.healthkit.read.heart_rate",
+        "ios.healthkit.read.exercise",
+      ] as const)
+    : ([
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_SLEEP",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_EXERCISE",
+      ] as const);
 
 function loadNativeSignalsModule(): NativeSignalsModule | null {
   try {
     // Local Expo modules only exist in rebuilt native dev clients.
     // Keep the JS app functional before native rebuild by treating absence as unsupported.
-    const module = require('../../modules/zentra-native-signals').default as NativeSignalsModule | undefined;
+    const module = require("../../modules/zentra-native-signals").default as
+      | NativeSignalsModule
+      | undefined;
     return module ?? null;
   } catch {
     return null;
@@ -90,15 +121,19 @@ export function getRequiredHealthConnectPermissions(): string[] {
   return [...REQUIRED_HEALTH_CONNECT_PERMISSIONS];
 }
 
-export function hasRequiredHealthConnectPermissions(grantedPermissions: string[]): boolean {
+export function hasRequiredHealthConnectPermissions(
+  grantedPermissions: string[],
+): boolean {
   const grantedSet = new Set(grantedPermissions);
-  return REQUIRED_HEALTH_CONNECT_PERMISSIONS.every((permission) => grantedSet.has(permission));
+  return REQUIRED_HEALTH_CONNECT_PERMISSIONS.every((permission) =>
+    grantedSet.has(permission),
+  );
 }
 
 export async function getActivityRecognitionPermissionStatusAsync(): Promise<PermissionStatus> {
   const module = loadNativeSignalsModule();
   if (!module) {
-    return 'unsupported';
+    return "unsupported";
   }
 
   return module.getActivityRecognitionPermissionStatusAsync();
@@ -107,10 +142,110 @@ export async function getActivityRecognitionPermissionStatusAsync(): Promise<Per
 export async function requestActivityRecognitionPermissionAsync(): Promise<PermissionStatus> {
   const module = loadNativeSignalsModule();
   if (!module) {
-    return 'unsupported';
+    return "unsupported";
   }
 
   return module.requestActivityRecognitionPermissionAsync();
+}
+
+export async function readBufferedActivityTransitionsAsync(): Promise<
+  NativeActivityTransition[]
+> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.readBufferedActivityTransitionsAsync !== "function"
+  ) {
+    return [];
+  }
+
+  return module.readBufferedActivityTransitionsAsync();
+}
+
+export async function readBufferedActivityTransitionsSinceAsync(
+  cursorExclusive: number | null,
+  limit = 250,
+): Promise<NativeActivityTransition[]> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.readBufferedActivityTransitionsSinceAsync !== "function"
+  ) {
+    return [];
+  }
+
+  return module.readBufferedActivityTransitionsSinceAsync(
+    cursorExclusive,
+    limit,
+  );
+}
+
+export async function getBufferedActivityTransitionCountAsync(): Promise<number> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.getBufferedActivityTransitionCountAsync !== "function"
+  ) {
+    return 0;
+  }
+
+  return module.getBufferedActivityTransitionCountAsync();
+}
+
+export async function acknowledgeBufferedActivityTransitionsAsync(
+  ids: string[],
+): Promise<number> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.acknowledgeBufferedActivityTransitionsAsync !== "function"
+  ) {
+    return 0;
+  }
+
+  return module.acknowledgeBufferedActivityTransitionsAsync(ids);
+}
+
+export async function startBackgroundCollectionServiceAsync(options: {
+  trackActivity: boolean;
+  trackLocation: boolean;
+}): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.startBackgroundCollectionServiceAsync !== "function"
+  ) {
+    return false;
+  }
+
+  return module.startBackgroundCollectionServiceAsync(
+    options.trackLocation,
+    options.trackActivity,
+  );
+}
+
+export async function stopBackgroundCollectionServiceAsync(): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.stopBackgroundCollectionServiceAsync !== "function"
+  ) {
+    return false;
+  }
+
+  return module.stopBackgroundCollectionServiceAsync();
+}
+
+export async function isBackgroundCollectionServiceRunningAsync(): Promise<boolean> {
+  const module = loadNativeSignalsModule();
+  if (
+    !module ||
+    typeof module.isBackgroundCollectionServiceRunningAsync !== "function"
+  ) {
+    return false;
+  }
+
+  return module.isBackgroundCollectionServiceRunningAsync();
 }
 
 export async function startActivityRecognitionUpdatesAsync(): Promise<boolean> {
@@ -139,13 +274,13 @@ export function addActivityTransitionListener(
     return null;
   }
 
-  return module.addListener('onActivityTransition', listener);
+  return module.addListener("onActivityTransition", listener);
 }
 
 export async function getHealthConnectAvailabilityAsync(): Promise<HealthConnectAvailability> {
   const module = loadNativeSignalsModule();
   if (!module) {
-    return 'unsupported';
+    return "unsupported";
   }
 
   return module.getHealthConnectAvailabilityAsync();
@@ -154,7 +289,7 @@ export async function getHealthConnectAvailabilityAsync(): Promise<HealthConnect
 export async function getUsageAccessPermissionStatusAsync(): Promise<UsageAccessPermissionStatus> {
   const module = loadNativeSignalsModule();
   if (!module) {
-    return 'unsupported';
+    return "unsupported";
   }
 
   return module.getUsageAccessPermissionStatusAsync();
@@ -181,7 +316,9 @@ export async function readUsageEventsAsync(
   return module.readUsageEventsAsync(startIso, endIso);
 }
 
-export async function getGrantedHealthConnectPermissionsAsync(): Promise<string[]> {
+export async function getGrantedHealthConnectPermissionsAsync(): Promise<
+  string[]
+> {
   const module = loadNativeSignalsModule();
   if (!module) {
     return [];
@@ -192,16 +329,18 @@ export async function getGrantedHealthConnectPermissionsAsync(): Promise<string[
 
 export async function openHealthConnectSettingsAsync(): Promise<boolean> {
   const module = loadNativeSignalsModule();
-  if (module && typeof module.openHealthConnectSettingsAsync === 'function') {
+  if (module && typeof module.openHealthConnectSettingsAsync === "function") {
     return module.openHealthConnectSettingsAsync();
   }
 
-  if (Platform.OS !== 'android') {
+  if (Platform.OS !== "android") {
     return false;
   }
 
   try {
-    await ExpoLinking.sendIntent('androidx.health.ACTION_HEALTH_CONNECT_SETTINGS');
+    await ExpoLinking.sendIntent(
+      "androidx.health.ACTION_HEALTH_CONNECT_SETTINGS",
+    );
     return true;
   } catch {
     return false;
@@ -210,14 +349,19 @@ export async function openHealthConnectSettingsAsync(): Promise<boolean> {
 
 export async function openHealthConnectPermissionRequestAsync(): Promise<boolean> {
   const module = loadNativeSignalsModule();
-  if (module && typeof module.openHealthConnectPermissionRequestAsync === 'function') {
+  if (
+    module &&
+    typeof module.openHealthConnectPermissionRequestAsync === "function"
+  ) {
     return module.openHealthConnectPermissionRequestAsync();
   }
 
   return false;
 }
 
-export async function requestHealthConnectPermissionsAsync(): Promise<string[]> {
+export async function requestHealthConnectPermissionsAsync(): Promise<
+  string[]
+> {
   const module = loadNativeSignalsModule();
   if (!module) {
     return [];

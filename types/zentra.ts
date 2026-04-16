@@ -29,6 +29,8 @@ export type ActivityPatternGranularity = "day" | "month" | "year";
 export type DataMode = "live" | "demo";
 export type LocationRetentionPreference = "24h" | "30d";
 export type ActivityNormalizationWindow = "month" | "year" | "all";
+export type ReconcileTrigger = "backgroundTask" | "foregroundResume" | "manual";
+export type ReconcileOutcome = "success" | "bounded" | "failure";
 export type EventDataType =
   | "steps"
   | "distance"
@@ -48,6 +50,7 @@ export type EventSource =
   | "sensor"
   | "health_connect"
   | "activity_recognition"
+  | "native_buffered"
   | "usage_stats"
   | "system_broadcast"
   | "inferred";
@@ -202,6 +205,7 @@ export interface UnifiedTimelineBucket {
   batteryLevel: number | null;
   chargingStateLabel: string | null;
   dataCompleteness: number;
+  dailyRhythmMovementScore: number;
   dataTypeCoverage: Partial<Record<EventDataType, number>>;
   dominantKind: "rest" | "movement" | "screen";
   exerciseSeconds: number;
