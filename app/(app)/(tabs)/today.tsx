@@ -249,6 +249,8 @@ const CompletenessSection = React.memo(function CompletenessSection({
 });
 
 const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
+  backgroundCollectionServiceCheckedAt,
+  backgroundCollectionServiceState,
   backgroundTaskRegistrationCheckedAt,
   backgroundTaskRegistrationMessage,
   backgroundTaskRegistrationStatus,
@@ -269,6 +271,8 @@ const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
   lastReconcileStartedAt,
   lastReconcileTrigger,
 }: {
+  backgroundCollectionServiceCheckedAt: string | null;
+  backgroundCollectionServiceState: string | null;
   backgroundTaskRegistrationCheckedAt: string | null;
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
@@ -292,6 +296,10 @@ const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
   return (
     <View style={styles.sectionBlock}>
       <BackgroundStatusCard
+        backgroundCollectionServiceCheckedAt={
+          backgroundCollectionServiceCheckedAt
+        }
+        backgroundCollectionServiceState={backgroundCollectionServiceState}
         backgroundTaskRegistrationCheckedAt={
           backgroundTaskRegistrationCheckedAt
         }
@@ -330,6 +338,9 @@ export default function TodayScreen() {
   const repository = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
+      backgroundCollectionServiceCheckedAt:
+        state.backgroundCollectionServiceCheckedAt,
+      backgroundCollectionServiceState: state.backgroundCollectionServiceState,
       backgroundTaskRegistrationCheckedAt:
         state.backgroundTaskRegistrationCheckedAt,
       backgroundTaskRegistrationMessage:
@@ -408,6 +419,7 @@ export default function TodayScreen() {
     React.useState(false);
   const [isRefreshingTodayData, setIsRefreshingTodayData] =
     React.useState(false);
+  const latestSignalValuesRef = React.useRef(signalValues);
   const focusReadyStopRef = React.useRef<
     | ((
         endContext?: Record<
@@ -418,6 +430,10 @@ export default function TodayScreen() {
     | null
   >(null);
   const lastFetchedAnchorRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    latestSignalValuesRef.current = signalValues;
+  }, [signalValues]);
   const lastFetchedWindowRef = React.useRef<ActivityNormalizationWindow | null>(
     null,
   );
@@ -689,7 +705,7 @@ export default function TodayScreen() {
         ? buildDashboardMetrics(demoCollectors, true)
         : buildLiveDashboardMetrics(
             collectors,
-            { ...signalMeta, ...signalValues },
+            { ...signalMeta, ...latestSignalValuesRef.current },
             repository.todaySnapshot,
             repository.todayAggregate,
             repository.todayEvents,
@@ -708,7 +724,6 @@ export default function TodayScreen() {
     // signalValues is intentionally omitted — metrics only needs permission/
     // capability fields (signalMeta). Including signalValues would re-trigger
     // this effect on every sensor tick (step, lux, battery).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   ]);
   const sleepEstimate = React.useMemo(
     () =>
@@ -1037,6 +1052,12 @@ export default function TodayScreen() {
         case "backgroundStatus":
           return (
             <BackgroundStatusSection
+              backgroundCollectionServiceCheckedAt={
+                repository.backgroundCollectionServiceCheckedAt
+              }
+              backgroundCollectionServiceState={
+                repository.backgroundCollectionServiceState
+              }
               backgroundTaskRegistrationCheckedAt={
                 repository.backgroundTaskRegistrationCheckedAt
               }
@@ -1107,6 +1128,8 @@ export default function TodayScreen() {
       palette.mutedForeground,
       palette.textSecondary,
       recentSignals,
+      repository.backgroundCollectionServiceCheckedAt,
+      repository.backgroundCollectionServiceState,
       repository.backgroundTaskRegistrationCheckedAt,
       repository.backgroundTaskRegistrationMessage,
       repository.backgroundTaskRegistrationStatus,

@@ -81,6 +81,9 @@ export function useSignalBootstrap(): void {
   const refreshDiagnostics = useRepositoryStore(
     (state) => state.refreshDiagnostics,
   );
+  const refreshBackgroundCollectionServiceState = useRepositoryStore(
+    (state) => state.refreshBackgroundCollectionServiceState,
+  );
   const refreshSleep = useRepositoryStore((state) => state.refreshSleep);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const bootstrapTaskQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -674,6 +677,7 @@ export function useSignalBootstrap(): void {
 
       if (!shouldRunAndroidBackgroundService) {
         await stopBackgroundCollectionServiceAsync();
+        await refreshBackgroundCollectionServiceState();
         return;
       }
 
@@ -681,6 +685,7 @@ export function useSignalBootstrap(): void {
         trackActivity: trackBackgroundActivity,
         trackLocation: trackBackgroundLocation,
       });
+      await refreshBackgroundCollectionServiceState();
     });
 
     return () => {
@@ -688,6 +693,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     isHydrated,
+    refreshBackgroundCollectionServiceState,
     shouldRunAndroidBackgroundService,
     trackBackgroundActivity,
     trackBackgroundLocation,
