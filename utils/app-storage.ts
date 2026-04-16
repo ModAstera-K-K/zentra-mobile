@@ -26,6 +26,8 @@ export interface PersistedAppState {
 }
 
 export interface PersistedRepositoryMeta {
+  backgroundCollectionServiceCheckedAt: string | null;
+  backgroundCollectionServiceState: string | null;
   backgroundTaskRegistrationCheckedAt: string | null;
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;

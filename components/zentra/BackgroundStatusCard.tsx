@@ -14,6 +14,8 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { ReconcileOutcome, ReconcileTrigger } from "@/types/zentra";
 
 interface BackgroundStatusCardProps {
+  backgroundCollectionServiceCheckedAt: string | null;
+  backgroundCollectionServiceState: string | null;
   backgroundTaskRegistrationCheckedAt: string | null;
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
@@ -59,6 +61,8 @@ function formatOutcome(
 }
 
 export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
+  backgroundCollectionServiceCheckedAt,
+  backgroundCollectionServiceState,
   backgroundTaskRegistrationCheckedAt,
   backgroundTaskRegistrationMessage,
   backgroundTaskRegistrationStatus,
@@ -136,6 +140,21 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
       </View>
 
       <View style={styles.factsColumn}>
+        <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
+          <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
+            Service state
+          </Text>
+          <View style={styles.failureCopy}>
+            <Text style={[styles.factValue, { color: palette.foreground }]}>
+              {backgroundCollectionServiceState ?? "Not checked"}
+            </Text>
+            <Text
+              style={[styles.failureMessage, { color: palette.textSecondary }]}
+            >
+              Checked {formatTimestamp(backgroundCollectionServiceCheckedAt)}
+            </Text>
+          </View>
+        </View>
         <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
           <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
             Queue

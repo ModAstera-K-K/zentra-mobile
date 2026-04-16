@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { create } from "zustand";
 
 import type {
@@ -27,6 +28,7 @@ import { createActivityEvent } from "@/utils/live-event-builders";
 import {
   acknowledgeBufferedActivityTransitionsAsync,
   getBufferedActivityTransitionCountAsync,
+  isBackgroundCollectionServiceRunningAsync,
   readBufferedActivityTransitionsAsync,
   readBufferedActivityTransitionsSinceAsync,
 } from "@/utils/native/zentra-native-signals";
@@ -80,6 +82,8 @@ interface ReconcileCompletionMeta {
 }
 
 interface RepositoryStoreState {
+  backgroundCollectionServiceCheckedAt: string | null;
+  backgroundCollectionServiceState: string | null;
   backgroundTaskRegistrationCheckedAt: string | null;
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
@@ -125,6 +129,7 @@ interface RepositoryStoreState {
     status: string,
     message?: string | null,
   ) => Promise<void>;
+  refreshBackgroundCollectionServiceState: () => Promise<string>;
   noteHealthSyncWindowEnd: (timestamp: string) => Promise<void>;
   noteBackgroundTaskSuccess: () => Promise<void>;
   noteReconcileFinish: (details: ReconcileCompletionMeta) => Promise<void>;
@@ -137,6 +142,9 @@ async function persistRepositoryMeta(
   state: RepositoryStoreState,
 ): Promise<void> {
   await savePersistedRepositoryMeta({
+    backgroundCollectionServiceCheckedAt:
+      state.backgroundCollectionServiceCheckedAt,
+    backgroundCollectionServiceState: state.backgroundCollectionServiceState,
     backgroundTaskRegistrationCheckedAt:
       state.backgroundTaskRegistrationCheckedAt,
     backgroundTaskRegistrationMessage: state.backgroundTaskRegistrationMessage,
@@ -163,6 +171,8 @@ async function persistRepositoryMeta(
 }
 
 export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
+  backgroundCollectionServiceCheckedAt: null,
+  backgroundCollectionServiceState: null,
   backgroundTaskRegistrationCheckedAt: null,
   backgroundTaskRegistrationMessage: null,
   backgroundTaskRegistrationStatus: null,
@@ -225,6 +235,10 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     const updatedAt = new Date().toISOString();
 
     set({
+      backgroundCollectionServiceCheckedAt:
+        persistedMeta?.backgroundCollectionServiceCheckedAt ?? null,
+      backgroundCollectionServiceState:
+        persistedMeta?.backgroundCollectionServiceState ?? null,
       backgroundTaskRegistrationCheckedAt:
         persistedMeta?.backgroundTaskRegistrationCheckedAt ?? null,
       backgroundTaskRegistrationMessage:
@@ -276,6 +290,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     await initializeEventRepository();
     const bufferedActivityQueueDepth =
       await getBufferedActivityTransitionCountAsync();
+    const backgroundCollectionServiceState =
+      await get().refreshBackgroundCollectionServiceState();
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -297,6 +313,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     set({
       isHydrated: true,
+      backgroundCollectionServiceCheckedAt: new Date().toISOString(),
+      backgroundCollectionServiceState,
       bufferedActivityQueueDepth,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: updatedAt,
@@ -355,6 +373,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   refreshDiagnostics: async () => {
     const bufferedActivityQueueDepth =
       await getBufferedActivityTransitionCountAsync();
+    const backgroundCollectionServiceState =
+      await get().refreshBackgroundCollectionServiceState();
     const [diagnostics, diagnosticsHistory] = await Promise.all([
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
@@ -363,12 +383,30 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     const updatedAt = new Date().toISOString();
 
     set({
+      backgroundCollectionServiceCheckedAt: new Date().toISOString(),
+      backgroundCollectionServiceState,
       lastUpdatedAt: updatedAt,
       bufferedActivityQueueDepth,
       diagnosticsUpdatedAt: updatedAt,
       diagnostics,
       diagnosticsHistory,
     });
+  },
+
+  refreshBackgroundCollectionServiceState: async () => {
+    const nextState =
+      Platform.OS !== "android"
+        ? "unsupported"
+        : (await isBackgroundCollectionServiceRunningAsync())
+          ? "running"
+          : "stopped";
+
+    set({
+      backgroundCollectionServiceCheckedAt: new Date().toISOString(),
+      backgroundCollectionServiceState: nextState,
+    });
+    await persistRepositoryMeta(get());
+    return nextState;
   },
 
   refreshSleep: async () => {
@@ -533,6 +571,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     const updatedAt = new Date().toISOString();
 
     set({
+      backgroundCollectionServiceCheckedAt: null,
+      backgroundCollectionServiceState: null,
       backgroundTaskRegistrationCheckedAt: null,
       backgroundTaskRegistrationMessage: null,
       backgroundTaskRegistrationStatus: null,

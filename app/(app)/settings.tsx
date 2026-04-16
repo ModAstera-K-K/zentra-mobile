@@ -154,6 +154,12 @@ export default function SettingsScreen() {
   const clearRepositoryData = useRepositoryStore(
     (state) => state.clearRepositoryData,
   );
+  const backgroundCollectionServiceCheckedAt = useRepositoryStore(
+    (state) => state.backgroundCollectionServiceCheckedAt,
+  );
+  const backgroundCollectionServiceState = useRepositoryStore(
+    (state) => state.backgroundCollectionServiceState,
+  );
   const backgroundTaskRegistrationCheckedAt = useRepositoryStore(
     (state) => state.backgroundTaskRegistrationCheckedAt,
   );
@@ -819,6 +825,16 @@ export default function SettingsScreen() {
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Last reconcile failure message {lastReconcileFailureMessage ?? "None"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Background service state{" "}
+          {backgroundCollectionServiceState ?? "Not checked"}
+        </Text>
+        <Text style={[styles.detail, { color: palette.textSecondary }]}>
+          Background service checked{" "}
+          {backgroundCollectionServiceCheckedAt
+            ? new Date(backgroundCollectionServiceCheckedAt).toLocaleString()
+            : "No service state check yet"}
         </Text>
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Background task registration status{" "}
