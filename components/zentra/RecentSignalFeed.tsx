@@ -42,7 +42,7 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
       }
       return Math.max(PAGE_SIZE, Math.min(current, rows.length));
     });
-  }, [rows]);
+  }, [rows.length]);
 
   const handleViewMore = React.useCallback(() => {
     setVisibleCount((current) => Math.min(current + PAGE_SIZE, rows.length));
