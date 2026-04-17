@@ -29,22 +29,23 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
 }: RecentSignalFeedProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const PAGE_SIZE = 3;
 
-  const [visibleCount, setVisibleCount] = useState(3);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const visibleRows = rows.slice(0, visibleCount);
   const hasMoreRows = visibleCount < rows.length;
 
   React.useEffect(() => {
     setVisibleCount((current) => {
       if (!rows.length) {
-        return 3;
+        return PAGE_SIZE;
       }
-      return Math.max(3, Math.min(current, rows.length));
+      return Math.max(PAGE_SIZE, Math.min(current, rows.length));
     });
   }, [rows]);
 
   const handleViewMore = React.useCallback(() => {
-    setVisibleCount((current) => Math.min(current + 3, rows.length));
+    setVisibleCount((current) => Math.min(current + PAGE_SIZE, rows.length));
   }, [rows.length]);
 
   return (
