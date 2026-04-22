@@ -4,7 +4,6 @@ import {
   AppState,
   FlatList,
   InteractionManager,
-  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -23,7 +22,7 @@ import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { SignalSummaryCard } from "@/components/zentra/SignalSummaryCard";
 import { SleepEstimateCard } from "@/components/zentra/SleepEstimateCard";
 import { Card } from "@/components/ui/Card";
-import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import type {

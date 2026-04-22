@@ -50,15 +50,18 @@ export function createBatteryEvent(snapshot: {
   lowPowerMode?: boolean | null;
 }): ZentraEventRecord {
   const timestamp = new Date().toISOString();
+  const metadata: ZentraEventRecord["metadata"] = {};
+
+  if (typeof snapshot.lowPowerMode === "boolean") {
+    metadata.low_power_mode = snapshot.lowPowerMode;
+  }
 
   return {
     ...createBaseEvent("charging_state", "system_broadcast", timestamp),
     valueNumeric: snapshot.batteryLevel ?? undefined,
     valueText: snapshot.batteryStateLabel ?? undefined,
     unit: "fraction",
-    metadata: {
-      low_power_mode: Boolean(snapshot.lowPowerMode),
-    },
+    metadata,
   };
 }
 
