@@ -237,10 +237,7 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     return {
       latitude: parsed.latitude,
       longitude: parsed.longitude,
-      altitude:
-        typeof parsed.altitude === "number" && Number.isFinite(parsed.altitude)
-          ? parsed.altitude
-          : undefined,
+      altitude: parsed.altitude,
     };
   } catch {
     return null;

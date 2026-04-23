@@ -837,6 +837,64 @@ function buildLocationRadiusVisual(
   };
 }
 
+function buildAverageSpeedVisual(
+  events: ZentraEventRecord[],
+): TodayDetailVisual | null {
+  const samples = extractLocationSamples(events);
+
+  if (samples.length < 2) {
+    return null;
+  }
+
+  const points: TodayDetailChartPoint[] = [];
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+    const durationSeconds =
+      (new Date(current.timestamp).getTime() -
+        new Date(previous.timestamp).getTime()) /
+      1000;
+
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      continue;
+    }
+
+    const segmentDistance = distanceMetersBetween(
+      { latitude: previous.latitude, longitude: previous.longitude },
+      { latitude: current.latitude, longitude: current.longitude },
+    );
+
+    if (!Number.isFinite(segmentDistance) || segmentDistance <= 0) {
+      continue;
+    }
+
+    // Skip noisy location jumps so the visual aligns with avg speed math.
+    const segmentSpeedMps = segmentDistance / durationSeconds;
+    if (segmentSpeedMps > 55) {
+      continue;
+    }
+
+    const speedKmh = Number((segmentSpeedMps * 3.6).toFixed(1));
+
+    points.push({
+      label: formatTimestampLabel(current.timestamp),
+      value: speedKmh,
+      valueLabel: `${speedKmh.toFixed(1)} km/h`,
+    });
+  }
+
+  if (!points.length) {
+    return null;
+  }
+
+  return {
+    type: "line",
+    annotation: "Estimated speed between consecutive location samples.",
+    points,
+  };
+}
+
 function buildTopActivityVisual(
   events: ZentraEventRecord[],
 ): TodayDetailVisual | null {
@@ -1272,7 +1330,7 @@ function buildVisualForMetric(
     case "distanceMeters":
       return buildLocationRadiusVisual(events);
     case "avgSpeed":
-      return null;
+      return buildAverageSpeedVisual(events);
     case "topActivity":
     case "activitySummary":
       return buildTopActivityVisual(events);
