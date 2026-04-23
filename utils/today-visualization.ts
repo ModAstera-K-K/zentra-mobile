@@ -6,6 +6,7 @@ import type {
   DailyAggregateRecord,
   EventDataType,
   HeatmapCell,
+  LocationSample,
   MetricTone,
   TodayLiveSnapshot,
   ZentraEventRecord,
@@ -17,6 +18,10 @@ import {
   getLatestActivityEvent,
 } from "@/utils/activity-summary";
 import { formatMinutes, formatNumber, formatPercent } from "@/utils/format";
+import {
+  calculateAverageSpeedKmh,
+  calculateElevationSummary,
+} from "@/utils/location-metrics";
 import {
   getActivitySourceLabel,
   getHealthPlatformName,
@@ -350,7 +355,9 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     const parsed = JSON.parse(valueJson) as Partial<LocationPayload>;
     if (
       typeof parsed.latitude !== "number" ||
-      typeof parsed.longitude !== "number"
+      !Number.isFinite(parsed.latitude) ||
+      typeof parsed.longitude !== "number" ||
+      !Number.isFinite(parsed.longitude)
     ) {
       return null;
     }
@@ -359,7 +366,9 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
       latitude: parsed.latitude,
       longitude: parsed.longitude,
       altitude:
-        typeof parsed.altitude === "number" ? parsed.altitude : undefined,
+        typeof parsed.altitude === "number" && Number.isFinite(parsed.altitude)
+          ? parsed.altitude
+          : undefined,
     };
   } catch {
     return null;
@@ -375,90 +384,24 @@ function parseLocationLabel(valueJson?: string): string {
   return `${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}`;
 }
 
-function calculateAverageSpeedKmh(events: ZentraEventRecord[]): number | null {
-  const locationPoints = sortEventsAscending(events)
+function extractLocationSamples(events: ZentraEventRecord[]): LocationSample[] {
+  return sortEventsAscending(events)
     .filter((event) => event.dataType === "location")
-    .map((event) => ({
-      timestampStart: event.timestampStart,
-      payload: parseLocationPayload(event.valueJson),
-    }))
-    .filter(
-      (
-        point,
-      ): point is { timestampStart: string; payload: LocationPayload } =>
-        point.payload !== null,
-    );
+    .reduce<LocationSample[]>((samples, event) => {
+      const payload = parseLocationPayload(event.valueJson);
+      if (!payload) {
+        return samples;
+      }
 
-  if (locationPoints.length < 2) {
-    return null;
-  }
+      samples.push({
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        altitudeMeters: payload.altitude,
+        timestamp: event.timestampStart,
+      });
 
-  let totalDistanceMeters = 0;
-  let totalDurationSeconds = 0;
-
-  for (let index = 1; index < locationPoints.length; index += 1) {
-    const previous = locationPoints[index - 1];
-    const current = locationPoints[index];
-    const segmentDurationSeconds =
-      (new Date(current.timestampStart).getTime() -
-        new Date(previous.timestampStart).getTime()) /
-      1000;
-
-    if (!Number.isFinite(segmentDurationSeconds) || segmentDurationSeconds <= 0) {
-      continue;
-    }
-
-    const segmentDistance = distanceMetersBetween(previous.payload, current.payload);
-    if (!Number.isFinite(segmentDistance) || segmentDistance <= 0) {
-      continue;
-    }
-
-    const segmentSpeedMps = segmentDistance / segmentDurationSeconds;
-    if (segmentSpeedMps > 55) {
-      continue;
-    }
-
-    totalDistanceMeters += segmentDistance;
-    totalDurationSeconds += segmentDurationSeconds;
-  }
-
-  if (totalDistanceMeters <= 0 || totalDurationSeconds <= 0) {
-    return null;
-  }
-
-  return Number(((totalDistanceMeters / totalDurationSeconds) * 3.6).toFixed(1));
-}
-
-function calculateElevationSummary(events: ZentraEventRecord[]): {
-  gainMeters: number;
-  maxMeters: number;
-  minMeters: number;
-} | null {
-  const altitudeValues = sortEventsAscending(events)
-    .filter((event) => event.dataType === "location")
-    .map((event) => parseLocationPayload(event.valueJson)?.altitude)
-    .filter(
-      (value): value is number =>
-        typeof value === "number" && Number.isFinite(value),
-    );
-
-  if (altitudeValues.length < 2) {
-    return null;
-  }
-
-  let gainMeters = 0;
-  for (let index = 1; index < altitudeValues.length; index += 1) {
-    const rise = altitudeValues[index] - altitudeValues[index - 1];
-    if (rise > 0) {
-      gainMeters += rise;
-    }
-  }
-
-  return {
-    gainMeters: Math.round(gainMeters),
-    maxMeters: Math.round(Math.max(...altitudeValues)),
-    minMeters: Math.round(Math.min(...altitudeValues)),
-  };
+      return samples;
+    }, []);
 }
 
 function formatEventValue(event: ZentraEventRecord): string {
@@ -1327,8 +1270,9 @@ function buildVisualForMetric(
       return buildUnlockVisual(events);
     case "mobilityRadius":
     case "distanceMeters":
-    case "avgSpeed":
       return buildLocationRadiusVisual(events);
+    case "avgSpeed":
+      return null;
     case "topActivity":
     case "activitySummary":
       return buildTopActivityVisual(events);
@@ -1389,8 +1333,6 @@ function buildMetricFacts(
   const latestActivityEvent = getLatestActivityEvent(context.todayEvents);
   const motionSummary = buildMotionContextSummary(context.todayEvents);
   const connectivitySummary = buildConnectivitySummary(context.todayEvents);
-  const averageSpeedKmh = calculateAverageSpeedKmh(relatedEvents);
-  const elevationSummary = calculateElevationSummary(relatedEvents);
 
   switch (metric.key) {
     case "steps":
@@ -1453,7 +1395,10 @@ function buildMetricFacts(
             : "No sample yet",
         },
       ];
-    case "avgSpeed":
+    case "avgSpeed": {
+      const locationSamples = extractLocationSamples(relatedEvents);
+      const averageSpeedKmh = calculateAverageSpeedKmh(locationSamples);
+      const elevationSummary = calculateElevationSummary(locationSamples);
       return [
         { label: "Source", value: getMetricSourceLabel(metric.key) },
         {
@@ -1472,6 +1417,7 @@ function buildMetricFacts(
             : "Not available",
         },
       ];
+    }
     case "unlockCount":
       return [
         { label: "Source", value: getMetricSourceLabel(metric.key) },
@@ -1610,9 +1556,11 @@ function buildMetricMeta(
 ): string {
   const relatedEvents = getRelatedEvents(context.todayEvents, metric.key);
   const currentActivityLabel = getCurrentActivityLabel(context.todayEvents);
-  const averageSpeedKmh = calculateAverageSpeedKmh(relatedEvents);
   if (relatedEvents.length) {
     if (metric.key === "avgSpeed") {
+      const averageSpeedKmh = calculateAverageSpeedKmh(
+        extractLocationSamples(relatedEvents),
+      );
       return averageSpeedKmh !== null
         ? `${relatedEvents.length} location sample${relatedEvents.length === 1 ? "" : "s"} used for average speed`
         : `${relatedEvents.length} location sample${relatedEvents.length === 1 ? "" : "s"} captured today`;
