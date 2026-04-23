@@ -18,6 +18,8 @@ async function persistLocationSample(
     latitude: number;
     longitude: number;
     timestamp: string;
+    altitudeMeters?: number | null;
+    speedMps?: number | null;
   },
 ): Promise<void> {
   await deps.addLocationSample(sample);
@@ -109,6 +111,8 @@ export async function startLocationCollector(
       latitude: lastKnown.coords.latitude,
       longitude: lastKnown.coords.longitude,
       timestamp: new Date(lastKnown.timestamp).toISOString(),
+      altitudeMeters: lastKnown.coords.altitude ?? null,
+      speedMps: lastKnown.coords.speed ?? null,
     });
   }
 
@@ -127,6 +131,8 @@ export async function startLocationCollector(
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         timestamp: new Date(location.timestamp).toISOString(),
+        altitudeMeters: location.coords.altitude ?? null,
+        speedMps: location.coords.speed ?? null,
       });
     },
   );

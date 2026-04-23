@@ -14,6 +14,7 @@ import {
 interface LocationPayload {
   latitude: number;
   longitude: number;
+  altitude?: number;
 }
 
 const COMPLETENESS_TYPES: ZentraEventRecord["dataType"][] = [
@@ -241,22 +242,28 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
 }
 
 function extractLocationSamples(events: ZentraEventRecord[]): LocationSample[] {
-  return events
+  const samples: LocationSample[] = [];
+
+  events
     .filter((event) => event.dataType === "location")
-    .map((event) => {
+    .forEach((event) => {
       const payload = parseLocationPayload(event.valueJson);
       if (!payload) {
-        return null;
+        return;
       }
 
-      return {
+      samples.push({
         latitude: payload.latitude,
         longitude: payload.longitude,
         timestamp: event.timestampStart,
-      };
-    })
-    .filter((sample): sample is LocationSample => sample !== null)
-    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+        altitudeMeters:
+          typeof payload.altitude === "number" ? payload.altitude : undefined,
+      });
+    });
+
+  return samples.sort((left, right) =>
+    left.timestamp.localeCompare(right.timestamp),
+  );
 }
 
 function calculateMobilityRadius(samples: LocationSample[]): number | null {

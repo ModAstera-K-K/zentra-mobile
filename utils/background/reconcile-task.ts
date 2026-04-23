@@ -14,9 +14,7 @@ const BACKGROUND_ACTIVITY_DRAIN_BATCH_SIZE = 125;
 const BACKGROUND_ACTIVITY_DRAIN_MAX_BATCHES = 2;
 
 function logBackgroundReconcile(message: string): void {
-  if (__DEV__) {
-    console.info(`[background-reconcile] ${message}`);
-  }
+  void message;
 }
 
 function getMinimumIntervalMinutes(): number {
