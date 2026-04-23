@@ -1,5 +1,4 @@
 import * as Battery from "expo-battery";
-import * as Location from "expo-location";
 import { Platform } from "react-native";
 
 import type {
@@ -97,6 +96,94 @@ function formatRadius(radiusMeters: number | null): string {
   return `${(radiusMeters / 1000).toFixed(1)} km`;
 }
 
+function formatSpeed(valueKmh: number | null): string {
+  if (valueKmh === null || !Number.isFinite(valueKmh)) {
+    return "Waiting";
+  }
+
+  return valueKmh >= 10 ? `${Math.round(valueKmh)} km/h` : `${valueKmh.toFixed(1)} km/h`;
+}
+
+interface ElevationSummary {
+  gainMeters: number;
+  maxMeters: number;
+  minMeters: number;
+}
+
+function calculateAverageSpeedKmh(samples: LocationSample[]): number | null {
+  if (samples.length < 2) {
+    return null;
+  }
+
+  let totalDistanceMeters = 0;
+  let totalDurationSeconds = 0;
+
+  const sorted = samples
+    .slice()
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = sorted[index - 1];
+    const current = sorted[index];
+    const durationSeconds =
+      (new Date(current.timestamp).getTime() -
+        new Date(previous.timestamp).getTime()) /
+      1000;
+
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      continue;
+    }
+
+    const segmentDistance = distanceMeters(previous, current);
+    if (!Number.isFinite(segmentDistance) || segmentDistance <= 0) {
+      continue;
+    }
+
+    // Guard against GPS jumps that produce unrealistic speed spikes.
+    const segmentSpeedMps = segmentDistance / durationSeconds;
+    if (segmentSpeedMps > 55) {
+      continue;
+    }
+
+    totalDistanceMeters += segmentDistance;
+    totalDurationSeconds += durationSeconds;
+  }
+
+  if (totalDistanceMeters <= 0 || totalDurationSeconds <= 0) {
+    return null;
+  }
+
+  return Number(((totalDistanceMeters / totalDurationSeconds) * 3.6).toFixed(1));
+}
+
+function calculateElevationSummary(
+  samples: LocationSample[],
+): ElevationSummary | null {
+  const altitudeSamples = samples
+    .map((sample) => sample.altitudeMeters)
+    .filter((value): value is number =>
+      typeof value === "number" && Number.isFinite(value),
+    );
+
+  if (altitudeSamples.length < 2) {
+    return null;
+  }
+
+  let gainMeters = 0;
+  for (let index = 1; index < altitudeSamples.length; index += 1) {
+    const rise = altitudeSamples[index] - altitudeSamples[index - 1];
+    if (rise > 0) {
+      gainMeters += rise;
+    }
+  }
+
+  return {
+    gainMeters: Math.round(gainMeters),
+    maxMeters: Math.round(Math.max(...altitudeSamples)),
+    minMeters: Math.round(Math.min(...altitudeSamples)),
+  };
+}
+
 function formatBatteryValue(level: number | null): string {
   if (level === null || level < 0) {
     return "Unavailable";
@@ -134,6 +221,8 @@ export function buildLiveDashboardMetrics(
   const mobilityRadius =
     todayAggregate?.mobilityRadiusMeters ??
     calculateMobilityRadius(todaySnapshot.locationSamples);
+  const averageSpeedKmh = calculateAverageSpeedKmh(todaySnapshot.locationSamples);
+  const elevationSummary = calculateElevationSummary(todaySnapshot.locationSamples);
   const currentActivity = getCurrentActivityLabel(todayEvents);
   const cumulativeSteps = computeCumulativeSteps(todayEvents);
   const hasSteps = cumulativeSteps > 0 || todaySnapshot.stepCount !== null;
@@ -207,6 +296,21 @@ export function buildLiveDashboardMetrics(
       "human",
       mobilityRadius !== null,
     ),
+
+    metric(
+      "avgSpeed",
+      "Avg Speed",
+      formatSpeed(averageSpeedKmh),
+      collectors.location.enabled
+        ? signals.locationPermissionStatus === "granted"
+          ? elevationSummary
+            ? `Derived from location samples · elevation gain ${elevationSummary.gainMeters} m (${elevationSummary.minMeters}-${elevationSummary.maxMeters} m).`
+            : "Derived from location samples while Zentra is open. Elevation appears once altitude is available."
+          : "Allow location access to estimate your speed today."
+        : "Turn on Location in Settings.",
+      "physical",
+      averageSpeedKmh !== null,
+    )
   ];
 }
 
