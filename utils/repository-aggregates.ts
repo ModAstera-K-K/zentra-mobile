@@ -227,7 +227,9 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     const parsed = JSON.parse(valueJson) as Partial<LocationPayload>;
     if (
       typeof parsed.latitude !== "number" ||
-      typeof parsed.longitude !== "number"
+      !Number.isFinite(parsed.latitude) ||
+      typeof parsed.longitude !== "number" ||
+      !Number.isFinite(parsed.longitude)
     ) {
       return null;
     }
@@ -235,6 +237,10 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     return {
       latitude: parsed.latitude,
       longitude: parsed.longitude,
+      altitude:
+        typeof parsed.altitude === "number" && Number.isFinite(parsed.altitude)
+          ? parsed.altitude
+          : undefined,
     };
   } catch {
     return null;
