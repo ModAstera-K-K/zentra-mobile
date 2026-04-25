@@ -50,24 +50,33 @@ export function createBatteryEvent(snapshot: {
   lowPowerMode?: boolean | null;
 }): ZentraEventRecord {
   const timestamp = new Date().toISOString();
+  const metadata: ZentraEventRecord["metadata"] = {};
+
+  if (typeof snapshot.lowPowerMode === "boolean") {
+    metadata.low_power_mode = snapshot.lowPowerMode;
+  }
 
   return {
     ...createBaseEvent("charging_state", "system_broadcast", timestamp),
     valueNumeric: snapshot.batteryLevel ?? undefined,
     valueText: snapshot.batteryStateLabel ?? undefined,
     unit: "fraction",
-    metadata: {
-      low_power_mode: Boolean(snapshot.lowPowerMode),
-    },
+    metadata,
   };
 }
 
 export function createLocationEvent(sample: LocationSample): ZentraEventRecord {
+  const latitude = sample.latitude.toFixed(6);
+  const longitude = sample.longitude.toFixed(6);
+
   return {
     ...createBaseEvent("location", "sensor", sample.timestamp),
+    id: `location-${sample.timestamp}-${latitude}-${longitude}`,
     valueJson: JSON.stringify({
       latitude: sample.latitude,
       longitude: sample.longitude,
+      altitude: sample.altitudeMeters ?? undefined,
+      speed_mps: sample.speedMps ?? undefined,
     }),
     unit: "wgs84",
   };
@@ -86,13 +95,18 @@ export function createAmbientLightEvent(
 
 export function createActivityEvent(
   transition: NativeActivityTransition,
+  source: EventSource = "activity_recognition",
 ): ZentraEventRecord {
   return {
-    ...createBaseEvent(
-      "activity",
-      "activity_recognition",
-      transition.timestamp,
-    ),
+    ...createBaseEvent("activity", source, transition.timestamp),
+    id:
+      transition.id ||
+      createDeterministicEventId([
+        "activity",
+        transition.activityType,
+        transition.transitionType,
+        transition.timestamp,
+      ]),
     valueText: transition.activityType,
     unit: "transition",
     metadata: {

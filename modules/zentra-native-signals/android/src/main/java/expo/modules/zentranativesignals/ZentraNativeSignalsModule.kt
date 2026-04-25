@@ -18,6 +18,7 @@ class ZentraNativeSignalsModule : Module() {
     OnCreate {
       ZentraNativeSignalsEventRegistry.setActivityTransitionListener { payload ->
         sendEvent("onActivityTransition", mapOf(
+          "id" to payload.id,
           "activityType" to payload.activityType,
           "transitionType" to payload.transitionType,
           "confidence" to payload.confidence,
@@ -73,6 +74,68 @@ class ZentraNativeSignalsModule : Module() {
 
     AsyncFunction("stopActivityRecognitionUpdatesAsync") {
       getActivityRecognitionController()?.stopUpdates()
+    }
+
+    AsyncFunction("readBufferedActivityTransitionsAsync") {
+      val context = getContext() ?: return@AsyncFunction emptyList<Map<String, Any>>()
+      BufferedActivityTransitionStore.getBufferedTransitions(context).map { payload ->
+        mapOf(
+          "id" to payload.id,
+          "activityType" to payload.activityType,
+          "transitionType" to payload.transitionType,
+          "confidence" to payload.confidence,
+          "timestamp" to payload.timestamp,
+        )
+      }
+    }
+
+    AsyncFunction("readBufferedActivityTransitionsSinceAsync") { cursorExclusive: Double?, limit: Int? ->
+      val context = getContext() ?: return@AsyncFunction emptyList<Map<String, Any>>()
+      BufferedActivityTransitionStore.getBufferedTransitionsSince(
+        context,
+        cursorExclusive?.toLong(),
+        limit ?: 250,
+      ).map { record ->
+        mapOf(
+          "cursor" to record.cursor,
+          "id" to record.payload.id,
+          "activityType" to record.payload.activityType,
+          "transitionType" to record.payload.transitionType,
+          "confidence" to record.payload.confidence,
+          "timestamp" to record.payload.timestamp,
+        )
+      }
+    }
+
+    AsyncFunction("getBufferedActivityTransitionCountAsync") {
+      val context = getContext() ?: return@AsyncFunction 0
+      BufferedActivityTransitionStore.getBufferedTransitionCount(context)
+    }
+
+    AsyncFunction("acknowledgeBufferedActivityTransitionsAsync") { ids: ArrayList<String> ->
+      val context = getContext() ?: return@AsyncFunction 0
+      BufferedActivityTransitionStore.acknowledgeTransitions(context, ids)
+    }
+
+    AsyncFunction("startBackgroundCollectionServiceAsync") { trackLocation: Boolean, trackActivity: Boolean ->
+      val context = getContext() ?: return@AsyncFunction false
+      if (!trackLocation) {
+        ZentraBackgroundCollectionService.stop(context)
+        return@AsyncFunction false
+      }
+
+      ZentraBackgroundCollectionService.start(context, trackLocation, trackActivity)
+      true
+    }
+
+    AsyncFunction("stopBackgroundCollectionServiceAsync") {
+      val context = getContext() ?: return@AsyncFunction false
+      ZentraBackgroundCollectionService.stop(context)
+      true
+    }
+
+    AsyncFunction("isBackgroundCollectionServiceRunningAsync") {
+      ZentraBackgroundCollectionService.isRunning()
     }
 
     AsyncFunction("getHealthConnectAvailabilityAsync") {
@@ -158,7 +221,7 @@ class ZentraNativeSignalsModule : Module() {
   }
 
   private fun getActivityRecognitionController(): ActivityRecognitionController? {
-    val context = appContext.reactContext ?: return null
+    val context = getContext() ?: return null
     return ActivityRecognitionController(context, appContext)
   }
 
@@ -168,7 +231,9 @@ class ZentraNativeSignalsModule : Module() {
   }
 
   private fun getUsageStatsController(): UsageStatsController? {
-    val context = appContext.reactContext ?: return null
+    val context = getContext() ?: return null
     return UsageStatsController(context)
   }
+
+  private fun getContext() = appContext.reactContext ?: appContext.currentActivity?.applicationContext
 }

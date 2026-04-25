@@ -1,7 +1,9 @@
+import type { CollectorKey, CollectorState } from "@/types/zentra";
 import type {
   ActivityCollectorDeps,
   AppUsageCollectorDeps,
   AmbientLightCollectorDeps,
+  CollectorCapability,
   CollectorHandle,
   ConnectivityCollectorDeps,
   DeviceStateCollectorDeps,
@@ -22,6 +24,69 @@ import { startMotionContextCollector } from "@/utils/collectors/motion-context-c
 import { startSleepCollector } from "@/utils/collectors/sleep-collector";
 import { startStepCollector } from "@/utils/collectors/step-collector";
 import { startUnsupportedCollector } from "@/utils/collectors/unsupported-collector";
+
+export const collectorCapabilities: Record<CollectorKey, CollectorCapability> =
+  {
+    // Android native receivers can buffer transitions before JS reconnects.
+    activity: "nativeBuffered",
+    // Expo light readings only stream while the JS runtime is active.
+    ambientLight: "foregroundOnly",
+    // Usage snapshots can be re-read on demand during reconcile windows.
+    appUsage: "backgroundPeriodic",
+    // Network listeners are app-runtime-bound and not used as background work.
+    connectivity: "foregroundOnly",
+    // Battery listeners are foreground app signals, not scheduled background work.
+    deviceState: "foregroundOnly",
+    // Health data is imported by periodic reads rather than continuous streaming.
+    healthConnect: "backgroundPeriodic",
+    // Location can continue in background through platform-supported location updates.
+    location: "backgroundContinuous",
+    // Motion summaries depend on live sensor subscriptions in the foreground runtime.
+    motionContext: "foregroundOnly",
+    // Sleep is derived from stored events during reconcile windows.
+    sleep: "backgroundPeriodic",
+    // Step subscriptions depend on the foreground JS runtime.
+    steps: "foregroundOnly",
+  };
+
+export const androidBackgroundServiceCollectorKeys: CollectorKey[] = [
+  "location",
+  "activity",
+];
+
+export function collectorHasCapability(
+  collectorKey: CollectorKey,
+  capability: CollectorCapability,
+): boolean {
+  return collectorCapabilities[collectorKey] === capability;
+}
+
+export function hasEnabledCollectorCapability(
+  collectors: Record<string, CollectorState>,
+  capabilities: CollectorCapability | CollectorCapability[],
+): boolean {
+  const capabilitySet = new Set(
+    Array.isArray(capabilities) ? capabilities : [capabilities],
+  );
+
+  return Object.entries(collectorCapabilities).some(
+    ([collectorKey, capability]) => {
+      if (!capabilitySet.has(capability)) {
+        return false;
+      }
+
+      return Boolean(collectors[collectorKey]?.enabled);
+    },
+  );
+}
+
+export function hasEnabledAndroidBackgroundServiceCollector(
+  collectors: Record<string, CollectorState>,
+): boolean {
+  return androidBackgroundServiceCollectorKeys.some((collectorKey) =>
+    Boolean(collectors[collectorKey]?.enabled),
+  );
+}
 
 export function startStepCollectorModule(
   deps: StepCollectorDeps,

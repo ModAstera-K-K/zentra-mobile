@@ -1,12 +1,18 @@
-import { appendEventsForCollector, ensureCollectorFailureState } from '@/utils/event-repository';
-import { toISODate } from '@/utils/dates';
-import { getEventsForRange } from '@/utils/event-repository';
-import { inferSleepEvents } from '@/utils/sleep-inference';
-import type { CollectorHandle, SleepCollectorDeps } from '@/utils/collectors/types';
+import {
+  appendEventsForCollector,
+  ensureCollectorFailureState,
+} from "@/utils/event-repository";
+import { toISODate } from "@/utils/dates";
+import { getEventsForRange } from "@/utils/event-repository";
+import { inferSleepEvents } from "@/utils/sleep-inference";
+import type {
+  CollectorHandle,
+  SleepCollectorDeps,
+} from "@/utils/collectors/types";
 
-export async function startSleepCollector(
+export async function syncSleepCollector(
   deps: SleepCollectorDeps,
-): Promise<CollectorHandle> {
+): Promise<void> {
   const today = toISODate(new Date());
   const start = new Date();
   start.setDate(start.getDate() - 8);
@@ -16,15 +22,25 @@ export async function startSleepCollector(
 
   if (!inferredEvents.length) {
     await ensureCollectorFailureState(
-      'sleep',
-      'Sleep inference needs screen-state, unlock, or charging history before it can infer rest windows',
+      "sleep",
+      "Sleep inference needs screen-state, unlock, or charging history before it can infer rest windows",
     );
     await deps.refreshRepository();
-    return { stop: () => undefined };
+    return;
   }
 
-  await appendEventsForCollector('sleep', inferredEvents, `Sleep inference stored ${inferredEvents.length} night(s)`);
+  await appendEventsForCollector(
+    "sleep",
+    inferredEvents,
+    `Sleep inference stored ${inferredEvents.length} night(s)`,
+  );
   await deps.refreshRepository();
+}
+
+export async function startSleepCollector(
+  deps: SleepCollectorDeps,
+): Promise<CollectorHandle> {
+  await syncSleepCollector(deps);
 
   return {
     stop: () => undefined,

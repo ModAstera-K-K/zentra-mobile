@@ -32,7 +32,8 @@ export type MetricIconKey =
   | "exerciseSession"
   | "exerciseSessions"
   | "motionContext"
-  | "connectivity";
+  | "connectivity"
+  | "avgSpeed";
 
 export type ActionIconKey =
   | "openSettings"
@@ -68,6 +69,7 @@ const METRIC_ICONS: Record<MetricIconKey, AppIconName> = {
   exerciseSessions: "barbell-outline",
   motionContext: "speedometer-outline",
   connectivity: "wifi-outline",
+  avgSpeed: "speedometer-outline",
 };
 
 const COLLECTOR_ICONS: Record<CollectorKey, AppIconName> = {
@@ -104,6 +106,7 @@ const EVENT_SOURCE_ICONS: Record<EventSource, AppIconName> = {
   sensor: "hardware-chip-outline",
   health_connect: "fitness-outline",
   activity_recognition: "body-outline",
+  native_buffered: "download-outline",
   usage_stats: "phone-portrait-outline",
   system_broadcast: "settings-outline",
   inferred: "sparkles-outline",
@@ -185,6 +188,7 @@ const METRIC_ICON_KEYS = new Set<MetricIconKey>([
   "exerciseSessions",
   "motionContext",
   "connectivity",
+  "avgSpeed",
 ]);
 
 export function isMetricIconKey(value: string): value is MetricIconKey {

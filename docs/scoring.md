@@ -12,7 +12,7 @@ scale.
 All raw signal values are normalized relative to observed maxima over a
 configurable window (month, year, or all-time). For each signal `s`:
 
-```
+```text
 norm(s) = clamp(s / max(s), 0, 1)
 ```
 
@@ -42,7 +42,7 @@ The intensity score measures physical activity relative to the user's own
 baseline. It is the mean of all available normalized activity signals, scaled to
 0–100:
 
-```
+```text
 I = mean(norm(steps), norm(movement), norm(nonSedentary), norm(heartRate), norm(exercise))
 
 intensityScore = round(I × 100)
@@ -54,14 +54,37 @@ signals.
 
 ---
 
+## Daily Rhythm Movement Score
+
+The Daily rhythm chart's Movement line uses a narrower hourly movement score.
+It is separate from `intensityScore` and intentionally excludes heart-rate
+load so the line reflects movement evidence only.
+
+For each hourly bucket:
+
+```text
+M = mean(norm(steps), norm(movementSignals), norm(nonSedentaryActivityCount), norm(exerciseSeconds))
+
+dailyRhythmMovementScore = round(M × 100)
+```
+
+Only signals with a non-zero maximum contribute to the mean. A heart-rate-only
+hour does not increase the Daily rhythm Movement line.
+
+The raw `movementScore` field in the unified timeline remains a separate
+heuristic accumulator used for bucket dominance logic. It is not the same value
+as the Daily rhythm Movement line.
+
+---
+
 ## Rest Composite Score
 
 The rest score estimates how restful a time bucket was. It combines two groups
 of evidence:
 
-### Group A — Inverse Intensity
+### Group A - Inverse Intensity
 
-```
+```text
 inverseIntensity = 1 − I
 ```
 
@@ -71,13 +94,11 @@ Low physical activity suggests the user is at rest.
 
 Three normalized rest indicators are averaged:
 
-| Signal            | Interpretation                                          |
-| ----------------- | ------------------------------------------------------- |
-| `sleepMinutes`    | Higher sleep duration → more rest                       |
-| `idleSignals`     | Higher idle signals → device/user inactive              |
-| `1 − unlockCount` | Fewer unlocks → less screen interaction → more rest    |
+- `sleepMinutes`: Higher sleep duration means more rest.
+- `idleSignals`: Higher idle signals mean the device or user is inactive.
+- `1 − unlockCount`: Fewer unlocks mean less screen interaction and more rest.
 
-```
+```text
 S_rest = mean(norm(sleep), norm(idle), 1 − norm(unlock))
 ```
 
@@ -85,7 +106,7 @@ S_rest = mean(norm(sleep), norm(idle), 1 − norm(unlock))
 
 When both groups have data, the rest score is computed as:
 
-```
+```text
 restScore = inverseIntensity × S_rest × k
 ```
 
@@ -97,12 +118,10 @@ clusters toward lower values.
 
 ### Fallback behaviour
 
-| Available data        | Formula                        |
-| --------------------- | ------------------------------ |
-| Both groups present   | `inverseIntensity × S_rest × k` |
-| Only intensity data   | `inverseIntensity`             |
-| Only rest signals     | `S_rest`                       |
-| No data at all        | 0                              |
+- Both groups present: `inverseIntensity × S_rest × k`
+- Only intensity data: `inverseIntensity`
+- Only rest signals: `S_rest`
+- No data at all: `0`
 
 ### No-data buckets
 
@@ -112,7 +131,7 @@ device activity is the strongest rest signal available.
 
 ### Final scaling
 
-```
+```text
 restCompositeScore = round(restScore × 100)
 ```
 
@@ -120,10 +139,8 @@ restCompositeScore = round(restScore × 100)
 
 ## Output Range
 
-| Score                | Range  | Meaning                   |
-| -------------------- | ------ | ------------------------- |
-| `intensityScore`     | 0–100  | 0 = no activity, 100 = peak activity |
-| `restCompositeScore` | 0–100  | 0 = no rest, 100 = full rest         |
+- `intensityScore`: `0–100`, where `0` means no activity and `100` means peak activity.
+- `restCompositeScore`: `0–100`, where `0` means no rest and `100` means full rest.
 
 ---
 
@@ -142,26 +159,24 @@ to its own local maximum.
 
 ## Activity Pattern Visualization
 
-The activity pattern grid (heatmap) maps each cell's color using two
-dimensions:
+The activity pattern grid (heatmap) maps each cell's color using a single warm
+intensity scale.
 
-### Hue — Dominant Kind
+### Hue - Shared Intensity Tone
 
-Each time bucket is classified by its dominant activity kind. The hue of the
-cell reflects this:
+All activity pattern cells use the same base hue:
 
-| Dominant kind | Theme token      | Meaning                    |
-| ------------- | ---------------- | -------------------------- |
-| `movement`    | `signalPhysical` | Physical activity dominated |
-| `screen`      | `signalCool`     | Screen usage dominated      |
-| `rest`        | `signalHuman`    | Rest / inactivity dominated |
+- `signalHuman`: a warm tone reused for the entire pattern grid.
+
+Dominant activity kind may still exist in the underlying data model, but it no
+longer changes the visible cell hue in the monthly pattern surface.
 
 ### Opacity — Intensity
 
 The alpha (opacity) of the cell color scales linearly with the bucket's
 intensity score:
 
-```
+```text
 alpha = 0.16 + (intensity / 100) × 0.70
 ```
 
@@ -178,6 +193,6 @@ Visualization logic lives in [`components/zentra/ActivityPatternCard.tsx`](../co
 
 ---
 
-## Source
+## Scoring Source
 
 Scoring logic lives in [`utils/activity-intensity.ts`](../utils/activity-intensity.ts).

@@ -14,6 +14,7 @@ import {
 interface LocationPayload {
   latitude: number;
   longitude: number;
+  altitude?: number;
 }
 
 const COMPLETENESS_TYPES: ZentraEventRecord["dataType"][] = [
@@ -226,7 +227,9 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     const parsed = JSON.parse(valueJson) as Partial<LocationPayload>;
     if (
       typeof parsed.latitude !== "number" ||
-      typeof parsed.longitude !== "number"
+      !Number.isFinite(parsed.latitude) ||
+      typeof parsed.longitude !== "number" ||
+      !Number.isFinite(parsed.longitude)
     ) {
       return null;
     }
@@ -234,6 +237,7 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     return {
       latitude: parsed.latitude,
       longitude: parsed.longitude,
+      altitude: parsed.altitude,
     };
   } catch {
     return null;
@@ -241,22 +245,28 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
 }
 
 function extractLocationSamples(events: ZentraEventRecord[]): LocationSample[] {
-  return events
+  const samples: LocationSample[] = [];
+
+  events
     .filter((event) => event.dataType === "location")
-    .map((event) => {
+    .forEach((event) => {
       const payload = parseLocationPayload(event.valueJson);
       if (!payload) {
-        return null;
+        return;
       }
 
-      return {
+      samples.push({
         latitude: payload.latitude,
         longitude: payload.longitude,
         timestamp: event.timestampStart,
-      };
-    })
-    .filter((sample): sample is LocationSample => sample !== null)
-    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+        altitudeMeters:
+          typeof payload.altitude === "number" ? payload.altitude : undefined,
+      });
+    });
+
+  return samples.sort((left, right) =>
+    left.timestamp.localeCompare(right.timestamp),
+  );
 }
 
 function calculateMobilityRadius(samples: LocationSample[]): number | null {
@@ -412,16 +422,25 @@ export function buildTodaySnapshot(
       right.timestampStart.localeCompare(left.timestampStart),
     );
   const latestBatteryEvent = batteryEvents[0];
+  const latestBatteryLevelEvent = batteryEvents.find(
+    (event) => typeof event.valueNumeric === "number",
+  );
+  const latestBatteryStateEvent = batteryEvents.find(
+    (event) => typeof event.valueText === "string" && event.valueText.length,
+  );
+  const latestLowPowerModeEvent = batteryEvents.find(
+    (event) => typeof event.metadata.low_power_mode === "boolean",
+  );
   const locationSamples = extractLocationSamples(events);
 
   return {
     stepCount: stepEvents[0]?.valueNumeric ?? null,
     stepLastUpdatedAt: stepEvents[0]?.timestampStart ?? null,
-    batteryLevel: latestBatteryEvent?.valueNumeric ?? null,
-    batteryStateLabel: latestBatteryEvent?.valueText ?? null,
+    batteryLevel: latestBatteryLevelEvent?.valueNumeric ?? null,
+    batteryStateLabel: latestBatteryStateEvent?.valueText ?? null,
     lowPowerMode:
-      typeof latestBatteryEvent?.metadata.low_power_mode === "boolean"
-        ? latestBatteryEvent.metadata.low_power_mode
+      typeof latestLowPowerModeEvent?.metadata.low_power_mode === "boolean"
+        ? latestLowPowerModeEvent.metadata.low_power_mode
         : null,
     batteryLastUpdatedAt: latestBatteryEvent?.timestampStart ?? null,
     locationSamples,

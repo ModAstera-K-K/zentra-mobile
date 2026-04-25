@@ -1,5 +1,4 @@
 import * as Battery from "expo-battery";
-import * as Location from "expo-location";
 import { Platform } from "react-native";
 
 import type {
@@ -21,6 +20,10 @@ import { getCurrentActivityLabel } from "@/utils/activity-summary";
 import { getCollectorTelemetryState } from "@/utils/collector-telemetry";
 import { deriveDiagnosticPermissionStatus } from "@/utils/collector-permission-status";
 import { formatBytes, formatMinutes, formatNumber } from "@/utils/format";
+import {
+  calculateAverageSpeedKmh,
+  calculateElevationSummary,
+} from "@/utils/location-metrics";
 import { computeCumulativeSteps } from "@/utils/repository-aggregates";
 import {
   getCollectorPlatformOverrides,
@@ -97,6 +100,14 @@ function formatRadius(radiusMeters: number | null): string {
   return `${(radiusMeters / 1000).toFixed(1)} km`;
 }
 
+function formatSpeed(valueKmh: number | null): string {
+  if (valueKmh === null || !Number.isFinite(valueKmh)) {
+    return "Waiting";
+  }
+
+  return valueKmh >= 10 ? `${Math.round(valueKmh)} km/h` : `${valueKmh.toFixed(1)} km/h`;
+}
+
 function formatBatteryValue(level: number | null): string {
   if (level === null || level < 0) {
     return "Unavailable";
@@ -134,6 +145,8 @@ export function buildLiveDashboardMetrics(
   const mobilityRadius =
     todayAggregate?.mobilityRadiusMeters ??
     calculateMobilityRadius(todaySnapshot.locationSamples);
+  const averageSpeedKmh = calculateAverageSpeedKmh(todaySnapshot.locationSamples);
+  const elevationSummary = calculateElevationSummary(todaySnapshot.locationSamples);
   const currentActivity = getCurrentActivityLabel(todayEvents);
   const cumulativeSteps = computeCumulativeSteps(todayEvents);
   const hasSteps = cumulativeSteps > 0 || todaySnapshot.stepCount !== null;
@@ -207,6 +220,21 @@ export function buildLiveDashboardMetrics(
       "human",
       mobilityRadius !== null,
     ),
+
+    metric(
+      "avgSpeed",
+      "Avg Speed",
+      formatSpeed(averageSpeedKmh),
+      collectors.location.enabled
+        ? signals.locationPermissionStatus === "granted"
+          ? elevationSummary
+            ? `Derived from location samples · elevation gain ${elevationSummary.gainMeters} m (${elevationSummary.minMeters}-${elevationSummary.maxMeters} m).`
+            : "Derived from location samples while Zentra is open. Elevation appears once altitude is available."
+          : "Allow location access to estimate your speed today."
+        : "Turn on Location in Settings.",
+      "physical",
+      averageSpeedKmh !== null,
+    )
   ];
 }
 

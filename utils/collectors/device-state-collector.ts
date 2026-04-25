@@ -5,6 +5,8 @@ import { formatBatteryStateLabel } from '@/utils/device-signals';
 import { createBatteryEvent } from '@/utils/live-event-builders';
 import type { CollectorHandle, DeviceStateCollectorDeps } from '@/utils/collectors/types';
 
+const BATTERY_POLL_INTERVAL_MS = 15_000;
+
 async function persistBatterySnapshot(
   deps: DeviceStateCollectorDeps,
   snapshot: {
@@ -78,11 +80,31 @@ export async function startDeviceStateCollector(
     );
   });
 
+  const pollingInterval = setInterval(() => {
+    void (async () => {
+      try {
+        const polledSnapshot = await Battery.getPowerStateAsync();
+        await persistBatterySnapshot(
+          deps,
+          {
+            batteryLevel: polledSnapshot.batteryLevel,
+            batteryStateLabel: formatBatteryStateLabel(polledSnapshot.batteryState),
+            lowPowerMode: polledSnapshot.lowPowerMode,
+          },
+          'Battery snapshot refreshed',
+        );
+      } catch {
+        await ensureCollectorFailureState('deviceState', 'Battery polling failed');
+      }
+    })();
+  }, BATTERY_POLL_INTERVAL_MS);
+
   return {
     stop: () => {
       batteryLevelSubscription.remove();
       batteryStateSubscription.remove();
       lowPowerSubscription.remove();
+      clearInterval(pollingInterval);
     },
   };
 }

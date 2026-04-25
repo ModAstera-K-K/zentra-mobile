@@ -14,7 +14,7 @@ const perfAggregates = new Map<string, PerfAggregate>();
 const SUMMARY_LOG_EVERY = 10;
 
 function shouldLogPerf(): boolean {
-  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
+  return false;
 }
 
 function nowMs(): number {

@@ -1,8 +1,10 @@
 import { openDatabaseAsync, type SQLiteDatabase } from "expo-sqlite";
 
 const DATABASE_NAME = "zentra.db";
+const SQLITE_LOCK_RETRY_DELAYS_MS = [150, 300, 600, 1200, 2000];
 
 const SCHEMA_SQL = `
+PRAGMA busy_timeout = 5000;
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS events (
@@ -61,10 +63,46 @@ const MIGRATIONS_SQL = [
 
 let databasePromise: Promise<SQLiteDatabase> | null = null;
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isDatabaseLockedError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /database is locked|sqlite_busy/i.test(error.message);
+}
+
+async function retryLockedExecAsync(
+  database: SQLiteDatabase,
+  sql: string,
+): Promise<void> {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      await database.execAsync(sql);
+      return;
+    } catch (error) {
+      if (
+        !isDatabaseLockedError(error) ||
+        attempt >= SQLITE_LOCK_RETRY_DELAYS_MS.length
+      ) {
+        throw error;
+      }
+
+      await wait(SQLITE_LOCK_RETRY_DELAYS_MS[attempt] ?? 0);
+      attempt += 1;
+    }
+  }
+}
+
 async function runMigrations(database: SQLiteDatabase): Promise<void> {
   for (const migration of MIGRATIONS_SQL) {
     try {
-      await database.execAsync(migration);
+      await retryLockedExecAsync(database, migration);
     } catch {
       // Column already exists — safe to skip
     }
@@ -74,14 +112,19 @@ async function runMigrations(database: SQLiteDatabase): Promise<void> {
 async function initializeDatabase(
   database: SQLiteDatabase,
 ): Promise<SQLiteDatabase> {
-  await database.execAsync(SCHEMA_SQL);
+  await retryLockedExecAsync(database, SCHEMA_SQL);
   await runMigrations(database);
   return database;
 }
 
 export async function getLocalDatabase(): Promise<SQLiteDatabase> {
   if (!databasePromise) {
-    databasePromise = openDatabaseAsync(DATABASE_NAME).then(initializeDatabase);
+    databasePromise = openDatabaseAsync(DATABASE_NAME)
+      .then(initializeDatabase)
+      .catch((error) => {
+        databasePromise = null;
+        throw error;
+      });
   }
 
   return databasePromise;

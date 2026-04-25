@@ -1,18 +1,46 @@
-import { registerWebModule, NativeModule } from 'expo';
+import { registerWebModule, NativeModule } from "expo";
 
-import { ActivityTransitionEventPayload } from './ZentraNativeSignals.types';
+import { ActivityTransitionEventPayload } from "./ZentraNativeSignals.types";
 
 type ZentraNativeSignalsModuleEvents = {
   onActivityTransition: (params: ActivityTransitionEventPayload) => void;
-}
+};
 
 class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEvents> {
-  async getActivityRecognitionPermissionStatusAsync(): Promise<'unsupported'> {
-    return 'unsupported';
+  async getActivityRecognitionPermissionStatusAsync(): Promise<"unsupported"> {
+    return "unsupported";
   }
 
-  async requestActivityRecognitionPermissionAsync(): Promise<'unsupported'> {
-    return 'unsupported';
+  async requestActivityRecognitionPermissionAsync(): Promise<"unsupported"> {
+    return "unsupported";
+  }
+
+  async readBufferedActivityTransitionsAsync(): Promise<[]> {
+    return [];
+  }
+
+  async readBufferedActivityTransitionsSinceAsync(): Promise<[]> {
+    return [];
+  }
+
+  async getBufferedActivityTransitionCountAsync(): Promise<number> {
+    return 0;
+  }
+
+  async acknowledgeBufferedActivityTransitionsAsync(): Promise<number> {
+    return 0;
+  }
+
+  async startBackgroundCollectionServiceAsync(): Promise<boolean> {
+    return false;
+  }
+
+  async stopBackgroundCollectionServiceAsync(): Promise<boolean> {
+    return false;
+  }
+
+  async isBackgroundCollectionServiceRunningAsync(): Promise<boolean> {
+    return false;
   }
 
   async startActivityRecognitionUpdatesAsync(): Promise<boolean> {
@@ -21,12 +49,12 @@ class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEv
 
   async stopActivityRecognitionUpdatesAsync(): Promise<void> {}
 
-  async getHealthConnectAvailabilityAsync(): Promise<'unsupported'> {
-    return 'unsupported';
+  async getHealthConnectAvailabilityAsync(): Promise<"unsupported"> {
+    return "unsupported";
   }
 
-  async getUsageAccessPermissionStatusAsync(): Promise<'unsupported'> {
-    return 'unsupported';
+  async getUsageAccessPermissionStatusAsync(): Promise<"unsupported"> {
+    return "unsupported";
   }
 
   async openUsageAccessSettingsAsync(): Promise<boolean> {
@@ -58,4 +86,7 @@ class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEv
   }
 }
 
-export default registerWebModule(ZentraNativeSignalsModule, 'ZentraNativeSignalsModule');
+export default registerWebModule(
+  ZentraNativeSignalsModule,
+  "ZentraNativeSignalsModule",
+);
