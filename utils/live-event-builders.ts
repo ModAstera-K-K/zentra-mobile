@@ -72,6 +72,8 @@ export function createLocationEvent(sample: LocationSample): ZentraEventRecord {
     valueJson: JSON.stringify({
       latitude: sample.latitude,
       longitude: sample.longitude,
+      altitude: sample.altitudeMeters ?? undefined,
+      speed_mps: sample.speedMps ?? undefined,
     }),
     unit: "wgs84",
   };

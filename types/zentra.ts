@@ -297,6 +297,8 @@ export interface LocationSample {
   latitude: number;
   longitude: number;
   timestamp: string;
+  altitudeMeters?: number | null;
+  speedMps?: number | null;
 }
 
 export interface TodayLiveSnapshot {

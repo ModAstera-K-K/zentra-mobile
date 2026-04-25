@@ -6,6 +6,7 @@ import type {
   DailyAggregateRecord,
   EventDataType,
   HeatmapCell,
+  LocationSample,
   MetricTone,
   TodayLiveSnapshot,
   ZentraEventRecord,
@@ -17,6 +18,10 @@ import {
   getLatestActivityEvent,
 } from "@/utils/activity-summary";
 import { formatMinutes, formatNumber, formatPercent } from "@/utils/format";
+import {
+  calculateAverageSpeedKmh,
+  calculateElevationSummary,
+} from "@/utils/location-metrics";
 import {
   getActivitySourceLabel,
   getHealthPlatformName,
@@ -137,6 +142,7 @@ const todayDerivedEventsCache = new WeakMap<
 interface LocationPayload {
   latitude: number;
   longitude: number;
+  altitude?: number;
 }
 
 type MetricLike = DashboardMetric | TodaySummaryMetric;
@@ -218,6 +224,7 @@ function getMetricEventTypes(key: string): EventDataType[] {
       return ["app_usage", "screen_state", "unlock_event"];
     case "mobilityRadius":
     case "distanceMeters":
+    case "avgSpeed":
       return ["location"];
     case "unlockCount":
       return ["unlock_event"];
@@ -252,6 +259,7 @@ function getMetricSourceLabel(key: string): string {
         : "Android Usage Access";
     case "mobilityRadius":
     case "distanceMeters":
+    case "avgSpeed":
       return "Foreground location";
     case "dataCompleteness":
       return "Repository aggregate";
@@ -347,7 +355,9 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     const parsed = JSON.parse(valueJson) as Partial<LocationPayload>;
     if (
       typeof parsed.latitude !== "number" ||
-      typeof parsed.longitude !== "number"
+      !Number.isFinite(parsed.latitude) ||
+      typeof parsed.longitude !== "number" ||
+      !Number.isFinite(parsed.longitude)
     ) {
       return null;
     }
@@ -355,6 +365,10 @@ function parseLocationPayload(valueJson?: string): LocationPayload | null {
     return {
       latitude: parsed.latitude,
       longitude: parsed.longitude,
+      altitude:
+        typeof parsed.altitude === "number" && Number.isFinite(parsed.altitude)
+          ? parsed.altitude
+          : undefined,
     };
   } catch {
     return null;
@@ -368,6 +382,26 @@ function parseLocationLabel(valueJson?: string): string {
   }
 
   return `${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}`;
+}
+
+function extractLocationSamples(events: ZentraEventRecord[]): LocationSample[] {
+  return sortEventsAscending(events)
+    .filter((event) => event.dataType === "location")
+    .reduce<LocationSample[]>((samples, event) => {
+      const payload = parseLocationPayload(event.valueJson);
+      if (!payload) {
+        return samples;
+      }
+
+      samples.push({
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        altitudeMeters: payload.altitude,
+        timestamp: event.timestampStart,
+      });
+
+      return samples;
+    }, []);
 }
 
 function formatEventValue(event: ZentraEventRecord): string {
@@ -799,6 +833,64 @@ function buildLocationRadiusVisual(
   return {
     type: "line",
     annotation: "Distance from the first recorded location sample.",
+    points,
+  };
+}
+
+function buildAverageSpeedVisual(
+  events: ZentraEventRecord[],
+): TodayDetailVisual | null {
+  const samples = extractLocationSamples(events);
+
+  if (samples.length < 2) {
+    return null;
+  }
+
+  const points: TodayDetailChartPoint[] = [];
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+    const durationSeconds =
+      (new Date(current.timestamp).getTime() -
+        new Date(previous.timestamp).getTime()) /
+      1000;
+
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      continue;
+    }
+
+    const segmentDistance = distanceMetersBetween(
+      { latitude: previous.latitude, longitude: previous.longitude },
+      { latitude: current.latitude, longitude: current.longitude },
+    );
+
+    if (!Number.isFinite(segmentDistance) || segmentDistance <= 0) {
+      continue;
+    }
+
+    // Skip noisy location jumps so the visual aligns with avg speed math.
+    const segmentSpeedMps = segmentDistance / durationSeconds;
+    if (segmentSpeedMps > 55) {
+      continue;
+    }
+
+    const speedKmh = Number((segmentSpeedMps * 3.6).toFixed(1));
+
+    points.push({
+      label: formatTimestampLabel(current.timestamp),
+      value: speedKmh,
+      valueLabel: `${speedKmh.toFixed(1)} km/h`,
+    });
+  }
+
+  if (!points.length) {
+    return null;
+  }
+
+  return {
+    type: "line",
+    annotation: "Estimated speed between consecutive location samples.",
     points,
   };
 }
@@ -1237,6 +1329,8 @@ function buildVisualForMetric(
     case "mobilityRadius":
     case "distanceMeters":
       return buildLocationRadiusVisual(events);
+    case "avgSpeed":
+      return buildAverageSpeedVisual(events);
     case "topActivity":
     case "activitySummary":
       return buildTopActivityVisual(events);
@@ -1359,6 +1453,29 @@ function buildMetricFacts(
             : "No sample yet",
         },
       ];
+    case "avgSpeed": {
+      const locationSamples = extractLocationSamples(relatedEvents);
+      const averageSpeedKmh = calculateAverageSpeedKmh(locationSamples);
+      const elevationSummary = calculateElevationSummary(locationSamples);
+      return [
+        { label: "Source", value: getMetricSourceLabel(metric.key) },
+        {
+          label: "Location samples",
+          value: formatNumber(relatedEvents.length),
+        },
+        {
+          label: "Average speed",
+          value:
+            averageSpeedKmh !== null ? `${averageSpeedKmh.toFixed(1)} km/h` : "Waiting",
+        },
+        {
+          label: "Elevation gain",
+          value: elevationSummary
+            ? `${formatNumber(elevationSummary.gainMeters)} m`
+            : "Not available",
+        },
+      ];
+    }
     case "unlockCount":
       return [
         { label: "Source", value: getMetricSourceLabel(metric.key) },
@@ -1498,6 +1615,15 @@ function buildMetricMeta(
   const relatedEvents = getRelatedEvents(context.todayEvents, metric.key);
   const currentActivityLabel = getCurrentActivityLabel(context.todayEvents);
   if (relatedEvents.length) {
+    if (metric.key === "avgSpeed") {
+      const averageSpeedKmh = calculateAverageSpeedKmh(
+        extractLocationSamples(relatedEvents),
+      );
+      return averageSpeedKmh !== null
+        ? `${relatedEvents.length} location sample${relatedEvents.length === 1 ? "" : "s"} used for average speed`
+        : `${relatedEvents.length} location sample${relatedEvents.length === 1 ? "" : "s"} captured today`;
+    }
+
     if (metric.key === "activeMinutes" && currentActivityLabel) {
       return `${relatedEvents.length} activity sample${relatedEvents.length === 1 ? "" : "s"} stored today · current ${currentActivityLabel}`;
     }
