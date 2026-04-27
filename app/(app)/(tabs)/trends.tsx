@@ -105,13 +105,18 @@ export default function TrendsScreen() {
     () => createDemoCollectors(collectors),
     [collectors],
   );
-  const rangeSelection =
+
+
+  const rangeSelection: { start: string; end: string } =
     range === "custom" ? customRange : getDateRangeForTrendRange(range);
+
+    // Check if user entered a range that is valid
   const validCustom =
     range === "custom" &&
     isValidISODate(customRange.start) &&
     isValidISODate(customRange.end) &&
     customRange.start <= customRange.end;
+
   const rangeStart =
     range === "custom" && validCustom
       ? customRange.start
@@ -124,6 +129,8 @@ export default function TrendsScreen() {
       : range === "custom"
         ? toISODate(new Date())
         : rangeSelection.end;
+
+
   const series = React.useMemo(
     () =>
       isDemoMode ? buildTrendSeries(range, demoCollectors, true) : liveSeries,
@@ -249,7 +256,6 @@ export default function TrendsScreen() {
           getDailyAggregatesForRange(rangeStart, rangeEnd),
           getEventsForRange(rangeStart, rangeEnd),
         ]);
-
         // Guard before CPU-intensive computation — switching tabs sets isCancelled
         // but the check used to sit after buildLiveTrendSeries, which is O(N_days × N_events).
         if (isCancelled) {
