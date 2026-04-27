@@ -422,16 +422,25 @@ export function buildTodaySnapshot(
       right.timestampStart.localeCompare(left.timestampStart),
     );
   const latestBatteryEvent = batteryEvents[0];
+  const latestBatteryLevelEvent = batteryEvents.find(
+    (event) => typeof event.valueNumeric === "number",
+  );
+  const latestBatteryStateEvent = batteryEvents.find(
+    (event) => typeof event.valueText === "string" && event.valueText.length,
+  );
+  const latestLowPowerModeEvent = batteryEvents.find(
+    (event) => typeof event.metadata.low_power_mode === "boolean",
+  );
   const locationSamples = extractLocationSamples(events);
 
   return {
     stepCount: stepEvents[0]?.valueNumeric ?? null,
     stepLastUpdatedAt: stepEvents[0]?.timestampStart ?? null,
-    batteryLevel: latestBatteryEvent?.valueNumeric ?? null,
-    batteryStateLabel: latestBatteryEvent?.valueText ?? null,
+    batteryLevel: latestBatteryLevelEvent?.valueNumeric ?? null,
+    batteryStateLabel: latestBatteryStateEvent?.valueText ?? null,
     lowPowerMode:
-      typeof latestBatteryEvent?.metadata.low_power_mode === "boolean"
-        ? latestBatteryEvent.metadata.low_power_mode
+      typeof latestLowPowerModeEvent?.metadata.low_power_mode === "boolean"
+        ? latestLowPowerModeEvent.metadata.low_power_mode
         : null,
     batteryLastUpdatedAt: latestBatteryEvent?.timestampStart ?? null,
     locationSamples,

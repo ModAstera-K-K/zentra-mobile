@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -29,6 +29,24 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
 }: RecentSignalFeedProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const PAGE_SIZE = 3;
+
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const visibleRows = rows.slice(0, visibleCount);
+  const hasMoreRows = visibleCount < rows.length;
+
+  React.useEffect(() => {
+    setVisibleCount((current) => {
+      if (!rows.length) {
+        return PAGE_SIZE;
+      }
+      return Math.max(PAGE_SIZE, Math.min(current, rows.length));
+    });
+  }, [rows.length]);
+
+  const handleViewMore = React.useCallback(() => {
+    setVisibleCount((current) => Math.min(current + PAGE_SIZE, rows.length));
+  }, [rows.length]);
 
   return (
     <Card>
@@ -37,7 +55,7 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
       </Text>
       {rows.length ? (
         <View style={styles.column}>
-          {rows.map((row, index) => {
+          {visibleRows.map((row, index) => {
             const accent =
               row.tone === "physical"
                 ? palette.signalPhysical
@@ -111,6 +129,20 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
               </Pressable>
             );
           })}
+          {hasMoreRows ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={handleViewMore}
+              style={({ pressed }) => [
+                styles.viewMoreButton,
+                pressed && styles.viewMoreButtonPressed,
+              ]}
+            >
+              <Text style={[styles.viewMoreText, { color: palette.foreground }]}>
+                View {Math.min(3, rows.length - visibleCount)} more
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         <Text style={[styles.empty, { color: palette.textSecondary }]}>
@@ -205,5 +237,19 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.sm,
     maxWidth: "34%",
     textAlign: "right",
+  },
+  viewMoreButton: {
+    alignSelf: "flex-start",
+    marginTop: Spacing.xs,
+    paddingVertical: Spacing.xs,
+  },
+  viewMoreButtonPressed: {
+    opacity: 0.9,
+  },
+  viewMoreText: {
+    fontFamily: Fonts.monoMedium,
+    fontSize: FontSizes.sm,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
 });
