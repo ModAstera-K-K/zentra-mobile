@@ -18,7 +18,7 @@ export interface DailyLocationTrendData {
   elevationCoveredDays: number;
 }
 
-function parseLocationPayload(valueJson?: string): LocationPayload | null {
+export function parseLocationPayload(valueJson?: string): LocationPayload | null {
   if (!valueJson) {
     return null;
   }
@@ -83,10 +83,6 @@ function buildLocationSamplesByDate(
         altitudeMeters: payload.altitude,
       });
     });
-
-  Object.values(samplesByDate).forEach((samples) => {
-    samples.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-  });
 
   return samplesByDate;
 }

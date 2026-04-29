@@ -26,6 +26,7 @@ import {
   getActivitySourceLabel,
   getHealthPlatformName,
 } from "@/utils/platform-capabilities";
+import { parseLocationPayload } from "./location-trends";
 
 const CORE_SIGNAL_TYPES: EventDataType[] = [
   "steps",
@@ -346,34 +347,6 @@ function getEventProvenanceLabel(event: ZentraEventRecord): string {
   }
 }
 
-function parseLocationPayload(valueJson?: string): LocationPayload | null {
-  if (!valueJson) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(valueJson) as Partial<LocationPayload>;
-    if (
-      typeof parsed.latitude !== "number" ||
-      !Number.isFinite(parsed.latitude) ||
-      typeof parsed.longitude !== "number" ||
-      !Number.isFinite(parsed.longitude)
-    ) {
-      return null;
-    }
-
-    return {
-      latitude: parsed.latitude,
-      longitude: parsed.longitude,
-      altitude:
-        typeof parsed.altitude === "number" && Number.isFinite(parsed.altitude)
-          ? parsed.altitude
-          : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
 
 function parseLocationLabel(valueJson?: string): string {
   const location = parseLocationPayload(valueJson);
