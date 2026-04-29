@@ -21,6 +21,7 @@ export type MetricIconKey =
   | "screenTime"
   | "mobilityRadius"
   | "distanceMeters"
+  | "elevationGain"
   | "unlockCount"
   | "topActivity"
   | "activitySummary"
@@ -57,6 +58,7 @@ const METRIC_ICONS: Record<MetricIconKey, AppIconName> = {
   screenTime: "phone-portrait-outline",
   mobilityRadius: "locate-outline",
   distanceMeters: "map-outline",
+  elevationGain: "trending-up-outline",
   unlockCount: "lock-open-outline",
   topActivity: "body-outline",
   activitySummary: "body-outline",
@@ -176,6 +178,7 @@ const METRIC_ICON_KEYS = new Set<MetricIconKey>([
   "screenTime",
   "mobilityRadius",
   "distanceMeters",
+  "elevationGain",
   "unlockCount",
   "topActivity",
   "activitySummary",

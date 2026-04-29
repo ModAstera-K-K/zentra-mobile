@@ -225,6 +225,7 @@ function getMetricEventTypes(key: string): EventDataType[] {
     case "mobilityRadius":
     case "distanceMeters":
     case "avgSpeed":
+    case "elevationGain":
       return ["location"];
     case "unlockCount":
       return ["unlock_event"];
@@ -260,6 +261,7 @@ function getMetricSourceLabel(key: string): string {
     case "mobilityRadius":
     case "distanceMeters":
     case "avgSpeed":
+    case "elevationGain":
       return "Foreground location";
     case "dataCompleteness":
       return "Repository aggregate";
@@ -895,6 +897,30 @@ function buildAverageSpeedVisual(
   };
 }
 
+function buildElevationGainVisual(
+  events: ZentraEventRecord[],
+): TodayDetailVisual | null {
+  const samples = extractLocationSamples(events).filter(
+    (sample): sample is LocationSample & { altitudeMeters: number } =>
+      typeof sample.altitudeMeters === "number" &&
+      Number.isFinite(sample.altitudeMeters),
+  );
+
+  if (samples.length < 2) {
+    return null;
+  }
+
+  return {
+    type: "line",
+    annotation: "Altitude profile across foreground location samples.",
+    points: samples.map((sample) => ({
+      label: formatTimestampLabel(sample.timestamp),
+      value: sample.altitudeMeters,
+      valueLabel: `${formatNumber(Math.round(sample.altitudeMeters))} m`,
+    })),
+  };
+}
+
 function buildTopActivityVisual(
   events: ZentraEventRecord[],
 ): TodayDetailVisual | null {
@@ -1331,6 +1357,8 @@ function buildVisualForMetric(
       return buildLocationRadiusVisual(events);
     case "avgSpeed":
       return buildAverageSpeedVisual(events);
+    case "elevationGain":
+      return buildElevationGainVisual(events);
     case "topActivity":
     case "activitySummary":
       return buildTopActivityVisual(events);
@@ -1456,7 +1484,6 @@ function buildMetricFacts(
     case "avgSpeed": {
       const locationSamples = extractLocationSamples(relatedEvents);
       const averageSpeedKmh = calculateAverageSpeedKmh(locationSamples);
-      const elevationSummary = calculateElevationSummary(locationSamples);
       return [
         { label: "Source", value: getMetricSourceLabel(metric.key) },
         {
@@ -1468,10 +1495,27 @@ function buildMetricFacts(
           value:
             averageSpeedKmh !== null ? `${averageSpeedKmh.toFixed(1)} km/h` : "Waiting",
         },
+      ];
+    }
+    case "elevationGain": {
+      const locationSamples = extractLocationSamples(relatedEvents);
+      const elevationSummary = calculateElevationSummary(locationSamples);
+      return [
+        { label: "Source", value: getMetricSourceLabel(metric.key) },
+        {
+          label: "Location samples",
+          value: formatNumber(relatedEvents.length),
+        },
         {
           label: "Elevation gain",
           value: elevationSummary
             ? `${formatNumber(elevationSummary.gainMeters)} m`
+            : "Waiting",
+        },
+        {
+          label: "Elevation range",
+          value: elevationSummary
+            ? `${formatNumber(elevationSummary.minMeters)}-${formatNumber(elevationSummary.maxMeters)} m`
             : "Not available",
         },
       ];
@@ -1621,6 +1665,17 @@ function buildMetricMeta(
       );
       return averageSpeedKmh !== null
         ? `${relatedEvents.length} location sample${relatedEvents.length === 1 ? "" : "s"} used for average speed`
+        : `${relatedEvents.length} location sample${relatedEvents.length === 1 ? "" : "s"} captured today`;
+    }
+
+    if (metric.key === "elevationGain") {
+      const altitudeSampleCount = extractLocationSamples(relatedEvents).filter(
+        (sample) =>
+          typeof sample.altitudeMeters === "number" &&
+          Number.isFinite(sample.altitudeMeters),
+      ).length;
+      return altitudeSampleCount >= 2
+        ? `${altitudeSampleCount} altitude sample${altitudeSampleCount === 1 ? "" : "s"} used for elevation gain`
         : `${relatedEvents.length} location sample${relatedEvents.length === 1 ? "" : "s"} captured today`;
     }
 
