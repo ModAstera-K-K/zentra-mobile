@@ -1504,7 +1504,7 @@ function buildMetricFacts(
         { label: "Source", value: getMetricSourceLabel(metric.key) },
         {
           label: "Location samples",
-          value: formatNumber(relatedEvents.length),
+          value: formatNumber(locationSamples.length),
         },
         {
           label: "Elevation gain",
@@ -1516,7 +1516,7 @@ function buildMetricFacts(
           label: "Elevation range",
           value: elevationSummary
             ? `${formatNumber(elevationSummary.minMeters)}-${formatNumber(elevationSummary.maxMeters)} m`
-            : "Not available",
+            : "Waiting",
         },
       ];
     }

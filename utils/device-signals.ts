@@ -227,7 +227,7 @@ export function buildLiveDashboardMetrics(
       formatSpeed(averageSpeedKmh),
       collectors.location.enabled
         ? signals.locationPermissionStatus === "granted"
-          ? averageSpeedKmh
+          ? averageSpeedKmh !== null
             ? `Derived from location samples · Average speed ${formatSpeed(averageSpeedKmh)}.`
             : "Derived from location samples while Zentra is open. Average speed appears once it's available."
           : "Allow location access to estimate your speed today."
