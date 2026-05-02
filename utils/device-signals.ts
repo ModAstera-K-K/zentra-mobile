@@ -227,13 +227,29 @@ export function buildLiveDashboardMetrics(
       formatSpeed(averageSpeedKmh),
       collectors.location.enabled
         ? signals.locationPermissionStatus === "granted"
-          ? elevationSummary
-            ? `Derived from location samples · elevation gain ${elevationSummary.gainMeters} m (${elevationSummary.minMeters}-${elevationSummary.maxMeters} m).`
-            : "Derived from location samples while Zentra is open. Elevation appears once altitude is available."
+          ? averageSpeedKmh !== null
+            ? `Derived from location samples · Average speed ${formatSpeed(averageSpeedKmh)}.`
+            : "Derived from location samples while Zentra is open. Average speed appears once it's available."
           : "Allow location access to estimate your speed today."
         : "Turn on Location in Settings.",
       "physical",
       averageSpeedKmh !== null,
+    ),
+    metric(
+      "elevationGain",
+      "Elevation Gain",
+      elevationSummary
+        ? `${formatNumber(elevationSummary.gainMeters)} m`
+        : "Waiting",
+      collectors.location.enabled
+        ? signals.locationPermissionStatus === "granted"
+          ? elevationSummary !== null
+            ? `Derived from location samples · Elevation gain ${formatNumber(elevationSummary.gainMeters)} m.`
+            : "Derived from location samples while Zentra is open. Elevation appears once it's available."
+          : "Allow location access to see elevation gain for today."
+        : "Turn on Location in Settings.",
+      "physical",
+      elevationSummary !== null,
     )
   ];
 }
