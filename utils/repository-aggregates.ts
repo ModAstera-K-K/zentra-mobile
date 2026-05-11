@@ -10,6 +10,11 @@ import {
   shiftISODate,
   toISODate,
 } from "@/utils/dates";
+import {
+  computeSensorStepDeltas,
+  resolveDailySteps,
+  resolveTodayStepSnapshot,
+} from "@/utils/source-resolution";
 
 interface LocationPayload {
   latitude: number;
@@ -33,32 +38,7 @@ const COMPLETENESS_TYPES: ZentraEventRecord["dataType"][] = [
  * cumulative step count.
  */
 export function computeCumulativeSteps(events: ZentraEventRecord[]): number {
-  const sensorSteps = events
-    .filter(
-      (event) =>
-        event.dataType === "steps" &&
-        event.source === "sensor" &&
-        typeof event.valueNumeric === "number",
-    )
-    .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
-    );
-
-  if (!sensorSteps.length) {
-    return 0;
-  }
-
-  let total = Math.max(0, Math.round(sensorSteps[0].valueNumeric ?? 0));
-  for (let i = 1; i < sensorSteps.length; i++) {
-    const current = Math.max(0, Math.round(sensorSteps[i].valueNumeric ?? 0));
-    const previous = Math.max(
-      0,
-      Math.round(sensorSteps[i - 1].valueNumeric ?? 0),
-    );
-    total += Math.max(0, current - previous);
-  }
-
-  return total;
+  return computeSensorStepDeltas(events)?.value ?? 0;
 }
 
 /**
@@ -382,7 +362,7 @@ export function buildDailyAggregateRecord(
     .sort((left, right) =>
       right.timestampStart.localeCompare(left.timestampStart),
     )[0];
-  const stepsTotal = computeCumulativeSteps(events);
+  const stepsTotal = resolveDailySteps(events)?.value ?? 0;
 
   return {
     date,
@@ -408,14 +388,7 @@ export function buildDailyAggregateRecord(
 export function buildTodaySnapshot(
   events: ZentraEventRecord[],
 ): TodayLiveSnapshot {
-  const stepEvents = events
-    .filter(
-      (event) =>
-        event.dataType === "steps" && typeof event.valueNumeric === "number",
-    )
-    .sort((left, right) =>
-      right.timestampStart.localeCompare(left.timestampStart),
-    );
+  const resolvedSteps = resolveTodayStepSnapshot(events);
   const batteryEvents = events
     .filter((event) => event.dataType === "charging_state")
     .sort((left, right) =>
@@ -434,8 +407,8 @@ export function buildTodaySnapshot(
   const locationSamples = extractLocationSamples(events);
 
   return {
-    stepCount: stepEvents[0]?.valueNumeric ?? null,
-    stepLastUpdatedAt: stepEvents[0]?.timestampStart ?? null,
+    stepCount: resolvedSteps?.value ?? null,
+    stepLastUpdatedAt: resolvedSteps?.timestamp ?? null,
     batteryLevel: latestBatteryLevelEvent?.valueNumeric ?? null,
     batteryStateLabel: latestBatteryStateEvent?.valueText ?? null,
     lowPowerMode:

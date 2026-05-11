@@ -89,6 +89,7 @@ export function useSignalBootstrap(): void {
   const bootstrapTaskQueueRef = useRef<Promise<void>>(Promise.resolve());
   const reconcileInFlightRef = useRef<Promise<void> | null>(null);
   const lastResumeReconcileAtRef = useRef(0);
+  const hasRunInitialOpenReconcileRef = useRef(false);
   const hasResumeReconcileCollectors = hasEnabledCollectorCapability(
     collectors,
     ["backgroundPeriodic", "nativeBuffered"],
@@ -111,6 +112,31 @@ export function useSignalBootstrap(): void {
       () => undefined,
     );
     return nextTask;
+  }
+
+  async function runForegroundReconcile(): Promise<void> {
+    if (reconcileInFlightRef.current) {
+      return reconcileInFlightRef.current;
+    }
+
+    if (Date.now() - lastResumeReconcileAtRef.current < 10_000) {
+      return;
+    }
+
+    const task = enqueueBootstrapTask(async () => {
+      lastResumeReconcileAtRef.current = Date.now();
+      await runImportantCollectorReconcile({
+        trigger: "foregroundResume",
+      });
+    });
+
+    reconcileInFlightRef.current = task;
+
+    try {
+      await task;
+    } finally {
+      reconcileInFlightRef.current = null;
+    }
   }
 
   useEffect(() => {
@@ -605,29 +631,9 @@ export function useSignalBootstrap(): void {
       return;
     }
 
-    async function runResumeReconcile(): Promise<void> {
-      if (reconcileInFlightRef.current) {
-        return reconcileInFlightRef.current;
-      }
-
-      if (Date.now() - lastResumeReconcileAtRef.current < 10_000) {
-        return;
-      }
-
-      const task = enqueueBootstrapTask(async () => {
-        lastResumeReconcileAtRef.current = Date.now();
-        await runImportantCollectorReconcile({
-          trigger: "foregroundResume",
-        });
-      });
-
-      reconcileInFlightRef.current = task;
-
-      try {
-        await task;
-      } finally {
-        reconcileInFlightRef.current = null;
-      }
+    if (!hasRunInitialOpenReconcileRef.current) {
+      hasRunInitialOpenReconcileRef.current = true;
+      void runForegroundReconcile();
     }
 
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -638,7 +644,7 @@ export function useSignalBootstrap(): void {
         nextState === "active" &&
         (previousState === "background" || previousState === "inactive")
       ) {
-        void runResumeReconcile();
+        void runForegroundReconcile();
       }
     });
 
