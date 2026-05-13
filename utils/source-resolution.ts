@@ -8,11 +8,11 @@ export interface ResolvedMetricSource {
   value: number;
 }
 
-function isNumericStepEvent(event: ZentraEventRecord): boolean {
+export function isNumericStepEvent(event: ZentraEventRecord): boolean {
   return event.dataType === "steps" && typeof event.valueNumeric === "number";
 }
 
-function roundStepValue(value: number | undefined): number {
+export function roundStepValue(value: number | undefined): number {
   return Math.max(0, Math.round(value ?? 0));
 }
 
@@ -61,6 +61,59 @@ export function computeSensorStepDeltas(
     timestamp: latest.timestampStart,
     value: total,
   };
+}
+
+export function hasHealthStepEvents(events: ZentraEventRecord[]): boolean {
+  return events.some(
+    (event) => isNumericStepEvent(event) && event.source === "health_connect",
+  );
+}
+
+export function buildSensorStepDeltaMap(
+  events: ZentraEventRecord[],
+): Map<string, number> {
+  const sensorSteps = sortAscendingByStart(
+    events.filter(
+      (event) => isNumericStepEvent(event) && event.source === "sensor",
+    ),
+  );
+  const deltas = new Map<string, number>();
+  let previousCount: number | null = null;
+
+  sensorSteps.forEach((event) => {
+    const currentCount = roundStepValue(event.valueNumeric);
+    const delta =
+      previousCount === null
+        ? currentCount
+        : Math.max(0, currentCount - previousCount);
+    deltas.set(event.id, delta);
+    previousCount = currentCount;
+  });
+
+  return deltas;
+}
+
+export function getResolvedStepEvents(
+  events: ZentraEventRecord[],
+): ZentraEventRecord[] {
+  const stepEvents = events.filter(isNumericStepEvent);
+
+  if (!hasHealthStepEvents(stepEvents)) {
+    return stepEvents;
+  }
+
+  return stepEvents.filter((event) => event.source === "health_connect");
+}
+
+export function getStepEventResolvedValue(
+  event: ZentraEventRecord,
+  sensorStepDeltas: Map<string, number>,
+): number {
+  if (event.source === "sensor") {
+    return sensorStepDeltas.get(event.id) ?? 0;
+  }
+
+  return roundStepValue(event.valueNumeric);
 }
 
 export function resolveDailySteps(
