@@ -16,6 +16,11 @@ import {
 } from "@/utils/activity-intensity";
 import type { ActivityScoreMaxima } from "@/types/zentra";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import {
+  buildSensorStepDeltaMap,
+  getResolvedStepEvents,
+  getStepEventResolvedValue,
+} from "@/utils/source-resolution";
 
 const TRACKED_TIMELINE_TYPES: EventDataType[] = [
   "steps",
@@ -220,47 +225,15 @@ function getScreenStateContribution(event: ZentraEventRecord): {
   return { rest: 0, screen: 0 };
 }
 
-function buildSensorStepDeltaMap(
-  events: ZentraEventRecord[],
-): Map<string, number> {
-  const sensorSteps = events
-    .filter(
-      (event) =>
-        event.dataType === "steps" &&
-        event.source === "sensor" &&
-        typeof event.valueNumeric === "number",
-    )
-    .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
-    );
-  const deltas = new Map<string, number>();
-  let previousCount: number | null = null;
-
-  sensorSteps.forEach((event) => {
-    const currentCount = Math.max(0, Math.round(event.valueNumeric ?? 0));
-    const delta =
-      previousCount === null
-        ? currentCount
-        : Math.max(0, currentCount - previousCount);
-    deltas.set(event.id, delta);
-    previousCount = currentCount;
-  });
-
-  return deltas;
-}
-
 function applyStepsEvent(
   bucket: UnifiedTimelineBucket,
   event: ZentraEventRecord,
   sensorStepDeltas: Map<string, number>,
   weight: number,
 ): void {
-  let delta: number;
-  if (event.source === "sensor") {
-    delta = Math.round((sensorStepDeltas.get(event.id) ?? 0) * weight);
-  } else {
-    delta = Math.round((event.valueNumeric ?? 0) * weight);
-  }
+  const delta = Math.round(
+    getStepEventResolvedValue(event, sensorStepDeltas) * weight,
+  );
 
   bucket.steps += delta;
 
@@ -484,9 +457,14 @@ function buildRawUnifiedTimeline(
   const resolutionMs = getResolutionMinutes(window.resolution) * 60_000;
   const windowStartMs = new Date(window.startTimestamp).getTime();
   const windowEndMs = new Date(window.endTimestamp).getTime();
-  const sensorStepDeltas = buildSensorStepDeltaMap(events);
+  const resolvedStepEvents = getResolvedStepEvents(events);
+  const sensorStepDeltas = buildSensorStepDeltaMap(resolvedStepEvents);
+  const eventsForTimeline = [
+    ...events.filter((event) => event.dataType !== "steps"),
+    ...resolvedStepEvents,
+  ];
 
-  events.forEach((event) => {
+  eventsForTimeline.forEach((event) => {
     const eventStartMs = new Date(event.timestampStart).getTime();
     const eventEndMs =
       event.timestampEnd > event.timestampStart

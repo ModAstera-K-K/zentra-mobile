@@ -68,7 +68,7 @@ export default {
         "expo-sensors",
         {
           motionPermission:
-            "Allow Zentra to access motion data for live step readings.",
+            "Allow Zentra to access motion data for live steps and movement context.",
         },
       ],
       "@react-native-community/datetimepicker",

@@ -27,6 +27,11 @@ import {
   getHealthPlatformName,
 } from "@/utils/platform-capabilities";
 import { parseLocationPayload } from "./location-trends";
+import {
+  buildSensorStepDeltaMap,
+  getResolvedStepEvents,
+  getStepEventResolvedValue,
+} from "@/utils/source-resolution";
 
 const CORE_SIGNAL_TYPES: EventDataType[] = [
   "steps",
@@ -594,36 +599,18 @@ function buildDeviceContextValue(todaySnapshot: TodayLiveSnapshot): string {
 function buildStepsVisual(
   events: ZentraEventRecord[],
 ): TodayDetailVisual | null {
-  const stepEvents = sortEventsAscending(events).filter(
-    (event) => typeof event.valueNumeric === "number",
-  );
+  const stepEvents = sortEventsAscending(getResolvedStepEvents(events));
 
   if (!stepEvents.length) {
     return null;
   }
 
-  // Compute deltas for sensor-sourced step events (cumulative counters)
-  const sensorEvents = stepEvents
-    .filter((e) => e.source === "sensor")
-    .sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
-  const sensorDeltas = new Map<string, number>();
-  let prevCount: number | null = null;
-  for (const event of sensorEvents) {
-    const current = Math.max(0, Math.round(event.valueNumeric ?? 0));
-    const delta = prevCount === null ? 0 : Math.max(0, current - prevCount);
-    sensorDeltas.set(event.id, delta);
-    prevCount = current;
-  }
+  const sensorDeltas = buildSensorStepDeltaMap(stepEvents);
 
-  // Bucket steps into 24 hourly slots using deltas for sensors, raw for others
   const hourlySteps = new Array<number>(24).fill(0);
   for (const event of stepEvents) {
     const hour = new Date(event.timestampStart).getHours();
-    const value =
-      event.source === "sensor"
-        ? (sensorDeltas.get(event.id) ?? 0)
-        : clampPositive(Math.round(event.valueNumeric ?? 0));
-    hourlySteps[hour] += value;
+    hourlySteps[hour] += getStepEventResolvedValue(event, sensorDeltas);
   }
 
   const HOUR_LABELS = [

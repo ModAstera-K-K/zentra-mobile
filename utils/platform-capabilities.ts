@@ -44,7 +44,7 @@ export function getAmbientLightUnsupportedMessage(): string {
 
 export function getLiveSignalsSummary(): string {
   return Platform.OS === "ios"
-    ? "Right now, Zentra reads steps, battery state, connectivity changes, location, and motion activity on iOS. Screen time, unlock history, and ambient light stay unsupported on iOS."
+    ? "Right now, Zentra reads steps, battery state, connectivity changes, location, Core Motion activity, and foreground motion context on iOS. Screen time, unlock history, and ambient light stay unsupported on iOS."
     : "Right now, Zentra reads steps, battery state, connectivity changes, location, ambient light, and motion context on Android, with optional Health Connect import when you enable it.";
 }
 

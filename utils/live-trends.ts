@@ -544,7 +544,7 @@ export function buildLiveTrendSeries(
   const aggregateByDate = new Map(
     aggregates.map((record) => [record.date, record]),
   );
-  
+
   const normalizedAggregates = dates.map(
     (date) =>
       aggregateByDate.get(date) ?? {

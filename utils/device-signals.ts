@@ -24,7 +24,6 @@ import {
   calculateAverageSpeedKmh,
   calculateElevationSummary,
 } from "@/utils/location-metrics";
-import { computeCumulativeSteps } from "@/utils/repository-aggregates";
 import {
   getCollectorPlatformOverrides,
   getHealthPlatformName,
@@ -148,12 +147,11 @@ export function buildLiveDashboardMetrics(
   const averageSpeedKmh = calculateAverageSpeedKmh(todaySnapshot.locationSamples);
   const elevationSummary = calculateElevationSummary(todaySnapshot.locationSamples);
   const currentActivity = getCurrentActivityLabel(todayEvents);
-  const cumulativeSteps = computeCumulativeSteps(todayEvents);
-  const hasSteps = cumulativeSteps > 0 || todaySnapshot.stepCount !== null;
+  const resolvedStepCount =
+    todaySnapshot.stepCount ?? todayAggregate?.stepsTotal ?? null;
+  const hasSteps = resolvedStepCount !== null && resolvedStepCount > 0;
   const displaySteps = hasSteps
-    ? formatNumber(
-        cumulativeSteps > 0 ? cumulativeSteps : (todaySnapshot.stepCount ?? 0),
-      )
+    ? formatNumber(resolvedStepCount)
     : "Waiting";
 
   return [
