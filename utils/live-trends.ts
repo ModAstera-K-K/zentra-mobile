@@ -10,6 +10,7 @@ import type {
 } from "@/types/zentra";
 import { enumerateISODateRange, parseISODate } from "@/utils/dates";
 import { formatMinutes, formatNumber } from "@/utils/format";
+import { buildDailyLocationTrendData } from "@/utils/location-trends";
 import {
   buildNormalizationMaxima,
   buildUnifiedDailyTimeline,
@@ -84,8 +85,9 @@ function createTrendSeries(
   group?: TrendSeriesGroupKey,
   coverageLabel?: string,
   sourceLabel?: string,
+  hasCoverage = values.some((value) => value > 0),
 ): TrendSeries | null {
-  if (!values.some((value) => value > 0)) {
+  if (!hasCoverage) {
     return null;
   }
 
@@ -542,6 +544,7 @@ export function buildLiveTrendSeries(
   const aggregateByDate = new Map(
     aggregates.map((record) => [record.date, record]),
   );
+
   const normalizedAggregates = dates.map(
     (date) =>
       aggregateByDate.get(date) ?? {
@@ -637,6 +640,12 @@ export function buildLiveTrendSeries(
   });
 
   const exerciseValues = dates.map((date) => exerciseByDate[date] ?? 0);
+  const {
+    averageSpeedCoveredDays,
+    averageSpeedValues,
+    elevationCoveredDays,
+    elevationGainValues,
+  } = buildDailyLocationTrendData(dates, events);
   const { intensityValues, restValues } = buildDailyCompositeValues(
     dates,
     events,
@@ -695,6 +704,30 @@ export function buildLiveTrendSeries(
         "with distance",
       ),
       "Foreground location",
+    ),
+    createTrendSeries(
+      "avgSpeed",
+      "Avg Speed",
+      "km/h",
+      "physical",
+      averageSpeedValues,
+      dates,
+      "body",
+      `${averageSpeedCoveredDays}/${dates.length} days with speed data`,
+      "Foreground location",
+      averageSpeedCoveredDays > 0,
+    ),
+    createTrendSeries(
+      "elevationGain",
+      "Elevation Gain",
+      "m",
+      "human",
+      elevationGainValues,
+      dates,
+      "body",
+      `${elevationCoveredDays}/${dates.length} days with altitude data`,
+      "Foreground location",
+      elevationCoveredDays > 0,
     ),
     createTrendSeries(
       "screenTime",

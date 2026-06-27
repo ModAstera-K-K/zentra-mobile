@@ -10,17 +10,12 @@ import {
   shiftISODate,
   toISODate,
 } from "@/utils/dates";
+import { parseLocationPayload } from "@/utils/location-trends";
 import {
   computeSensorStepDeltas,
   resolveDailySteps,
   resolveTodayStepSnapshot,
 } from "@/utils/source-resolution";
-
-interface LocationPayload {
-  latitude: number;
-  longitude: number;
-  altitude?: number;
-}
 
 const COMPLETENESS_TYPES: ZentraEventRecord["dataType"][] = [
   "steps",
@@ -196,32 +191,6 @@ function distanceMeters(a: LocationSample, b: LocationSample): number {
     Math.cos(latA) * Math.cos(latB) * Math.sin(deltaLon / 2) ** 2;
 
   return 2 * earthRadius * Math.asin(Math.sqrt(haversine));
-}
-
-function parseLocationPayload(valueJson?: string): LocationPayload | null {
-  if (!valueJson) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(valueJson) as Partial<LocationPayload>;
-    if (
-      typeof parsed.latitude !== "number" ||
-      !Number.isFinite(parsed.latitude) ||
-      typeof parsed.longitude !== "number" ||
-      !Number.isFinite(parsed.longitude)
-    ) {
-      return null;
-    }
-
-    return {
-      latitude: parsed.latitude,
-      longitude: parsed.longitude,
-      altitude: parsed.altitude,
-    };
-  } catch {
-    return null;
-  }
 }
 
 function extractLocationSamples(events: ZentraEventRecord[]): LocationSample[] {

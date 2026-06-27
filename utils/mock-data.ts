@@ -425,6 +425,28 @@ export function buildTrendSeries(
       ready: isCollectorReady(collectors, "location"),
     },
     {
+      key: "avgSpeed",
+      label: "Avg Speed",
+      unit: "km/h",
+      tone: "physical" as const,
+      group: "body" as const,
+      min: 2,
+      max: 8,
+      phase: 7,
+      ready: isCollectorReady(collectors, "location"),
+    },
+    {
+      key: "elevationGain",
+      label: "Elevation Gain",
+      unit: "m",
+      tone: "human" as const,
+      group: "body" as const,
+      min: 8,
+      max: 140,
+      phase: 2,
+      ready: isCollectorReady(collectors, "location"),
+    },
+    {
       key: "screen",
       label: "Screen Time",
       unit: "min",
@@ -502,7 +524,9 @@ export function buildTrendSeries(
       group: definition.group,
       coverageLabel: "Demo coverage",
       sourceLabel:
-        definition.key === "distanceMeters"
+        definition.key === "distanceMeters" ||
+        definition.key === "avgSpeed" ||
+        definition.key === "elevationGain"
           ? "Foreground location"
           : definition.key === "inferredSleep"
             ? "Local inference"
