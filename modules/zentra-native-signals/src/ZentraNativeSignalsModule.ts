@@ -11,6 +11,7 @@ declare class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignals
   >;
   readBufferedActivityTransitionsAsync(): Promise<
     Array<{
+      cursor?: number;
       id: string;
       activityType: string;
       transitionType: "enter" | "exit";

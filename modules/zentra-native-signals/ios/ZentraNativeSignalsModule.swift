@@ -33,6 +33,44 @@ public class ZentraNativeSignalsModule: Module {
       self.activityController.stopUpdates()
     }
 
+    AsyncFunction("readBufferedActivityTransitionsAsync") { (promise: Promise) in
+      self.activityController.readBufferedTransitions(
+        cursorExclusive: nil,
+        limit: 250
+      ) { transitions in
+        promise.resolve(transitions)
+      }
+    }
+
+    AsyncFunction("readBufferedActivityTransitionsSinceAsync") { (cursorExclusive: Double?, limit: Int?, promise: Promise) in
+      self.activityController.readBufferedTransitions(
+        cursorExclusive: cursorExclusive.map { Int64($0) },
+        limit: limit ?? 250
+      ) { transitions in
+        promise.resolve(transitions)
+      }
+    }
+
+    AsyncFunction("getBufferedActivityTransitionCountAsync") {
+      0
+    }
+
+    AsyncFunction("acknowledgeBufferedActivityTransitionsAsync") { (ids: [String]) in
+      ids.count
+    }
+
+    AsyncFunction("startBackgroundCollectionServiceAsync") { (_: Bool, _: Bool) in
+      false
+    }
+
+    AsyncFunction("stopBackgroundCollectionServiceAsync") {
+      true
+    }
+
+    AsyncFunction("isBackgroundCollectionServiceRunningAsync") {
+      false
+    }
+
     AsyncFunction("getHealthConnectAvailabilityAsync") {
       self.healthKitController.getAvailability()
     }

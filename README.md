@@ -82,13 +82,13 @@ Because F-Droid and Google Play use different signing keys, they install as sepa
 | --- | --- | --- | --- |
 | Today and Trends views | Yes | Yes | Shared Expo / React Native UI |
 | Local export | Yes | Yes | User-triggered only |
-| Live step / motion signals | Yes | Partial | Depends on platform sensor availability |
+| Live step / motion signals | Yes | Yes | Depends on platform sensor availability |
 | Device state signals | Yes | Yes | Battery and local device-state surfaces |
 | Location-derived mobility | Yes | Yes | Optional, permission-gated |
 | Health records import | Health Connect | HealthKit | Platform-native health integration |
 | App usage / screen time | Yes | No | Android-specific surface |
 | Ambient light | Yes | No | Android-specific hardware path |
-| Motion context / activity recognition | Yes | No | Android-first implementation |
+| Motion context / activity recognition | Yes | Yes | Activity Recognition on Android, Core Motion on iOS |
 | Sleep inference | Yes | Yes | Labeled as inferred, with confidence scores |
 
 ## Project structure

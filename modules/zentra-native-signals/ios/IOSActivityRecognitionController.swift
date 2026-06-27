@@ -3,7 +3,6 @@ import Foundation
 
 final class IOSActivityRecognitionController {
   private let activityManager = CMMotionActivityManager()
-  private let formatter = ISO8601DateFormatter()
   private let queue: OperationQueue = {
     let operationQueue = OperationQueue()
     operationQueue.name = "ZentraActivityRecognitionQueue"
@@ -68,89 +67,70 @@ final class IOSActivityRecognitionController {
   }
 
   private func handle(_ activity: CMMotionActivity?) {
-    guard let activity, let nextActivityType = dominantActivityType(for: activity) else {
+    guard
+      let activity,
+      let nextActivityType = IOSActivityTransitionHelpers.dominantActivityType(
+        for: activity
+      )
+    else {
       return
     }
 
-    let timestamp = formatter.string(from: activity.startDate)
-    let confidence = confidenceValue(for: activity.confidence)
+    let timestamp = IOSActivityTransitionHelpers.formatISODate(activity.startDate)
+    let confidence = IOSActivityTransitionHelpers.confidenceValue(for: activity.confidence)
 
     if let previousActivityType = lastActivityType, previousActivityType != nextActivityType {
       DispatchQueue.main.async {
-        self.emitTransition([
-          "id": self.transitionId(
+        self.emitTransition(
+          IOSActivityTransitionHelpers.liveTransitionPayload(
             activityType: previousActivityType,
             transitionType: "exit",
+            confidence: confidence,
             timestamp: timestamp
-          ),
-          "activityType": previousActivityType,
-          "transitionType": "exit",
-          "confidence": confidence,
-          "timestamp": timestamp,
-        ])
+          )
+        )
       }
     }
 
     if lastActivityType != nextActivityType {
       DispatchQueue.main.async {
-        self.emitTransition([
-          "id": self.transitionId(
+        self.emitTransition(
+          IOSActivityTransitionHelpers.liveTransitionPayload(
             activityType: nextActivityType,
             transitionType: "enter",
+            confidence: confidence,
             timestamp: timestamp
-          ),
-          "activityType": nextActivityType,
-          "transitionType": "enter",
-          "confidence": confidence,
-          "timestamp": timestamp,
-        ])
+          )
+        )
       }
       lastActivityType = nextActivityType
     }
   }
 
-  private func dominantActivityType(for activity: CMMotionActivity) -> String? {
-    if activity.walking {
-      return "walking"
+  func readBufferedTransitions(
+    cursorExclusive: Int64?,
+    limit: Int,
+    resolve: @escaping ([[String: Any]]) -> Void
+  ) {
+    guard getPermissionStatus() == "granted" else {
+      resolve([])
+      return
     }
 
-    if activity.running {
-      return "running"
+    let endDate = Date()
+    let startDate = IOSActivityTransitionHelpers.historyStartDate(
+      cursorExclusive: cursorExclusive,
+      endingAt: endDate
+    )
+
+    activityManager.queryActivityStarting(from: startDate, to: endDate, to: queue) { activities, _ in
+      resolve(
+        IOSActivityTransitionHelpers.buildHistoricalTransitions(
+          from: activities ?? [],
+          cursorExclusive: cursorExclusive,
+          limit: limit
+        )
+      )
     }
-
-    if activity.cycling {
-      return "on_bicycle"
-    }
-
-    if activity.automotive {
-      return "in_vehicle"
-    }
-
-    if activity.stationary {
-      return "still"
-    }
-
-    return nil
-  }
-
-  private func confidenceValue(for confidence: CMMotionActivityConfidence) -> Double {
-    switch confidence {
-    case .low:
-      return 0.35
-    case .medium:
-      return 0.65
-    case .high:
-      return 0.95
-    @unknown default:
-      return 0.5
-    }
-  }
-
-  private func transitionId(
-    activityType: String,
-    transitionType: String,
-    timestamp: String
-  ) -> String {
-    return ["activity", activityType, transitionType, timestamp].joined(separator: "-")
   }
 }
