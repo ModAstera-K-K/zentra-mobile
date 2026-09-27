@@ -1,3 +1,7 @@
+import { cancelNativeActivityHistory } from "@/utils/native/zentra-native-signals";
+import { loadActivityContext } from "@/utils/activity-context";
+import { cancelActivityHistory } from "@/utils/activity-history-session";
+import { upsertActivityEvent } from "@/utils/activity-history-sql";
 import {
   cachedActiveMinutes,
   isActiveSummaryCurrent,
@@ -263,12 +267,7 @@ export async function rebuildAggregateForDate(
   }
 
   const activeSummary = await cachedActiveMinutes(database, date, events, () =>
-    getEventsBetweenWithDatabase(
-      database,
-      parseISODate(shiftISODate(date, -1)).toISOString(),
-      parseISODate(date).toISOString(),
-      true,
-    ),
+    loadActivityContext(database, date, mapEventRow),
   );
   const aggregate = buildDailyAggregateRecord(date, events, activeSummary);
 
@@ -555,6 +554,7 @@ export async function appendEventsForCollector(
   collectorKey: CollectorKey,
   events: ZentraEventRecord[],
   successMessage: string,
+  assertActive?: () => void,
 ): Promise<void> {
   if (!events.length) {
     return;
@@ -563,6 +563,7 @@ export async function appendEventsForCollector(
   await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
     const affectedDates = getLocalDatesForEvents(events);
+    assertActive?.();
     const timestamp = new Date().toISOString();
     const importedRecordCount =
       collectorKey === "healthConnect" ? events.length : null;
@@ -570,6 +571,14 @@ export async function appendEventsForCollector(
     await database.execAsync("BEGIN IMMEDIATE");
     try {
       for (const event of events) {
+        assertActive?.();
+        if (
+          event.dataType === "activity" &&
+          event.metadata.activity_stream === "ios:core_motion"
+        ) {
+          await upsertActivityEvent(database, event);
+          continue;
+        }
         await database.runAsync(
           `INSERT OR IGNORE INTO events (
             id,
@@ -626,6 +635,7 @@ export async function appendEventsForCollector(
         importedRecordCount,
         0,
       );
+      assertActive?.();
       await database.execAsync("COMMIT");
     } catch (error) {
       await database.execAsync("ROLLBACK");
@@ -844,13 +854,7 @@ export async function getDailyAggregateForDate(
       database,
       date,
       events,
-      () =>
-        getEventsBetweenWithDatabase(
-          database,
-          parseISODate(shiftISODate(date, -1)).toISOString(),
-          parseISODate(date).toISOString(),
-          true,
-        ),
+      () => loadActivityContext(database, date, mapEventRow),
     );
     const aggregate = buildDailyAggregateRecord(date, events, activeSummary);
 
@@ -906,8 +910,10 @@ export async function getGroupedEventsForRange(
 }
 
 export async function clearRepositoryData(): Promise<void> {
+  cancelActivityHistory();
   cancelHealthSync();
   invalidateRepositorySession();
+  await cancelNativeActivityHistory().catch(() => undefined);
   await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
 
@@ -915,6 +921,8 @@ export async function clearRepositoryData(): Promise<void> {
     await database.runAsync("DELETE FROM daily_aggregates");
     await database.runAsync("DELETE FROM derived_cache");
     await database.runAsync("DELETE FROM health_sync_state");
+    await database.runAsync("DELETE FROM activity_history_state");
+    await database.runAsync("DELETE FROM activity_history_records");
     await database.runAsync("DELETE FROM health_snapshot_records");
     await database.runAsync("DELETE FROM health_snapshot_runs");
     await database.runAsync("DELETE FROM event_changes");

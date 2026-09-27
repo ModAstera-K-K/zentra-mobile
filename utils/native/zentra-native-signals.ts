@@ -1,17 +1,14 @@
+import type {
+  ActivityHistoryPage,
+  ActivityTransition as NativeActivityTransition,
+} from "@/types/activity-history";
 import type { HealthRecordType, HealthSyncPage } from "@/types/health-sync";
 import * as ExpoLinking from "expo-linking";
 import { Platform } from "react-native";
 
 import type { PermissionStatus } from "@/types/zentra";
 
-export interface NativeActivityTransition {
-  cursor?: number;
-  id: string;
-  activityType: string;
-  transitionType: "enter" | "exit";
-  confidence: number;
-  timestamp: string;
-}
+export type { ActivityTransition as NativeActivityTransition } from "@/types/activity-history";
 
 export interface NativeHealthConnectRecord {
   id: string;
@@ -26,7 +23,9 @@ export interface NativeHealthConnectRecord {
 }
 
 export type HealthConnectAvailability =
-  "available" | "not_installed" | "unsupported";
+  | "available"
+  | "not_installed"
+  | "unsupported";
 export type UsageAccessPermissionStatus = PermissionStatus;
 
 export interface NativeUsageEvent {
@@ -46,6 +45,13 @@ interface NativeSignalsSubscription {
 }
 
 interface NativeSignalsModule {
+  readActivityHistoryPageAsync?: (
+    start: string,
+    end: string,
+    cursor: string | null,
+    limit: number,
+  ) => Promise<ActivityHistoryPage>;
+  cancelActivityHistoryAsync?: () => Promise<void>;
   readHealthSyncPageAsync?: (
     type: string,
     start: string,
@@ -123,7 +129,8 @@ function loadNativeSignalsModule(): NativeSignalsModule | null {
     // Local Expo modules only exist in rebuilt native dev clients.
     // Keep the JS app functional before native rebuild by treating absence as unsupported.
     const module = require("../../modules/zentra-native-signals").default as
-      NativeSignalsModule | undefined;
+      | NativeSignalsModule
+      | undefined;
     return module ?? null;
   } catch {
     return null;
@@ -430,4 +437,19 @@ export async function readHealthStepTiming(
   if (!module?.readHealthStepTimingAsync)
     throw new Error("Update the native app to read activity timing");
   return module.readHealthStepTimingAsync(start, end);
+}
+
+export async function readActivityHistoryPage(
+  start: string,
+  end: string,
+  cursor: string | null,
+): Promise<ActivityHistoryPage> {
+  const module = loadNativeSignalsModule();
+  if (typeof module?.readActivityHistoryPageAsync !== "function")
+    throw new Error("Core Motion history requires rebuilding this iOS app.");
+  return module.readActivityHistoryPageAsync(start, end, cursor, 250);
+}
+
+export async function cancelNativeActivityHistory(): Promise<void> {
+  await loadNativeSignalsModule()?.cancelActivityHistoryAsync?.();
 }

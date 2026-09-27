@@ -1,3 +1,4 @@
+import { activityTransitionMetadata } from "@/utils/activity-stream";
 import { Platform } from "react-native";
 
 import type {
@@ -109,10 +110,16 @@ export function createActivityEvent(
       ]),
     valueText: transition.activityType,
     unit: "transition",
-    metadata: {
-      confidence: transition.confidence,
-      transition: transition.transitionType,
-    },
+    confidence: transition.confidence,
+    metadata: activityTransitionMetadata({
+      ...transition,
+      ...(Platform.OS === "ios"
+        ? ({ platform: "ios", streamId: "ios:core_motion" } as const)
+        : {}),
+      delivery:
+        transition.delivery ??
+        (source === "native_buffered" ? "buffered" : "live"),
+    }),
   };
 }
 

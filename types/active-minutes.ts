@@ -1,5 +1,10 @@
 export type ActiveKind =
-  "walking" | "running" | "cycling" | "workout" | "steps" | "motion";
+  | "walking"
+  | "running"
+  | "cycling"
+  | "workout"
+  | "steps"
+  | "motion";
 export interface ActiveInterval {
   start: number;
   end: number;
@@ -28,7 +33,7 @@ export interface ActiveMinutesSummary {
   recordIds: string[];
   updatedAt: string | null;
   revision: string;
-  calculationVersion: 2;
+  calculationVersion: 3;
   walkingEquivalent: {
     lowerMinutes: number;
     upperMinutes: number;

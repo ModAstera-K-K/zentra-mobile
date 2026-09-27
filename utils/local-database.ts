@@ -1,3 +1,4 @@
+import { ACTIVITY_HISTORY_MIGRATION } from "@/utils/activity-history-migration";
 import { ACTIVE_MINUTES_MIGRATION } from "@/utils/active-minutes-migration";
 import { openDatabaseAsync, type SQLiteDatabase } from "expo-sqlite";
 
@@ -131,6 +132,11 @@ async function initializeDatabase(
   if ((version?.user_version ?? 0) < 3) {
     await database.withTransactionAsync(async () => {
       await database.execAsync(ACTIVE_MINUTES_MIGRATION);
+    });
+  }
+  if ((version?.user_version ?? 0) < 4) {
+    await database.withTransactionAsync(async () => {
+      await database.execAsync(ACTIVITY_HISTORY_MIGRATION);
     });
   }
   return database;

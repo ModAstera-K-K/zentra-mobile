@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import type { CollectorKey, CollectorState } from "@/types/zentra";
 import type {
   ActivityCollectorDeps,
@@ -27,8 +28,8 @@ import { startUnsupportedCollector } from "@/utils/collectors/unsupported-collec
 
 export const collectorCapabilities: Record<CollectorKey, CollectorCapability> =
   {
-    // Android native receivers can buffer transitions before JS reconnects.
-    activity: "nativeBuffered",
+    // Android has a durable receiver queue; iOS recovers OS-retained history.
+    activity: Platform.OS === "ios" ? "backgroundPeriodic" : "nativeBuffered",
     // Expo light readings only stream while the JS runtime is active.
     ambientLight: "foregroundOnly",
     // Usage snapshots can be re-read on demand during reconcile windows.

@@ -1,5 +1,6 @@
+import { ActivityHistoryStatus } from "@/components/zentra/ActivityHistoryStatus";
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { Card } from "@/components/ui/Card";
@@ -162,12 +163,18 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
         </View>
         <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
           <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
-            Queue
+            {Platform.OS === "ios" ? "Activity history" : "Queue"}
           </Text>
-          <Text style={[styles.factValue, { color: palette.foreground }]}>
-            {bufferedActivityQueueDepth} buffered activity event
-            {bufferedActivityQueueDepth === 1 ? "" : "s"}
-          </Text>
+          {Platform.OS === "ios" ? (
+            <ActivityHistoryStatus
+              style={[styles.factValue, { color: palette.foreground, flex: 1 }]}
+            />
+          ) : (
+            <Text style={[styles.factValue, { color: palette.foreground }]}>
+              {bufferedActivityQueueDepth} buffered activity event
+              {bufferedActivityQueueDepth === 1 ? "" : "s"}
+            </Text>
+          )}
         </View>
         <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
           <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
@@ -203,12 +210,14 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
         </View>
         <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
           <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
-            Native drain
+            {Platform.OS === "ios" ? "Recovery" : "Native drain"}
           </Text>
           <Text style={[styles.factValue, { color: palette.foreground }]}>
-            {lastNativeIngestionCount != null
-              ? `${lastNativeIngestionCount} event${lastNativeIngestionCount === 1 ? "" : "s"}`
-              : "Not yet"}
+            {Platform.OS === "ios"
+              ? "Core Motion history"
+              : lastNativeIngestionCount != null
+                ? `${lastNativeIngestionCount} event${lastNativeIngestionCount === 1 ? "" : "s"}`
+                : "Not yet"}
           </Text>
         </View>
         <View style={[styles.factRow, { borderBottomColor: palette.border }]}>

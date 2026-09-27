@@ -3,14 +3,17 @@ import Foundation
 
 final class IOSActivityRecognitionController {
   private let activityManager = CMMotionActivityManager()
-  private let formatter = ISO8601DateFormatter()
   private let queue: OperationQueue = {
     let operationQueue = OperationQueue()
     operationQueue.name = "ZentraActivityRecognitionQueue"
+    operationQueue.maxConcurrentOperationCount = 1
     return operationQueue
   }()
 
-  private var lastActivityType: String?
+  private let state = DispatchQueue(label: "ZentraActivityState")
+  private var previous: IOSActivitySample?
+  private var generation = 0
+  private let history = IOSActivityHistoryReader()
   private let emitTransition: ([String: Any]) -> Void
 
   init(emitTransition: @escaping ([String: Any]) -> Void) {
@@ -55,102 +58,44 @@ final class IOSActivityRecognitionController {
       return false
     }
 
-    activityManager.startActivityUpdates(to: queue) { activity in
-      self.handle(activity)
+    let expected = state.sync { () -> Int in
+      generation += 1
+      previous = nil
+      return generation
     }
-
+    activityManager.startActivityUpdates(to: queue) { activity in
+      guard let activity else { return }
+      self.state.async { self.handle(IOSActivitySample(activity), expected: expected) }
+    }
     return true
   }
 
   func stopUpdates() {
     activityManager.stopActivityUpdates()
-    lastActivityType = nil
+    state.sync { generation += 1; previous = nil }
+    history.cancel()
   }
 
-  private func handle(_ activity: CMMotionActivity?) {
-    guard let activity, let nextActivityType = dominantActivityType(for: activity) else {
-      return
+  func cancelHistory() { history.cancel() }
+
+  func readHistory(start: String, end: String, cursor: String?, limit: Int,
+                   completion: @escaping (Result<[String: Any], Error>) -> Void) {
+    guard getPermissionStatus() == "granted" else {
+      completion(.failure(IOSActivityHistoryPage.error("Motion permission not granted"))); return
     }
+    history.read(start: start, end: end, cursor: cursor, limit: limit, completion: completion)
+  }
 
-    let timestamp = formatter.string(from: activity.startDate)
-    let confidence = confidenceValue(for: activity.confidence)
-
-    if let previousActivityType = lastActivityType, previousActivityType != nextActivityType {
+  private func handle(_ sample: IOSActivitySample, expected: Int) {
+    guard generation == expected else { return }
+    let transitions = IOSActivityTransitionHelpers.transitions(previous: previous, next: sample, at: sample.start)
+    if IOSActivityTransitionHelpers.changed(previous, sample) { previous = sample }
+    for transition in transitions {
+      let payload = transition.payload(delivery: "live")
       DispatchQueue.main.async {
-        self.emitTransition([
-          "id": self.transitionId(
-            activityType: previousActivityType,
-            transitionType: "exit",
-            timestamp: timestamp
-          ),
-          "activityType": previousActivityType,
-          "transitionType": "exit",
-          "confidence": confidence,
-          "timestamp": timestamp,
-        ])
+        guard self.state.sync(execute: { self.generation == expected }) else { return }
+        self.emitTransition(payload)
       }
     }
-
-    if lastActivityType != nextActivityType {
-      DispatchQueue.main.async {
-        self.emitTransition([
-          "id": self.transitionId(
-            activityType: nextActivityType,
-            transitionType: "enter",
-            timestamp: timestamp
-          ),
-          "activityType": nextActivityType,
-          "transitionType": "enter",
-          "confidence": confidence,
-          "timestamp": timestamp,
-        ])
-      }
-      lastActivityType = nextActivityType
-    }
-  }
-
-  private func dominantActivityType(for activity: CMMotionActivity) -> String? {
-    if activity.walking {
-      return "walking"
-    }
-
-    if activity.running {
-      return "running"
-    }
-
-    if activity.cycling {
-      return "on_bicycle"
-    }
-
-    if activity.automotive {
-      return "in_vehicle"
-    }
-
-    if activity.stationary {
-      return "still"
-    }
-
-    return nil
-  }
-
-  private func confidenceValue(for confidence: CMMotionActivityConfidence) -> Double {
-    switch confidence {
-    case .low:
-      return 0.35
-    case .medium:
-      return 0.65
-    case .high:
-      return 0.95
-    @unknown default:
-      return 0.5
-    }
-  }
-
-  private func transitionId(
-    activityType: String,
-    transitionType: String,
-    timestamp: String
-  ) -> String {
-    return ["activity", activityType, transitionType, timestamp].joined(separator: "-")
   }
 }

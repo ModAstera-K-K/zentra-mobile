@@ -1,3 +1,8 @@
+import { activityHistoryGeneration } from "@/utils/activity-history-session";
+import type { ActivityHistoryState } from "@/types/activity-history";
+import { getActivityHistoryState } from "@/utils/activity-history-repository";
+import { syncActivityHistory } from "@/utils/activity-history-runner";
+import { useAppStore } from "@/stores/app-store";
 import { stableEvents } from "@/utils/event-identity";
 import { getRepositoryRevision } from "@/utils/event-repository";
 import { Platform } from "react-native";
@@ -53,6 +58,7 @@ let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
 
 interface DrainBufferedActivityOptions {
+  budgetMs?: number;
   batchSize?: number;
   maxBatches?: number;
 }
@@ -67,6 +73,7 @@ interface ReconcileCompletionMeta {
 }
 
 interface RepositoryStoreState {
+  activityHistory: ActivityHistoryState | null;
   backgroundCollectionServiceCheckedAt: string | null;
   backgroundCollectionServiceState: string | null;
   backgroundTaskRegistrationCheckedAt: string | null;
@@ -161,6 +168,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   backgroundTaskRegistrationCheckedAt: null,
   backgroundTaskRegistrationMessage: null,
   backgroundTaskRegistrationStatus: null,
+  activityHistory: null,
   bufferedActivityQueueDepth: 0,
   isHydrated: false,
   lastBufferedActivityCursor: null,
@@ -198,6 +206,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     await initializeEventRepository();
     const persistedMeta = await loadPersistedRepositoryMeta();
+    const activityHistory =
+      Platform.OS === "ios" ? await getActivityHistoryState() : null;
     const bufferedActivityQueueDepth =
       await getBufferedActivityTransitionCountAsync();
     const dataRevision = await getRepositoryRevision();
@@ -232,6 +242,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       backgroundTaskRegistrationStatus:
         persistedMeta?.backgroundTaskRegistrationStatus ?? null,
       isHydrated: true,
+      activityHistory,
       bufferedActivityQueueDepth,
       lastBufferedActivityCursor:
         persistedMeta?.lastBufferedActivityCursor ?? null,
@@ -421,6 +432,20 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   },
 
   drainBufferedActivityTransitions: async (options) => {
+    if (Platform.OS === "ios") {
+      const generation = activityHistoryGeneration();
+      return syncActivityHistory({
+        maxPages: options?.maxBatches,
+        budgetMs: options?.budgetMs,
+        isEnabled: () => useAppStore.getState().collectors.activity.enabled,
+        refresh: async () => {
+          const activityHistory = await getActivityHistoryState();
+          if (generation !== activityHistoryGeneration()) return;
+          set({ activityHistory });
+          await get().refreshTodayData();
+        },
+      });
+    }
     const batchSize = options?.batchSize ?? 250;
     const maxBatches = options?.maxBatches ?? Number.POSITIVE_INFINITY;
     let cursor = get().lastBufferedActivityCursor;
@@ -570,6 +595,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       backgroundTaskRegistrationCheckedAt: null,
       backgroundTaskRegistrationMessage: null,
       backgroundTaskRegistrationStatus: null,
+      activityHistory: null,
       bufferedActivityQueueDepth: 0,
       isHydrated: true,
       lastBufferedActivityCursor: null,

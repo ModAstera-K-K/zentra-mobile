@@ -1,3 +1,5 @@
+import { prepareActivityEvidence } from "@/utils/activity-evidence";
+import { activityStream, activityTransitionKey } from "@/utils/activity-stream";
 import type {
   ActiveInterval,
   ActiveMinutesSummary,
@@ -25,36 +27,30 @@ export function* resolveActiveMinutesWork(
 ): Generator<void, ActiveMinutesSummary> {
   const start = parseISODate(date).getTime(),
     end = parseISODate(shiftISODate(date, 1)).getTime();
-  const events = input
-    .filter(
-      (e) =>
-        ["activity", "exercise_session", "steps", "motion_context"].includes(
-          e.dataType,
-        ) &&
-        e.metadata.stale_import !== true &&
-        Date.parse(e.timestampStart) < end,
-    )
-    .sort(
-      (a, b) =>
-        a.timestampStart.localeCompare(b.timestampStart) ||
-        (a.metadata.transition === "exit"
-          ? -1
-          : b.metadata.transition === "exit"
-            ? 1
-            : a.id.localeCompare(b.id)),
-    );
+  const events = yield* prepareActivityEvidence(
+    input,
+    end,
+    parseISODate(shiftISODate(date, 2)).getTime(),
+  );
   const reasons = new Set<string>([
     "Timing coverage is limited; this is not your complete day.",
   ]);
   const intervals: ActiveInterval[] = [];
   const opened = new Map<string, ZentraEventRecord>();
+  const seenTransitions = new Set<string>();
   for (const event of events) {
     const time = Date.parse(event.timestampStart),
       finish = Date.parse(event.timestampEnd);
     intervals.push(...workoutIntervals(event));
     if (event.dataType === "activity") {
+      const identity = activityTransitionKey(event);
+      if (seenTransitions.has(identity)) {
+        yield;
+        continue;
+      }
+      seenTransitions.add(identity);
       const kind = physicalKind(event.valueText);
-      const key = `${event.source}:${event.valueText}`;
+      const key = `${activityStream(event)}:${event.valueText}`;
       if (event.metadata.transition === "enter" && kind) {
         if (!opened.has(key)) opened.set(key, event);
       } else if (event.metadata.transition === "exit" && kind) {
@@ -77,7 +73,7 @@ export function* resolveActiveMinutesWork(
         opened.delete(key);
       } else if (event.metadata.transition === "enter" && !kind) {
         for (const [openKey, first] of opened) {
-          if (first.source !== event.source) continue;
+          if (activityStream(first) !== activityStream(event)) continue;
           if (Number(first.metadata.confidence ?? first.confidence) >= 0.65)
             intervals.push(
               activityInterval(
@@ -201,12 +197,11 @@ export function* resolveActiveMinutesWork(
     recordIds,
     updatedAt: events
       .filter((e) => ids.has(e.id))
-      .reduce<string | null>(
-        (latest, e) => (!latest || e.createdAt > latest ? e.createdAt : latest),
-        null,
-      ),
+      .reduce<
+        string | null
+      >((latest, e) => (!latest || e.createdAt > latest ? e.createdAt : latest), null),
     revision,
-    calculationVersion: 2,
+    calculationVersion: 3,
     walkingEquivalent: null,
     walkingBouts,
   };

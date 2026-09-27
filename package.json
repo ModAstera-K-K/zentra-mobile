@@ -27,7 +27,8 @@
     "typecheck": "tsc --noEmit",
     "check:no-network": "node ./scripts/check-no-network.mjs",
     "check:privacy": "node ./scripts/check-no-network.mjs",
-    "test": "node --import ./tests/register.mjs --test tests/*.test.ts"
+    "test": "node --import ./tests/register.mjs --test tests/*.test.ts",
+    "test:ios-activity": "node ./scripts/test-ios-activity-history.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",

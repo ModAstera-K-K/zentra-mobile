@@ -2,6 +2,10 @@
 
 Implementation date: 2026-09-27. Local changes; not installed or deployed.
 
+The [iOS activity recovery follow-up](ios-activity-parity.md) records PR #10's
+version-4 migration, stream reconciliation, current tests and remaining device
+checks on top of this foundation. Historical evidence below is retained.
+
 ## Behavior
 
 - SQLite schema v2 records committed event revisions, affected local dates and signal types. Inserts, corrections and deletions invalidate derived data, including changes that preserve event count and final ID. Range screens check their own revisions before loading again.
