@@ -17,7 +17,9 @@ import { getAppUsageUnsupportedMessage } from "@/utils/platform-capabilities";
 
 function getSyncWindowStart(lastSyncedAt: string | null): string {
   if (lastSyncedAt) {
-    return new Date(new Date(lastSyncedAt).getTime() - 60_000).toISOString();
+    const start = new Date(lastSyncedAt);
+    start.setHours(0, 0, 0, 0);
+    return start.toISOString();
   }
 
   const start = new Date();
@@ -55,13 +57,24 @@ export async function syncAppUsageCollector(
   }
 
   const endIso = new Date().toISOString();
-  const usageEvents = await readUsageEventsAsync(
-    getSyncWindowStart(lastSyncedAt),
-    endIso,
-  );
+  const startIso = getSyncWindowStart(lastSyncedAt);
+  const usageEvents = await readUsageEventsAsync(startIso, endIso);
   const { appUsageEvents, deviceStateEvents } =
     createUsageDerivedEvents(usageEvents);
 
+  appUsageEvents.push({
+    id: `usage-coverage-${startIso}-${endIso}`,
+    timestampStart: startIso,
+    timestampEnd: endIso,
+    dataType: "app_usage",
+    source: "usage_stats",
+    valueNumeric: 0,
+    unit: "seconds",
+    confidence: 1,
+    metadata: { coverage_window: true },
+    schemaVersion: 1,
+    createdAt: endIso,
+  });
   if (appUsageEvents.length) {
     await appendEventsForCollector(
       "appUsage",

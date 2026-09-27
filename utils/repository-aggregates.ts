@@ -1,3 +1,9 @@
+import type { ActiveMinutesSummary } from "@/types/active-minutes";
+import { resolveActiveMinutes } from "@/utils/active-minutes";
+import {
+  resolveStepTotal,
+  resolvedSleepMinutes,
+} from "@/utils/source-resolution";
 import type {
   DailyAggregateRecord,
   LocationSample,
@@ -56,144 +62,12 @@ export function computeCumulativeSteps(events: ZentraEventRecord[]): number {
   return total;
 }
 
-/**
- * Compute active minutes from paired enter/exit activity transitions.
- * Falls back to counting non-still events as 1 minute each if no
- * transition metadata is present (e.g. demo data with timestampStart/End).
- */
-export function computeActiveMinutes(events: ZentraEventRecord[]): number {
-  const activityEvents = events
-    .filter((event) => event.dataType === "activity")
-    .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
-    );
-
-  if (activityEvents.length) {
-    // Check if events use transition metadata (live data)
-    const hasTransitions = activityEvents.some(
-      (event) =>
-        event.metadata.transition === "enter" ||
-        event.metadata.transition === "exit",
-    );
-
-    if (hasTransitions) {
-      return computeActiveMinutesFromTransitions(activityEvents);
-    }
-
-    // Fall back to duration from timestampStart/End for non-transition events (demo data)
-    return computeActiveMinutesFromDurations(activityEvents);
-  }
-
-  // When the Activity Transition API delivers no events, estimate active
-  // minutes from motion_context classifications (accelerometer/gyroscope)
-  // or from step cadence as a last resort.
-  const motionMinutes = computeActiveMinutesFromMotionContext(events);
-  if (motionMinutes > 0) {
-    return motionMinutes;
-  }
-
-  return computeActiveMinutesFromStepCadence(events);
-}
-
-function computeActiveMinutesFromTransitions(
+/** Compatibility entry point; the shared resolver owns all activity calculations. */
+export function computeActiveMinutes(
   events: ZentraEventRecord[],
+  date = toISODate(new Date()),
 ): number {
-  let totalMs = 0;
-  let activeStart: string | null = null;
-
-  for (const event of events) {
-    const isStill = event.valueText === "still";
-    const transition = event.metadata.transition;
-
-    if (transition === "enter" && !isStill) {
-      activeStart = event.timestampStart;
-    } else if (
-      (transition === "exit" && !isStill && activeStart) ||
-      (transition === "enter" && isStill && activeStart)
-    ) {
-      const startMs = new Date(activeStart).getTime();
-      const endMs = new Date(event.timestampStart).getTime();
-      totalMs += Math.max(0, endMs - startMs);
-      activeStart = null;
-    }
-  }
-
-  // If still in an active state at the end, count up to now (capped at 60 min)
-  if (activeStart) {
-    const startMs = new Date(activeStart).getTime();
-    const elapsed = Math.max(0, Date.now() - startMs);
-    totalMs += Math.min(elapsed, 60 * 60_000);
-  }
-
-  return Math.round(totalMs / 60_000);
-}
-
-function computeActiveMinutesFromDurations(
-  events: ZentraEventRecord[],
-): number {
-  let totalMs = 0;
-
-  for (const event of events) {
-    if (event.valueText === "still") {
-      continue;
-    }
-    const startMs = new Date(event.timestampStart).getTime();
-    const endMs = new Date(event.timestampEnd).getTime();
-    const durationMs = Math.max(0, endMs - startMs);
-    totalMs += durationMs > 0 ? durationMs : 60_000; // default 1 minute if point-in-time
-  }
-
-  return Math.round(totalMs / 60_000);
-}
-
-/** Each non-sedentary motion_context window (~60 s) counts as 1 active minute. */
-function computeActiveMinutesFromMotionContext(
-  events: ZentraEventRecord[],
-): number {
-  const MOTION_WINDOW_MINUTES = 1;
-  return (
-    events.filter(
-      (event) =>
-        event.dataType === "motion_context" && event.valueText !== "sedentary",
-    ).length * MOTION_WINDOW_MINUTES
-  );
-}
-
-/**
- * Estimate active minutes from step cadence: group step events into
- * 1-minute bins and count bins where at least one step delta > 0.
- */
-function computeActiveMinutesFromStepCadence(
-  events: ZentraEventRecord[],
-): number {
-  const stepEvents = events
-    .filter(
-      (event) =>
-        event.dataType === "steps" &&
-        event.source === "sensor" &&
-        typeof event.valueNumeric === "number",
-    )
-    .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
-    );
-
-  if (stepEvents.length < 2) {
-    return 0;
-  }
-
-  const activeBins = new Set<number>();
-  for (let i = 1; i < stepEvents.length; i++) {
-    const current = Math.round(stepEvents[i].valueNumeric ?? 0);
-    const previous = Math.round(stepEvents[i - 1].valueNumeric ?? 0);
-    if (current > previous) {
-      const minuteBin = Math.floor(
-        new Date(stepEvents[i].timestampStart).getTime() / 60_000,
-      );
-      activeBins.add(minuteBin);
-    }
-  }
-
-  return activeBins.size;
+  return resolveActiveMinutes(date, events).supportedMinutes ?? 0;
 }
 
 function toRadians(value: number): number {
@@ -309,6 +183,7 @@ function getScreenTimeSecondsWithinDate(
   event: ZentraEventRecord,
   date: string,
 ): number {
+  if (event.metadata.coverage_window === true) return 0;
   if (
     event.dataType !== "app_usage" ||
     typeof event.valueNumeric !== "number"
@@ -340,23 +215,18 @@ function getScreenTimeSecondsWithinDate(
 export function buildDailyAggregateRecord(
   date: string,
   events: ZentraEventRecord[],
+  activeSummary?: ActiveMinutesSummary,
 ): DailyAggregateRecord {
+  events = events.filter((event) => event.metadata.stale_import !== true);
   const locationSamples = extractLocationSamples(events);
-  const sleepEvent = events
-    .filter(
-      (event) =>
-        event.dataType === "sleep_inferred" &&
-        typeof event.valueNumeric === "number",
-    )
-    .sort((left, right) =>
-      right.timestampStart.localeCompare(left.timestampStart),
-    )[0];
-  const stepsTotal = computeCumulativeSteps(events);
+  const stepsTotal = resolveStepTotal(events) ?? 0;
+  const resolvedActivity = activeSummary ?? resolveActiveMinutes(date, events);
 
   return {
     date,
     stepsTotal,
-    activeMinutes: computeActiveMinutes(events),
+    activeMinutes: resolvedActivity.supportedMinutes ?? 0,
+    activeSummary: resolvedActivity,
     distanceMeters: calculateDistanceTravelled(locationSamples),
     screenTimeSeconds: events.reduce(
       (total, event) => total + getScreenTimeSecondsWithinDate(event, date),
@@ -364,9 +234,7 @@ export function buildDailyAggregateRecord(
     ),
     unlockCount: events.filter((event) => event.dataType === "unlock_event")
       .length,
-    sleepEstimateMinutes: sleepEvent?.valueNumeric
-      ? Math.round(sleepEvent.valueNumeric)
-      : null,
+    sleepEstimateMinutes: resolvedSleepMinutes(events, date),
     mobilityRadiusMeters: calculateMobilityRadius(locationSamples),
     topActivity: countTopActivity(events),
     dataCompleteness: calculateCompleteness(events),
@@ -377,6 +245,7 @@ export function buildDailyAggregateRecord(
 export function buildTodaySnapshot(
   events: ZentraEventRecord[],
 ): TodayLiveSnapshot {
+  events = events.filter((event) => event.metadata.stale_import !== true);
   const stepEvents = events
     .filter(
       (event) =>
@@ -403,7 +272,7 @@ export function buildTodaySnapshot(
   const locationSamples = extractLocationSamples(events);
 
   return {
-    stepCount: stepEvents[0]?.valueNumeric ?? null,
+    stepCount: resolveStepTotal(events),
     stepLastUpdatedAt: stepEvents[0]?.timestampStart ?? null,
     batteryLevel: latestBatteryLevelEvent?.valueNumeric ?? null,
     batteryStateLabel: latestBatteryStateEvent?.valueText ?? null,

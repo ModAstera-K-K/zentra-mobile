@@ -57,6 +57,8 @@ export function formatCollectorPermissionStatusLabel(
   collector: CollectorState,
 ): string {
   switch (collector.permissionStatus) {
+    case "unknown":
+      return "Read access is private";
     case "granted":
       return "Allowed";
     case "derived":

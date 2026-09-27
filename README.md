@@ -150,7 +150,11 @@ npm run typecheck
 npm run check:no-network   # CI-enforced: fails if any network path is detected
 ```
 
-There is currently no automated `npm test` script in this repository.
+Run `npm test` with Node 22.15+ for the local TypeScript/SQLite regression suite. It covers source resolution, weekday comparisons, cursor checkpoints, correction/deletion revisions, missing data, DST and cooperative timeline work. No device or network is needed for these tests.
+
+New health import and insight controls are local build flags: set `EXPO_PUBLIC_PERSONAL_INSIGHTS=0` or `EXPO_PUBLIC_EXTENDED_HISTORY=0` to hide their UI. Correctness and navigation fixes remain active. `EXPO_PUBLIC_LOCAL_PERF=1` enables local console timing (no remote telemetry). Rebuild native binaries to use paginated Health Connect/HealthKit imports; an older development client cannot expose the new bridge methods.
+
+See [phone-data and responsiveness validation](docs/phone-data-validation.md) for scope, release checks, and unresolved device validation.
 
 For signed Android APK releases and GitHub Releases publishing, see [`docs/android-release.md`](docs/android-release.md).
 

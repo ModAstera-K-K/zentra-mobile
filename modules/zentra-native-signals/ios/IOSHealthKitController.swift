@@ -2,7 +2,7 @@ import Foundation
 import HealthKit
 
 final class IOSHealthKitController {
-  private let healthStore = HKHealthStore()
+  let healthStore = HKHealthStore()
   private let formatter: ISO8601DateFormatter = {
     let isoFormatter = ISO8601DateFormatter()
     isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -20,9 +20,8 @@ final class IOSHealthKitController {
       return []
     }
 
-    return requiredPermissions().compactMap { permission in
-      healthStore.authorizationStatus(for: permission.type) == .sharingAuthorized ? permission.key : nil
-    }
+    // HealthKit does not expose read grants; write authorization cannot answer this.
+    return []
   }
 
   func requestPermissions(resolve: @escaping ([String]) -> Void) {
@@ -154,15 +153,15 @@ final class IOSHealthKitController {
     return permissions
   }
 
-  private func parseISODate(_ value: String) -> Date? {
+  func parseISODate(_ value: String) -> Date? {
     formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
   }
 
-  private func formatISODate(_ value: Date) -> String {
+  func formatISODate(_ value: Date) -> String {
     formatter.string(from: value)
   }
 
-  private func serializeStepSample(_ sample: HKQuantitySample) -> [String: Any?] {
+  func serializeStepSample(_ sample: HKQuantitySample) -> [String: Any?] {
     [
       "id": sample.uuid.uuidString,
       "recordType": "steps",
@@ -172,11 +171,11 @@ final class IOSHealthKitController {
       "valueText": nil,
       "valueJson": nil,
       "unit": "count",
-      "metadata": [:],
+      "metadata": ["source_app": sample.sourceRevision.source.bundleIdentifier, "source_device": sample.device?.name ?? "", "source_name": sample.sourceRevision.source.name],
     ]
   }
 
-  private func serializeSleepSample(_ sample: HKCategorySample) -> [String: Any?]? {
+  func serializeSleepSample(_ sample: HKCategorySample) -> [String: Any?]? {
     let asleepValues = supportedSleepStageValues()
 
     guard asleepValues.contains(sample.value) else {
@@ -196,11 +195,13 @@ final class IOSHealthKitController {
       "unit": "minutes",
       "metadata": [
         "sleep_stage": sleepStageLabel(for: sample.value),
+        "source_app": sample.sourceRevision.source.bundleIdentifier, "source_device": sample.device?.name ?? "",
+        "source_name": sample.sourceRevision.source.name,
       ],
     ]
   }
 
-  private func serializeHeartRateSample(_ sample: HKQuantitySample) -> [String: Any?] {
+  func serializeHeartRateSample(_ sample: HKQuantitySample) -> [String: Any?] {
     [
       "id": sample.uuid.uuidString,
       "recordType": "heart_rate",
@@ -210,12 +211,14 @@ final class IOSHealthKitController {
       "valueText": nil,
       "valueJson": nil,
       "unit": "bpm",
-      "metadata": [:],
+      "metadata": ["source_app": sample.sourceRevision.source.bundleIdentifier, "source_device": sample.device?.name ?? "", "source_name": sample.sourceRevision.source.name],
     ]
   }
 
-  private func serializeWorkout(_ workout: HKWorkout) -> [String: Any?] {
-    [
+  func serializeWorkout(_ workout: HKWorkout) -> [String: Any?] {
+    var metadata: [String: Any] = ["source_app": workout.sourceRevision.source.bundleIdentifier, "source_device": workout.device?.name ?? "", "source_name": workout.sourceRevision.source.name]
+    if let intervals = workoutActiveIntervals(workout, format: formatISODate) { metadata["active_intervals"] = intervals }
+    return [
       "id": workout.uuid.uuidString,
       "recordType": "exercise_session",
       "startTime": formatISODate(workout.startDate),
@@ -224,7 +227,7 @@ final class IOSHealthKitController {
       "valueText": workoutActivityLabel(for: workout.workoutActivityType),
       "valueJson": nil,
       "unit": "seconds",
-      "metadata": [:],
+      "metadata": metadata,
     ]
   }
 
@@ -278,8 +281,12 @@ final class IOSHealthKitController {
       return "hiit"
     case .yoga:
       return "yoga"
+    case .mindAndBody:
+      return "meditation"
+    case .other:
+      return "unknown"
     default:
-      return "other"
+      return "workout"
     }
   }
 }

@@ -30,9 +30,12 @@ export function Button({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(props.disabled) }}
       style={({ pressed }) => [
         styles.base,
         variantStyles.container,
+        props.disabled && styles.disabled,
         pressed && styles.pressed,
         style,
       ]}
@@ -101,7 +104,7 @@ function getVariantStyles(variant: ButtonVariant, palette: AppPalette): {
 const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
-    borderRadius: BorderRadius.pill,
+    borderRadius: BorderRadius.md,
     flexDirection: 'row',
     gap: Spacing.sm,
     justifyContent: 'center',
@@ -116,6 +119,6 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.88,
-    transform: [{ scale: 0.98 }],
   },
+  disabled: { opacity: 0.5 },
 });

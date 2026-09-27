@@ -20,7 +20,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { TrendSeries } from "@/types/zentra";
 import {
   buildChartCoordinates,
-  buildPolylinePoints,
+  buildPolylineSegments,
   pickAxisLabelIndices,
 } from "@/utils/charts";
 
@@ -47,7 +47,8 @@ function getSeriesColor(series: TrendSeries, palette: AppPalette): string {
   }
 }
 
-function getChangeLabel(change: number): string {
+function getChangeLabel(change: number | null): string {
+  if (change === null) return "Not comparable";
   if (change > 0) return `↑${change}%`;
   if (change < 0) return `↓${Math.abs(change)}%`;
   return "0%";
@@ -81,7 +82,7 @@ export const TrendChartCard = React.memo(function TrendChartCard({
     [series.points, innerWidth, innerHeight],
   );
   const polyline = React.useMemo(
-    () => buildPolylinePoints(coordinates),
+    () => buildPolylineSegments(coordinates),
     [coordinates],
   );
   const axisLabelIndices = React.useMemo(
@@ -120,13 +121,13 @@ export const TrendChartCard = React.memo(function TrendChartCard({
   }
 
   return (
-    <Card>
+    <Card variant="open">
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         {series.label}
       </Text>
       <View style={styles.metaRow}>
         <Text style={[styles.metric, { color: stroke }]}>
-          {selectedPoint?.value ?? series.points.at(-1)?.value ?? 0}
+          {selectedPoint?.value ?? "—"}
           <Text style={[styles.unit, { color: palette.textSecondary }]}>
             {" "}
             {series.unit}
@@ -168,7 +169,7 @@ export const TrendChartCard = React.memo(function TrendChartCard({
               />
             ),
           )}
-          {selectedCoordinate ? (
+          {selectedCoordinate && Number.isFinite(selectedCoordinate.y) ? (
             <Line
               stroke={palette.textSecondary}
               strokeDasharray="3 6"
@@ -179,15 +180,19 @@ export const TrendChartCard = React.memo(function TrendChartCard({
               y2={chartHeight - CHART_INSET_Y}
             />
           ) : null}
-          <Polyline
-            fill="none"
-            points={polyline}
-            stroke={stroke}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-          />
+          {polyline.map((points, index) => (
+            <Polyline
+              key={index}
+              fill="none"
+              points={points}
+              stroke={stroke}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+            />
+          ))}
           {coordinates.map((coordinate, index) => {
+            if (!Number.isFinite(coordinate.y)) return null;
             const isSelected =
               index ===
               Math.max(0, Math.min(selectedIndex, coordinates.length - 1));
@@ -213,7 +218,7 @@ export const TrendChartCard = React.memo(function TrendChartCard({
               <SvgText
                 key={`x-label-${labelIndex}`}
                 fill={palette.mutedForeground}
-                fontFamily="JetBrainsMonoRegular"
+                fontFamily={Fonts.body}
                 fontSize={9}
                 textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
                 x={coord.x}
@@ -226,10 +231,15 @@ export const TrendChartCard = React.memo(function TrendChartCard({
         </Svg>
       </View>
       <View style={styles.submetaRow}>
-        <Text style={[styles.submeta, { color: palette.textSecondary }]}>
-          {getChangeLabel(series.change)} change
-        </Text>
+        {series.change !== null && (
+          <Text style={[styles.submeta, { color: palette.textSecondary }]}>
+            {getChangeLabel(series.change)} between endpoints
+          </Text>
+        )}
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${expanded ? "Compact" : "Expand"} ${series.label} chart`}
+          accessibilityState={{ expanded }}
           onPress={() => setExpanded((current) => !current)}
           style={styles.expandToggle}
         >
@@ -259,11 +269,10 @@ export const TrendChartCard = React.memo(function TrendChartCard({
 
 const styles = StyleSheet.create({
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   metaRow: {
     alignItems: "flex-end",
@@ -272,24 +281,22 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   metric: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes["2xl"],
   },
   unit: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
   },
   change: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   submeta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   submetaRow: {
     flexDirection: "row",
@@ -304,13 +311,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   expandToggle: {
+    minHeight: 48,
+    justifyContent: "center",
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
   },
   sourceLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
 });

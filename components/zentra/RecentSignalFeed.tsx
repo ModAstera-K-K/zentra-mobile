@@ -49,7 +49,7 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
   }, [rows.length]);
 
   return (
-    <Card>
+    <Card variant="open">
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         Recent signals
       </Text>
@@ -68,12 +68,15 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
             return (
               <Pressable
                 key={row.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${row.title}, ${row.value}, ${row.timestampLabel}`}
+                accessibilityHint="Opens the supporting record"
                 onPress={() => onSelectRow(row)}
                 style={({ pressed }) => [
                   styles.row,
                   {
                     borderTopColor:
-                      index === 0 ? "transparent" : palette.border,
+                      index === 0 ? "transparent" : palette.divider,
                   },
                   pressed && styles.rowPressed,
                 ]}
@@ -125,6 +128,7 @@ export const RecentSignalFeed = React.memo(function RecentSignalFeed({
                   >
                     {row.value}
                   </Text>
+                  <Ionicons accessible={false} name="chevron-forward" color={palette.textSecondary} size={16} />
                 </View>
               </Pressable>
             );
@@ -174,11 +178,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   row: {
     borderTopWidth: 1,
@@ -201,11 +204,10 @@ const styles = StyleSheet.create({
   },
   source: {
     flexShrink: 1,
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
+    letterSpacing: 0,
     textAlign: "right",
-    textTransform: "uppercase",
   },
   sourceRow: {
     alignItems: "center",
@@ -216,10 +218,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   timestamp: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   title: {
     fontFamily: Fonts.bodyMedium,
@@ -233,12 +234,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   value: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.sm,
     maxWidth: "34%",
     textAlign: "right",
   },
   viewMoreButton: {
+    minHeight: 48,
+    justifyContent: "center",
     alignSelf: "flex-start",
     marginTop: Spacing.xs,
     paddingVertical: Spacing.xs,
@@ -247,9 +250,8 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   viewMoreText: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.sm,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
 });

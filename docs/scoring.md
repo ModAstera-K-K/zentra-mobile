@@ -125,9 +125,8 @@ clusters toward lower values.
 
 ### No-data buckets
 
-Buckets where `hasAnyData` is `false` (no events recorded) are treated as full
-rest: `intensityScore = 0`, `restCompositeScore = 100`. The absence of any
-device activity is the strongest rest signal available.
+Buckets where `hasAnyData` is `false` (no events recorded) are treated as
+missing: internal score fields remain zero, while charts render a gap using `hasAnyData = false`. Absence of observations is not evidence of rest or sleep.
 
 ### Final scaling
 

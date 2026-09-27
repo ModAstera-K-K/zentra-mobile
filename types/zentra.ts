@@ -13,6 +13,7 @@ export type CollectorKey =
   | "motionContext";
 
 export type PermissionStatus =
+  | "unknown"
   | "granted"
   | "not_requested"
   | "blocked"
@@ -104,7 +105,7 @@ export interface SleepEstimate {
 
 export interface TrendPoint {
   label: string;
-  value: number;
+  value: number | null;
 }
 
 export interface TrendDetailChartPoint {
@@ -148,7 +149,7 @@ export interface TrendSeries {
   unit: string;
   tone: MetricTone;
   points: TrendPoint[];
-  change: number;
+  change: number | null;
   variability: number;
   group?: TrendSeriesGroupKey;
   coverageLabel?: string;
@@ -156,11 +157,7 @@ export interface TrendSeries {
 }
 
 export type TrendSeriesGroupKey =
-  | "body"
-  | "device"
-  | "health"
-  | "environment"
-  | "quality";
+  "body" | "device" | "health" | "environment" | "quality";
 
 export interface TrendSeriesGroup {
   key: TrendSeriesGroupKey;
@@ -283,6 +280,7 @@ export interface DailyAggregateRecord {
   date: string;
   stepsTotal: number;
   activeMinutes: number;
+  activeSummary?: import("./active-minutes").ActiveMinutesSummary;
   distanceMeters: number;
   screenTimeSeconds: number;
   unlockCount: number;

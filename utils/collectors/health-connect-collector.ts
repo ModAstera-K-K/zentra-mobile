@@ -1,7 +1,9 @@
-import { Platform } from "react-native";
+import { cancelHealthSync } from "@/utils/health-sync-session";
+import { syncHealthHistory } from "@/utils/health-sync-runner";
+import { getHealthSyncStates } from "@/utils/health-sync-repository";
+import { AppState, Platform } from "react-native";
 
 import {
-  appendEventsForCollector,
   ensureCollectorFailureState,
   logCollectorSuccess,
 } from "@/utils/event-repository";
@@ -9,28 +11,11 @@ import type {
   CollectorHandle,
   HealthConnectCollectorDeps,
 } from "@/utils/collectors/types";
-import { shiftISODate, toISODate } from "@/utils/dates";
-import { createHealthConnectEvents } from "@/utils/live-event-builders";
-import {
-  getGrantedHealthConnectPermissionsAsync,
-  getHealthConnectAvailabilityAsync,
-  hasRequiredHealthConnectPermissions,
-  readHealthConnectRecordsAsync,
-} from "@/utils/native/zentra-native-signals";
+import { getHealthConnectAvailabilityAsync } from "@/utils/native/zentra-native-signals";
 import {
   getHealthPlatformName,
   getHealthUnsupportedMessage,
 } from "@/utils/platform-capabilities";
-
-function getHealthConnectWindow(): { startIso: string; endIso: string } {
-  const now = new Date();
-  const endIso = now.toISOString();
-  const startIso = new Date(
-    `${shiftISODate(toISODate(now), -30)}T00:00:00.000Z`,
-  ).toISOString();
-
-  return { startIso, endIso };
-}
 
 export async function syncHealthConnectCollector(
   deps: HealthConnectCollectorDeps,
@@ -57,51 +42,26 @@ export async function syncHealthConnectCollector(
     return;
   }
 
-  const grantedPermissions = await getGrantedHealthConnectPermissionsAsync();
-
-  if (!hasRequiredHealthConnectPermissions(grantedPermissions)) {
-    await ensureCollectorFailureState(
-      "healthConnect",
-      `${getHealthPlatformName()} permissions not granted`,
-    );
-    await deps.refreshRepository();
-    return;
-  }
-
-  const { startIso, endIso } = getHealthConnectWindow();
-
-  let records;
-  try {
-    records = await readHealthConnectRecordsAsync(startIso, endIso);
-  } catch (error) {
-    await ensureCollectorFailureState(
-      "healthConnect",
-      error instanceof Error
-        ? error.message
-        : `${getHealthPlatformName()} read failed — check permissions in ${getHealthPlatformName()}`,
-    );
-    await deps.refreshRepository();
-    return;
-  }
-
-  const events = createHealthConnectEvents(records);
-  await deps.noteSyncWindowEnd(endIso);
-
-  if (!events.length) {
+  await syncHealthHistory();
+  const states = await getHealthSyncStates();
+  const ready = states.filter((state) => state.status === "ready");
+  if (ready.length) {
+    await deps.noteSyncWindowEnd(new Date().toISOString());
     await logCollectorSuccess(
       "healthConnect",
-      `${getHealthPlatformName()} connected with no matching records yet`,
+      `${ready.length}/4 record types synced`,
       0,
     );
-    await deps.refreshRepository();
-    return;
+  } else if (
+    states.some(
+      (state) => state.status === "error" || state.status === "permission",
+    )
+  ) {
+    await ensureCollectorFailureState(
+      "healthConnect",
+      "Some records could not be read; see source status",
+    );
   }
-
-  await appendEventsForCollector(
-    "healthConnect",
-    events,
-    `${getHealthPlatformName()} sync stored ${events.length} event(s)`,
-  );
   await deps.refreshRepository();
 }
 
@@ -110,7 +70,19 @@ export async function startHealthConnectCollector(
 ): Promise<CollectorHandle> {
   await syncHealthConnectCollector(deps);
 
+  const timer = setInterval(() => {
+    if (AppState.currentState !== "active") return;
+    void getHealthSyncStates()
+      .then((states) => {
+        if (states.some((state) => state.status === "importing"))
+          return syncHealthConnectCollector(deps);
+      })
+      .catch(() => undefined);
+  }, 15000);
   return {
-    stop: () => undefined,
+    stop: () => {
+      clearInterval(timer);
+      cancelHealthSync();
+    },
   };
 }

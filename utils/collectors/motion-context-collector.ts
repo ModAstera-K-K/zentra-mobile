@@ -134,7 +134,15 @@ export async function startMotionContextCollector(
     void (async () => {
       await appendEventsForCollector(
         "motionContext",
-        [createMotionContextEvent(summary)],
+        [
+          createMotionContextEvent({
+            ...summary,
+            timestampStart: new Date(windowSamples[0].timestamp).toISOString(),
+            timestampEnd: new Date(
+              windowSamples[windowSamples.length - 1].timestamp,
+            ).toISOString(),
+          }),
+        ],
         `Motion context: ${summary.label}`,
       );
       await deps.refreshRepository();

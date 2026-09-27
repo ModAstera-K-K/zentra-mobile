@@ -1,3 +1,5 @@
+import { resolvedTimelineEvents } from "@/utils/source-resolution";
+import { runCooperatively } from "@/utils/cooperative-work";
 import type {
   ActivityPatternCell,
   ActivityPatternGranularity,
@@ -239,9 +241,13 @@ function buildSensorStepDeltaMap(
   sensorSteps.forEach((event) => {
     const currentCount = Math.max(0, Math.round(event.valueNumeric ?? 0));
     const delta =
-      previousCount === null
-        ? currentCount
-        : Math.max(0, currentCount - previousCount);
+      typeof event.metadata.step_delta === "number"
+        ? event.metadata.step_delta
+        : previousCount === null
+          ? currentCount
+          : currentCount < previousCount
+            ? currentCount
+            : currentCount - previousCount;
     deltas.set(event.id, delta);
     previousCount = currentCount;
   });
@@ -471,11 +477,31 @@ function finalizeBucket(bucket: UnifiedTimelineBucket): UnifiedTimelineBucket {
   };
 }
 
-function buildRawUnifiedTimeline(
+function* rawTimelineWork(
   events: ZentraEventRecord[],
   window: UnifiedTimelineWindow,
-): UnifiedTimelineBucket[] {
-  const buckets = enumerateBuckets(window);
+): Generator<void, UnifiedTimelineBucket[]> {
+  const buckets: UnifiedTimelineBucket[] = [];
+  const resolutionMinutes = getResolutionMinutes(window.resolution);
+  for (
+    let cursor = new Date(window.startTimestamp);
+    cursor < new Date(window.endTimestamp);
+    cursor = addMinutes(cursor, resolutionMinutes)
+  ) {
+    buckets.push(
+      createEmptyBucket(
+        cursor,
+        new Date(
+          Math.min(
+            addMinutes(cursor, resolutionMinutes).getTime(),
+            new Date(window.endTimestamp).getTime(),
+          ),
+        ),
+        window.resolution,
+      ),
+    );
+    yield;
+  }
 
   if (!buckets.length || !events.length) {
     return buckets;
@@ -484,9 +510,11 @@ function buildRawUnifiedTimeline(
   const resolutionMs = getResolutionMinutes(window.resolution) * 60_000;
   const windowStartMs = new Date(window.startTimestamp).getTime();
   const windowEndMs = new Date(window.endTimestamp).getTime();
+  events = resolvedTimelineEvents(events);
   const sensorStepDeltas = buildSensorStepDeltaMap(events);
 
-  events.forEach((event) => {
+  for (const event of events) {
+    if (event.metadata.coverage_window === true) continue;
     const eventStartMs = new Date(event.timestampStart).getTime();
     const eventEndMs =
       event.timestampEnd > event.timestampStart
@@ -494,7 +522,7 @@ function buildRawUnifiedTimeline(
         : eventStartMs;
 
     if (eventEndMs < windowStartMs || eventStartMs >= windowEndMs) {
-      return;
+      continue;
     }
 
     const firstBucket = Math.max(
@@ -510,10 +538,15 @@ function buildRawUnifiedTimeline(
 
     for (let i = firstBucket; i <= lastBucket; i++) {
       applyEventToBucket(buckets[i], event, sensorStepDeltas);
+      yield;
     }
-  });
+  }
 
-  return buckets.map(finalizeBucket);
+  for (let i = 0; i < buckets.length; i++) {
+    buckets[i] = finalizeBucket(buckets[i]);
+    yield;
+  }
+  return buckets;
 }
 
 function buildEventWindow(
@@ -888,6 +921,171 @@ export function buildYearlyActivityPattern(
         `${new Intl.DateTimeFormat("en-US", { month: "long" }).format(monthStart)} ${monthStart.getFullYear()} (${currentDate} to ${lastDate})`,
       ),
     );
+  }
+
+  return normalizePatternIntensity(cells);
+}
+
+function buildRawUnifiedTimeline(
+  events: ZentraEventRecord[],
+  window: UnifiedTimelineWindow,
+): UnifiedTimelineBucket[] {
+  const work = rawTimelineWork(events, window);
+  let next = work.next();
+  while (!next.done) next = work.next();
+  return next.value;
+}
+
+export async function buildUnifiedTimelineAsync(
+  events: ZentraEventRecord[],
+  window: UnifiedTimelineWindow,
+  signal?: AbortSignal,
+  maxima?: ActivityScoreMaxima,
+): Promise<UnifiedTimelineBucket[]> {
+  const buckets = await runCooperatively(
+    rawTimelineWork(events, window),
+    signal,
+  );
+  return runCooperatively(
+    scoreTimelineWork(buckets, maxima ?? buildActivityScoreMaxima(buckets)),
+    signal,
+  );
+}
+
+function* scoreTimelineWork(
+  buckets: UnifiedTimelineBucket[],
+  maxima: ActivityScoreMaxima,
+): Generator<void, UnifiedTimelineBucket[]> {
+  for (let i = 0; i < buckets.length; i++) {
+    buckets[i] = applyMaxima([buckets[i]], maxima)[0];
+    yield;
+  }
+  return buckets;
+}
+
+export async function buildNormalizationMaximaAsync(
+  events: ZentraEventRecord[],
+  signal?: AbortSignal,
+): Promise<ActivityScoreMaxima> {
+  const window = buildEventWindow(events, "hour");
+  const buckets = window
+    ? await runCooperatively(rawTimelineWork(events, window), signal)
+    : [];
+  return buildActivityScoreMaxima(buckets);
+}
+
+export async function buildMonthlyActivityPatternAsync(
+  events: ZentraEventRecord[],
+  anchorDate: string,
+  resolution: UnifiedTimelineResolution = "15min",
+  normalizationEvents: ZentraEventRecord[] = events,
+  precomputedMaxima?: ActivityScoreMaxima | null,
+  signal?: AbortSignal,
+): Promise<ActivityPatternCell[]> {
+  const anchor = parseISODate(anchorDate);
+  // Find the Monday of the current week
+  const anchorDay = anchor.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const mondayOffset = anchorDay === 0 ? 6 : anchorDay - 1; // days since Monday
+  const currentWeekMonday = shiftISODate(anchorDate, -mondayOffset);
+  // Start 3 weeks before that Monday = 4 weeks total
+  const gridStart = shiftISODate(currentWeekMonday, -21);
+
+  // Partition events by date once (O(events)) instead of scanning all events per day (O(28 × events))
+  const gridStartMs = parseISODate(gridStart).getTime();
+  const gridEndMs = parseISODate(shiftISODate(gridStart, 28)).getTime();
+  const gridLastDate = shiftISODate(gridStart, 27);
+  const eventsByDate = new Map<string, ZentraEventRecord[]>();
+
+  let processed = 0;
+  for (const event of events) {
+    if (signal?.aborted) throw new Error("Work cancelled");
+    if (++processed % 200 === 0)
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const startMs = new Date(event.timestampStart).getTime();
+    const endMs =
+      event.timestampEnd > event.timestampStart
+        ? new Date(event.timestampEnd).getTime()
+        : startMs;
+
+    if (endMs < gridStartMs || startMs >= gridEndMs) {
+      continue;
+    }
+
+    // Use local ISO date keys instead of fixed 24h ms offsets so DST days do not shift buckets.
+    const boundedEndMs = Math.min(endMs, gridEndMs - 1);
+    let dateKey = toISODate(new Date(Math.max(startMs, gridStartMs)));
+    const lastDateKey = toISODate(new Date(boundedEndMs));
+
+    if (dateKey < gridStart) {
+      dateKey = gridStart;
+    }
+
+    while (dateKey <= lastDateKey && dateKey <= gridLastDate) {
+      let bucket = eventsByDate.get(dateKey);
+      if (!bucket) {
+        bucket = [];
+        eventsByDate.set(dateKey, bucket);
+      }
+      bucket.push(event);
+      dateKey = shiftISODate(dateKey, 1);
+    }
+  }
+
+  const cells: Omit<ActivityPatternCell, "intensity">[] = [];
+  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+
+  for (let offset = 0; offset < 28; offset += 1) {
+    const currentDate = shiftISODate(gridStart, offset);
+    const current = parseISODate(currentDate);
+    const next = parseISODate(shiftISODate(currentDate, 1));
+    const isFuture = currentDate > anchorDate;
+
+    if (isFuture) {
+      cells.push({
+        detailLabel: "",
+        dominantKind: "rest",
+        endTimestamp: next.toISOString(),
+        granularity: "month",
+        hasAnyData: false,
+        id: `month-placeholder-${offset}`,
+        intensityScore: 0,
+        label: String(current.getDate()),
+        movementScore: 0,
+        placeholder: true,
+        restCompositeScore: 0,
+        restScore: 0,
+        screenScore: 0,
+        startTimestamp: current.toISOString(),
+      });
+    } else {
+      const dayEvents = eventsByDate.get(currentDate) ?? [];
+      const timeline = await buildUnifiedTimelineAsync(
+        dayEvents,
+        {
+          startTimestamp: current.toISOString(),
+          endTimestamp: next.toISOString(),
+          resolution,
+        },
+        signal,
+        precomputedMaxima ?? undefined,
+      );
+      const summary = summarizeTimeline(timeline);
+
+      cells.push({
+        ...createPatternCell(
+          "month",
+          current,
+          next,
+          summary,
+          String(current.getDate()),
+          dateFormatter.format(current),
+        ),
+        placeholder: false,
+      });
+    }
   }
 
   return normalizePatternIntensity(cells);

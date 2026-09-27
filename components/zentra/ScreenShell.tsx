@@ -56,7 +56,7 @@ export function ScreenShell({
           {subtitleAccessory ?? null}
         </View>
         <View style={styles.titleRow}>
-          <Text style={[styles.title, { color: palette.foreground }]}>
+          <Text accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>
             {title}
           </Text>
           {titleAccessory ?? null}
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chromeRow: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing["2xl"],
     position: "relative",
   },
   brandRow: {
@@ -160,6 +160,7 @@ const styles = StyleSheet.create({
   subtitleRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: Spacing.sm,
   },
   titleRow: {
@@ -169,19 +170,20 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   subtitle: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.6,
-    textTransform: "uppercase",
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    letterSpacing: 0,
   },
   title: {
     fontFamily: Fonts.display,
-    fontSize: FontSizes["3xl"],
-    lineHeight: 40,
+    fontSize: 42,
+    fontWeight: "300",
+    letterSpacing: -0.8,
+    lineHeight: 50,
   },
   settingsButton: {
-    minHeight: 42,
-    minWidth: 42,
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 0,
     position: "absolute",
     right: 0,

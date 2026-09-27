@@ -1,0 +1,41 @@
+import type { ZentraEventRecord } from "@/types/zentra";
+import { toISODate } from "@/utils/dates";
+
+/** Join adjacent stages from one origin into a night; attribute it to the final wake date. */
+export function sleepEventsForWakeDate(
+  events: ZentraEventRecord[],
+  date: string,
+): ZentraEventRecord[] {
+  const origins = new Map<string, ZentraEventRecord[]>();
+  for (const event of events) {
+    if (
+      event.dataType !== "sleep_inferred" ||
+      event.metadata.stale_import === true
+    )
+      continue;
+    const key = `${event.source}:${event.metadata.health_platform ?? ""}:${event.metadata.source_app ?? ""}`;
+    const group = origins.get(key) ?? [];
+    group.push(event);
+    origins.set(key, group);
+  }
+  const selected: ZentraEventRecord[] = [];
+  for (const records of origins.values()) {
+    records.sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+    let group: ZentraEventRecord[] = [],
+      end = 0;
+    for (const event of records) {
+      if (group.length && Date.parse(event.timestampStart) > end + 90 * 60000) {
+        if (toISODate(new Date(end)) === date) selected.push(...group);
+        group = [];
+      }
+      group.push(event);
+      end = Math.max(
+        group.length === 1 ? 0 : end,
+        Date.parse(event.timestampEnd),
+      );
+    }
+    if (group.length && toISODate(new Date(end)) === date)
+      selected.push(...group);
+  }
+  return selected;
+}

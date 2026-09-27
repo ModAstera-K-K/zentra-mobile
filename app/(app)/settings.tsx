@@ -1,3 +1,4 @@
+import { HealthSourcesCard } from "@/components/zentra/HealthSourcesCard";
 import React from "react";
 import {
   Alert,
@@ -23,7 +24,7 @@ import {
   getDataModeIcon,
   getThemePreferenceIcon,
 } from "@/constants/iconography";
-import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   useAppearanceStore,
@@ -282,9 +283,11 @@ export default function SettingsScreen() {
     }
 
     setHealthConnectPermissionStatus(
-      hasRequiredHealthConnectPermissions(grantedHealthPermissions)
-        ? "granted"
-        : "not_requested",
+      Platform.OS === "ios"
+        ? "unknown"
+        : hasRequiredHealthConnectPermissions(grantedHealthPermissions)
+          ? "granted"
+          : "not_requested",
     );
   }, []);
 
@@ -456,13 +459,20 @@ export default function SettingsScreen() {
           await refreshNativePermissionStatuses();
           await retryCollectors();
 
+          if (Platform.OS === "ios") {
+            Alert.alert(
+              "Apple Health access reviewed",
+              "Zentra will read the records Apple Health makes available. Read permission status is private.",
+            );
+            return;
+          }
           Alert.alert(
             hasRequiredHealthConnectPermissions(grantedPermissions)
               ? `${healthPlatformName} connected`
               : `${healthPlatformName} still needs permissions`,
             hasRequiredHealthConnectPermissions(grantedPermissions)
               ? `${healthPlatformName} access was granted. Zentra will retry the import now.`
-              : `Grant all requested ${healthPlatformName} permissions, then return to Zentra and tap Retry signals. Required permissions: ${getRequiredHealthConnectPermissions().length}.`,
+              : `Allow the ${healthPlatformName} record types you want to import, then return to Zentra and tap Retry signals. Required permissions: ${getRequiredHealthConnectPermissions().length}.`,
           );
           return;
         }
@@ -696,6 +706,7 @@ export default function SettingsScreen() {
           })}
         </View>
       </Card>
+      <HealthSourcesCard />
 
       <Card elevated style={styles.section}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
@@ -905,10 +916,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   leadMeta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   backButton: {
     alignSelf: "flex-start",
@@ -917,13 +927,12 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: Spacing.md,
-    marginBottom: Spacing.lg,
+    marginBottom: Layout.sectionGap,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
   },
   themeRow: {
     flexDirection: "row",
@@ -951,9 +960,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   diagnosticKey: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
 });

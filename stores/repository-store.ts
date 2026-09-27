@@ -1,3 +1,5 @@
+import { stableEvents } from "@/utils/event-identity";
+import { getRepositoryRevision } from "@/utils/event-repository";
 import { Platform } from "react-native";
 import { create } from "zustand";
 
@@ -46,23 +48,6 @@ const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
 };
 
 const MIN_TODAY_REFRESH_INTERVAL_MS = 1_500;
-
-/**
- * Return the existing array if contents haven't changed (same length + same
- * last event ID), avoiding unnecessary downstream re-renders.
- */
-function stableEvents(
-  prev: ZentraEventRecord[],
-  next: ZentraEventRecord[],
-): ZentraEventRecord[] {
-  if (
-    prev.length === next.length &&
-    prev[prev.length - 1]?.id === next[next.length - 1]?.id
-  ) {
-    return prev;
-  }
-  return next;
-}
 
 let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
@@ -118,7 +103,7 @@ interface RepositoryStoreState {
   diagnosticsHistory: CollectorDiagnosticRecord[];
   bootstrap: () => Promise<void>;
   refreshAll: () => Promise<void>;
-  refreshTodayData: () => Promise<void>;
+  refreshTodayData: (force?: boolean) => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
   refreshSleep: () => Promise<void>;
   drainBufferedActivityTransitions: (
@@ -215,6 +200,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     const persistedMeta = await loadPersistedRepositoryMeta();
     const bufferedActivityQueueDepth =
       await getBufferedActivityTransitionCountAsync();
+    const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -274,7 +260,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastReconcileStartedAt: persistedMeta?.lastReconcileStartedAt ?? null,
       lastReconcileTrigger: persistedMeta?.lastReconcileTrigger ?? null,
       lastUpdatedAt: updatedAt,
-      todayDataUpdatedAt: updatedAt,
+      todayDataUpdatedAt: dataRevision,
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot,
@@ -292,6 +278,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       await getBufferedActivityTransitionCountAsync();
     const backgroundCollectionServiceState =
       await get().refreshBackgroundCollectionServiceState();
+    const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
     const [
       todaySnapshot,
@@ -317,7 +304,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       backgroundCollectionServiceState,
       bufferedActivityQueueDepth,
       lastUpdatedAt: updatedAt,
-      todayDataUpdatedAt: updatedAt,
+      todayDataUpdatedAt: dataRevision,
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot,
@@ -329,20 +316,27 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     });
   },
 
-  refreshTodayData: async () => {
+  refreshTodayData: async (force = false) => {
     if (refreshTodayDataInFlight) {
       return refreshTodayDataInFlight;
     }
 
     if (
-      Date.now() - lastTodayRefreshCompletedAtMs <
-      MIN_TODAY_REFRESH_INTERVAL_MS
+      !force &&
+      Date.now() - lastTodayRefreshCompletedAtMs < MIN_TODAY_REFRESH_INTERVAL_MS
     ) {
       return;
     }
 
     refreshTodayDataInFlight = (async () => {
+      const dataRevision = await getRepositoryRevision();
       const todayDate = toISODate(new Date());
+      if (
+        !force &&
+        get().todayDataUpdatedAt === dataRevision &&
+        get().todayAggregate?.date === todayDate
+      )
+        return;
       const [todaySnapshot, todayAggregate, todayEvents] = await Promise.all([
         getTodayLiveSnapshot(),
         getDailyAggregateForDate(todayDate),
@@ -354,7 +348,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
       set({
         lastUpdatedAt: updatedAt,
-        todayDataUpdatedAt: updatedAt,
+        todayDataUpdatedAt: dataRevision,
         todaySnapshot,
         todayAggregate,
         todayEvents: stableTodayEvents,
@@ -596,7 +590,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastReconcileStartedAt: null,
       lastReconcileTrigger: null,
       lastUpdatedAt: updatedAt,
-      todayDataUpdatedAt: updatedAt,
+      todayDataUpdatedAt: await getRepositoryRevision(),
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot: EMPTY_TODAY_SNAPSHOT,

@@ -5,6 +5,7 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import org.json.JSONObject
+import org.json.JSONArray
 import java.time.Duration
 
 internal object HealthConnectRecordSerializers {
@@ -18,21 +19,26 @@ internal object HealthConnectRecordSerializers {
       "valueText" to null,
       "valueJson" to null,
       "unit" to "count",
-      "metadata" to emptyMap<String, Any>(),
+      "metadata" to mapOf("source_app" to record.metadata.dataOrigin.packageName, "source_device" to listOfNotNull(record.metadata.device?.manufacturer, record.metadata.device?.model).joinToString(" "), "last_modified" to record.metadata.lastModifiedTime.toString()),
     )
   }
 
   fun serializeSleepRecord(record: SleepSessionRecord): Map<String, Any?> {
+    val asleep = record.stages.filter { it.stage in setOf(
+      SleepSessionRecord.STAGE_TYPE_SLEEPING, SleepSessionRecord.STAGE_TYPE_LIGHT,
+      SleepSessionRecord.STAGE_TYPE_DEEP, SleepSessionRecord.STAGE_TYPE_REM) }
+    val intervals = JSONArray()
+    asleep.forEach { intervals.put(JSONArray().put(it.startTime.toString()).put(it.endTime.toString())) }
+    val minutes = if (record.stages.isEmpty()) Duration.between(record.startTime, record.endTime).seconds / 60.0
+      else asleep.sumOf { Duration.between(it.startTime, it.endTime).seconds } / 60.0
     return mapOf(
-      "id" to (record.metadata.id ?: fallbackRecordId("sleep", record.startTime.toString(), record.endTime.toString())),
+      "id" to record.metadata.id,
       "recordType" to "sleep",
-      "startTime" to record.startTime.toString(),
-      "endTime" to record.endTime.toString(),
-      "valueNumeric" to Duration.between(record.startTime, record.endTime).toMinutes().toDouble(),
-      "valueText" to null,
-      "valueJson" to null,
-      "unit" to "minutes",
-      "metadata" to emptyMap<String, Any>(),
+      "startTime" to record.startTime.toString(), "endTime" to record.endTime.toString(),
+      "valueNumeric" to minutes, "valueText" to null, "valueJson" to null, "unit" to "minutes",
+      "metadata" to mapOf("source_app" to record.metadata.dataOrigin.packageName, "source_device" to listOfNotNull(record.metadata.device?.manufacturer, record.metadata.device?.model).joinToString(" "),
+        "last_modified" to record.metadata.lastModifiedTime.toString(),
+        "sleep_estimated" to record.stages.isEmpty(), "sleep_intervals" to intervals.toString()),
     )
   }
 
@@ -58,7 +64,7 @@ internal object HealthConnectRecordSerializers {
       "valueText" to null,
       "valueJson" to summary,
       "unit" to "bpm",
-      "metadata" to mapOf("sample_count" to values.size),
+      "metadata" to mapOf("sample_count" to values.size, "source_app" to record.metadata.dataOrigin.packageName, "source_device" to listOfNotNull(record.metadata.device?.manufacturer, record.metadata.device?.model).joinToString(" "), "last_modified" to record.metadata.lastModifiedTime.toString()),
     )
   }
 
@@ -68,11 +74,11 @@ internal object HealthConnectRecordSerializers {
       "recordType" to "exercise_session",
       "startTime" to record.startTime.toString(),
       "endTime" to record.endTime.toString(),
-      "valueNumeric" to Duration.between(record.startTime, record.endTime).toMinutes().toDouble(),
+      "valueNumeric" to workoutDurationMinutes(record),
       "valueText" to mapExerciseType(record.exerciseType),
       "valueJson" to null,
       "unit" to "minutes",
-      "metadata" to emptyMap<String, Any>(),
+      "metadata" to mapOf("source_app" to record.metadata.dataOrigin.packageName, "source_device" to listOfNotNull(record.metadata.device?.manufacturer, record.metadata.device?.model).joinToString(" "), "last_modified" to record.metadata.lastModifiedTime.toString(), "active_intervals" to serializeWorkoutIntervals(record)),
     )
   }
 

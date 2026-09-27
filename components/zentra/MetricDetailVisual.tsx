@@ -284,7 +284,7 @@ function LineVisual({
               <SvgText
                 key={`x-label-${labelIndex}`}
                 fill={palette.mutedForeground}
-                fontFamily="JetBrainsMonoRegular"
+                fontFamily={Fonts.body}
                 fontSize={9}
                 textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
                 x={coord.x}
@@ -458,7 +458,7 @@ function VerticalBarVisual({
               <SvgText
                 key={`x-label-${labelIndex}`}
                 fill={palette.mutedForeground}
-                fontFamily="JetBrainsMonoRegular"
+                fontFamily={Fonts.body}
                 fontSize={9}
                 textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
                 x={labelX}
@@ -658,7 +658,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   distributionValue: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.sm,
   },
   heatmapCell: {
@@ -676,7 +676,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   heatmapLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
     width: 28,
   },
@@ -689,10 +689,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   visualCaption: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   visualHeader: {
     alignItems: "baseline",
@@ -700,7 +699,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   visualValue: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.xl,
   },
 });

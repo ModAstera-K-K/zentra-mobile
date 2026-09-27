@@ -203,6 +203,41 @@ class ZentraNativeSignalsModule : Module() {
       }
     }
 
+    AsyncFunction("readHealthSyncPageAsync") { type: String, start: String, end: String, cursor: String?, promise: Promise ->
+      val context = appContext.reactContext
+      if (context == null) { promise.reject("HEALTH_CONTEXT", "Native context unavailable", null) }
+      else appContext.backgroundCoroutineScope.launch {
+        try { promise.resolve(HealthSyncReader(context).page(type, start, end, cursor)) }
+        catch (error: Exception) { promise.reject("HEALTH_READ", error.message, error) }
+      }
+    }
+    AsyncFunction("readHealthStepsAsync") { start: String, end: String, promise: Promise ->
+      val context = appContext.reactContext
+      if (context == null) { promise.reject("HEALTH_CONTEXT", "Native context unavailable", null) }
+      else appContext.backgroundCoroutineScope.launch {
+        try { promise.resolve(HealthSyncReader(context).steps(start, end)) }
+        catch (error: Exception) { promise.reject("HEALTH_STATISTICS", error.message, error) }
+      }
+    }
+    AsyncFunction("readHealthStepTimingAsync") { start: String, end: String, promise: Promise ->
+      val context = appContext.reactContext
+      if (context == null) { promise.reject("HEALTH_CONTEXT", "Native context unavailable", null) }
+      else appContext.backgroundCoroutineScope.launch {
+        try { promise.resolve(HealthSyncReader(context).steps(start, end, 1)) }
+        catch (error: Exception) { promise.reject("HEALTH_STATISTICS", error.message, error) }
+      }
+    }
+    AsyncFunction("requestHealthHistoryAsync") { promise: Promise ->
+      appContext.mainQueue.launch {
+        try {
+          val permission = "android.permission.health.READ_HEALTH_DATA_HISTORY"
+          healthConnectPermissionsLauncher.launch(HealthConnectPermissionRequest(arrayListOf(permission))) { result ->
+            promise.resolve(result.contains(permission))
+          }
+        } catch (error: Exception) { promise.reject("HEALTH_HISTORY", error.message, error) }
+      }
+    }
+
     AsyncFunction("readHealthConnectRecordsAsync") { startIso: String, endIso: String, promise: Promise ->
       val controller = getHealthConnectController()
       if (controller == null) {

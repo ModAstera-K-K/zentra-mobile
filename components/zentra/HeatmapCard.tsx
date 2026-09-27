@@ -36,7 +36,7 @@ export const HeatmapCard = React.memo(function HeatmapCard({
   }
 
   return (
-    <Card>
+    <Card variant="open">
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         Your activity pattern
       </Text>
@@ -72,11 +72,10 @@ export const HeatmapCard = React.memo(function HeatmapCard({
 
 const styles = StyleSheet.create({
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
     marginBottom: Spacing.lg,
-    textTransform: "uppercase",
   },
   grid: {
     gap: Spacing.sm,
@@ -87,7 +86,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   dayLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
     width: 28,
   },

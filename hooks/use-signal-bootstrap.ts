@@ -630,6 +630,8 @@ export function useSignalBootstrap(): void {
       }
     }
 
+    void runResumeReconcile().catch(() => undefined);
+
     const subscription = AppState.addEventListener("change", (nextState) => {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;

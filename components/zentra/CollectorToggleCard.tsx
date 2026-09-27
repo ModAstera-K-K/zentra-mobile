@@ -52,7 +52,7 @@ export const CollectorToggleCard = React.memo(function CollectorToggleCard({
   );
 
   return (
-    <Card>
+    <Card variant="open" style={[styles.collectorRow, { borderBottomColor: palette.divider }]}>
       <View style={styles.header}>
         <View style={styles.copy}>
           <View style={styles.titleRow}>
@@ -126,8 +126,7 @@ export const CollectorToggleCard = React.memo(function CollectorToggleCard({
               style={[
                 styles.telemetryItem,
                 {
-                  backgroundColor: palette.elevated,
-                  borderColor: palette.border,
+                  backgroundColor: "transparent",
                 },
               ]}
             >
@@ -174,6 +173,7 @@ export const CollectorToggleCard = React.memo(function CollectorToggleCard({
 });
 
 const styles = StyleSheet.create({
+  collectorRow: { borderBottomWidth: 1, paddingBottom: Spacing.lg },
   header: {
     alignItems: "flex-start",
     flexDirection: "row",
@@ -211,10 +211,9 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   meta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
     letterSpacing: 1,
-    textTransform: "uppercase",
   },
   source: {
     fontFamily: Fonts.body,
@@ -228,18 +227,14 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   telemetryItem: {
-    borderRadius: 12,
-    borderWidth: 1,
     gap: 2,
     minWidth: 108,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.xs,
   },
   telemetryLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.9,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   telemetryRow: {
     flexDirection: "row",
@@ -262,7 +257,7 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignSelf: "flex-start",
-    minHeight: 40,
+    minHeight: 48,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
   },

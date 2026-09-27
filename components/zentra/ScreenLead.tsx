@@ -1,5 +1,5 @@
 import React from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { Colors, Fonts, FontSizes, Spacing } from '@/constants/theme';
@@ -22,32 +22,10 @@ export function ScreenLead({
 }: ScreenLeadProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
-  const progress = React.useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: 320,
-      useNativeDriver: true,
-    }).start();
-  }, [progress]);
-
-  const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [10, 0],
-  });
 
   return (
-    <Animated.View
-      style={[
-        styles.wrapper,
-        {
-          opacity: progress,
-          transform: [{ translateY }],
-        },
-      ]}
-    >
-      <Card elevated style={styles.card}>
+    <View style={styles.wrapper}>
+      <Card variant="open" style={styles.card}>
         <View style={styles.header}>
           <View style={styles.copy}>
             <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>{eyebrow}</Text>
@@ -58,13 +36,13 @@ export function ScreenLead({
         </View>
         {footer ? <View style={[styles.footer, { borderTopColor: palette.border }]}>{footer}</View> : null}
       </Card>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrapper: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing["3xl"],
   },
   card: {
     gap: Spacing.md,
@@ -80,10 +58,9 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.md,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
   },
   title: {
     fontFamily: Fonts.display,
@@ -99,7 +76,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xs,
   },
   footer: {
-    borderTopWidth: 1,
+    borderTopWidth: 0,
     marginTop: Spacing.xs,
     paddingTop: Spacing.md,
   },

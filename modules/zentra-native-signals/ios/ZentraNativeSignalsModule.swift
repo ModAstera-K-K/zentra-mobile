@@ -67,6 +67,23 @@ public class ZentraNativeSignalsModule: Module {
       }
     }
 
+    AsyncFunction("readHealthSyncPageAsync") { (type: String, start: String, end: String, cursor: String?, promise: Promise) in
+      IOSHealthSyncReader(controller: self.healthKitController).page(type: type, start: start, end: end, cursor: cursor) { result in
+        switch result { case .success(let value): promise.resolve(value); case .failure(let error): promise.reject("HEALTH_READ", error.localizedDescription) }
+      }
+    }
+    AsyncFunction("readHealthStepsAsync") { (start: String, end: String, promise: Promise) in
+      IOSHealthSyncReader(controller: self.healthKitController).steps(start: start, end: end) { result in
+        switch result { case .success(let value): promise.resolve(value); case .failure(let error): promise.reject("HEALTH_STATISTICS", error.localizedDescription) }
+      }
+    }
+
+    AsyncFunction("readHealthStepTimingAsync") { (start: String, end: String, promise: Promise) in
+      IOSHealthSyncReader(controller: self.healthKitController).steps(start: start, end: end, minutes: 1) { result in
+        switch result { case .success(let value): promise.resolve(value); case .failure(let error): promise.reject("HEALTH_STATISTICS", error.localizedDescription) }
+      }
+    }
+
     AsyncFunction("readHealthConnectRecordsAsync") { (startIso: String, endIso: String, promise: Promise) in
       self.healthKitController.readRecords(startIso: startIso, endIso: endIso) { records in
         promise.resolve(records)

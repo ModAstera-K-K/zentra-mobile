@@ -28,7 +28,7 @@ These are non-negotiable:
 
 Requirements:
 
-- Node.js 18+
+- Node.js 22.15+ (the local regression suite uses Node's TypeScript loader hooks and SQLite support)
 - npm
 - Xcode for iOS work
 - Android Studio / SDK for Android work
@@ -66,13 +66,20 @@ npm run check:no-network
 
 ## Running tests
 
-There is currently no automated `npm test` script in this repository. Before opening a pull request, run:
+Before opening a pull request, run:
 
 ```bash
 npm run lint
 npm run typecheck
 npm run check:no-network
+npm test
 ```
+
+The regression suite runs locally without a device or network connection. It covers
+source resolution, import checkpoints, migrations, cache invalidation, activity
+coverage, comparisons, and presentation integrity. Native builds and installed-device
+performance checks remain separate; document any checks you could not complete in
+the pull request.
 
 ## Good first issues
 

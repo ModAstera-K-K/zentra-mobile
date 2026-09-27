@@ -121,6 +121,7 @@ const COLLECTOR_HEALTH_ICONS: Record<CollectorHealth, AppIconName> = {
 };
 
 const PERMISSION_STATUS_ICONS: Record<PermissionStatus, AppIconName> = {
+  unknown: "help-circle-outline",
   granted: "checkmark-circle-outline",
   not_requested: "key-outline",
   blocked: "close-circle-outline",

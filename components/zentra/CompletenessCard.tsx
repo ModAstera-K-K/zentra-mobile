@@ -47,7 +47,7 @@ export const CompletenessCard = React.memo(function CompletenessCard({
   const palette = Colors[colorScheme];
 
   return (
-    <Card>
+    <Card variant="open">
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         Signal health
       </Text>
@@ -55,7 +55,7 @@ export const CompletenessCard = React.memo(function CompletenessCard({
         <View
           style={[
             styles.summaryCard,
-            { backgroundColor: palette.elevated, borderColor: palette.border },
+            { backgroundColor: "transparent" },
           ]}
         >
           <View style={styles.summaryHeader}>
@@ -79,10 +79,10 @@ export const CompletenessCard = React.memo(function CompletenessCard({
         </View>
       ) : null}
       <View style={styles.column}>
-        {collectors.map((collector) => (
+        {collectors.map((collector, index) => (
           <View
             key={collector.key}
-            style={[styles.item, { borderBottomColor: palette.border }]}
+            style={[styles.item, { borderTopColor: palette.divider, borderTopWidth: index === 0 ? 0 : 1 }]}
           >
             <View style={styles.itemCopy}>
               <View style={styles.labelRow}>
@@ -128,22 +128,20 @@ export const CompletenessCard = React.memo(function CompletenessCard({
 
 const styles = StyleSheet.create({
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   column: {
     gap: Spacing.sm,
   },
   item: {
     alignItems: "flex-start",
-    borderBottomWidth: 1,
     flexDirection: "row",
     gap: Spacing.sm,
     justifyContent: "space-between",
-    paddingBottom: Spacing.sm,
+    paddingVertical: Spacing.md,
   },
   itemCopy: {
     flex: 1,
@@ -165,11 +163,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   status: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
     flexShrink: 0,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   statusRow: {
     alignItems: "center",
@@ -178,11 +175,8 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   summaryCard: {
-    borderRadius: 18,
-    borderWidth: 1,
     gap: Spacing.xs,
     marginBottom: Spacing.md,
-    padding: Spacing.md,
   },
   summaryCoverage: {
     fontFamily: Fonts.bodyMedium,
@@ -194,7 +188,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   summaryValue: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.xl,
   },
   summaryHeader: {

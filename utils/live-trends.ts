@@ -1,3 +1,16 @@
+import { buildMetricObservation } from "@/utils/metric-observations";
+import { sleepEventsForWakeDate } from "@/utils/sleep-wake-date";
+import { stepSourceLabel } from "@/utils/metric-source-label";
+import { toISODate } from "@/utils/dates";
+import { shiftISODate } from "@/utils/dates";
+import {
+  resolvedSleepMinutes,
+  resolvedTimelineEvents,
+} from "@/utils/source-resolution";
+import {
+  buildNormalizationMaximaAsync,
+  buildUnifiedTimelineAsync,
+} from "@/utils/unified-timeline";
 import type {
   DailyAggregateRecord,
   HeatmapCell,
@@ -67,9 +80,9 @@ function calculateVariability(values: number[]): number {
   return Math.round((standardDeviation / mean) * 100);
 }
 
-function calculateChange(first: number, last: number): number {
+function calculateChange(first: number, last: number): number | null {
   if (first === 0) {
-    return last > 0 ? 100 : 0;
+    return last > 0 ? null : 0;
   }
 
   return Math.round(((last - first) / first) * 100);
@@ -80,12 +93,12 @@ function createTrendSeries(
   label: string,
   unit: string,
   tone: TrendSeries["tone"],
-  values: number[],
+  values: (number | null)[],
   dates: string[],
   group?: TrendSeriesGroupKey,
   coverageLabel?: string,
   sourceLabel?: string,
-  hasCoverage = values.some((value) => value > 0),
+  hasCoverage = values.some((value) => value !== null && value > 0),
 ): TrendSeries | null {
   if (!hasCoverage) {
     return null;
@@ -100,8 +113,13 @@ function createTrendSeries(
       label: formatTrendLabel(dates[index], dates.length),
       value,
     })),
-    change: calculateChange(values[0] ?? 0, values.at(-1) ?? 0),
-    variability: calculateVariability(values),
+    change:
+      key === "activeMinutes"
+        ? null
+        : calculateChange(values[0] ?? 0, values.at(-1) ?? 0),
+    variability: calculateVariability(
+      values.filter((v): v is number => v !== null),
+    ),
     coverageLabel,
     group,
     sourceLabel,
@@ -123,11 +141,13 @@ function buildAverageCompletenessLabel(
 }
 
 function buildDaysWithDataLabel(
-  values: number[],
+  values: (number | null)[],
   dates: string[],
   qualifier: string,
 ): string {
-  const coveredDays = values.filter((value) => value > 0).length;
+  const coveredDays = values.filter(
+    (value) => value !== null && value > 0,
+  ).length;
   return `${coveredDays}/${dates.length} days ${qualifier}`;
 }
 
@@ -455,83 +475,16 @@ function buildDailySleepValues(
   importedSleepSourceLabel: string;
   inferredSleepValues: number[];
 } {
-  const importedByDate = dates.reduce<Record<string, number>>(
-    (result, date) => {
-      result[date] = 0;
-      return result;
-    },
-    {},
-  );
-  const inferredByDate = dates.reduce<Record<string, number>>(
-    (result, date) => {
-      result[date] = 0;
-      return result;
-    },
-    {},
-  );
-  let importedSleepSourceLabel = "Health import";
-
-  for (const event of events) {
-    if (
-      event.dataType !== "sleep_inferred" ||
-      typeof event.valueNumeric !== "number"
-    ) {
-      continue;
-    }
-
-    if (event.source === "health_connect") {
-      if (typeof event.metadata.health_platform === "string") {
-        importedSleepSourceLabel = event.metadata.health_platform;
-      }
-    }
-
-    const startKey = event.timestampStart.slice(0, 10);
-    const endKey = event.timestampEnd.slice(0, 10);
-    const totalMinutes = Math.round(event.valueNumeric);
-    const isImported = event.source === "health_connect";
-    const target = isImported ? importedByDate : inferredByDate;
-
-    if (startKey === endKey) {
-      if (target[startKey] !== undefined) {
-        target[startKey] += totalMinutes;
-      }
-      continue;
-    }
-
-    const startMs = new Date(event.timestampStart).getTime();
-    const endMs = new Date(event.timestampEnd).getTime();
-    const spanMs = endMs - startMs;
-
-    if (spanMs <= 0) {
-      if (target[startKey] !== undefined) {
-        target[startKey] += totalMinutes;
-      }
-      continue;
-    }
-
-    for (const date of dates) {
-      if (date < startKey || date > endKey) {
-        continue;
-      }
-      if (target[date] === undefined) {
-        continue;
-      }
-      const dayStartMs = new Date(`${date}T00:00:00`).getTime();
-      const dayEndMs = dayStartMs + 86_400_000;
-      const overlapStart = Math.max(startMs, dayStartMs);
-      const overlapEnd = Math.min(endMs, dayEndMs);
-      if (overlapEnd > overlapStart) {
-        target[date] += Math.round(
-          totalMinutes * ((overlapEnd - overlapStart) / spanMs),
-        );
-      }
-    }
-  }
-
+  const imported = events.filter((e) => e.source === "health_connect");
+  const inferred = events.filter((e) => e.source === "inferred");
   return {
-    importedSleepValues: dates.map((date) => importedByDate[date] ?? 0),
-    importedSleepSourceLabel,
-    inferredSleepValues: dates.map((date) => inferredByDate[date] ?? 0),
+    importedSleepValues: dates.map(
+      (date) => resolvedSleepMinutes(imported, date) ?? 0,
+    ),
+    inferredSleepValues: dates.map(
+      (date) => resolvedSleepMinutes(inferred, date) ?? 0,
+    ),
+    importedSleepSourceLabel: getHealthSourceLabel(imported, "Health import"),
   };
 }
 
@@ -539,12 +492,14 @@ export function buildLiveTrendSeries(
   aggregates: DailyAggregateRecord[],
   rangeSelection: { start: string; end: string },
   events: ZentraEventRecord[] = [],
+  compositeValues?: { intensityValues: number[]; restValues: number[] },
 ): TrendSeries[] {
+  events = resolvedTimelineEvents(events);
   const dates = enumerateISODateRange(rangeSelection.start, rangeSelection.end);
   const aggregateByDate = new Map(
     aggregates.map((record) => [record.date, record]),
   );
-  
+
   const normalizedAggregates = dates.map(
     (date) =>
       aggregateByDate.get(date) ?? {
@@ -575,16 +530,9 @@ export function buildLiveTrendSeries(
     },
     {},
   );
-  const exerciseByDate = dates.reduce<Record<string, number>>(
-    (result, date) => {
-      result[date] = 0;
-      return result;
-    },
-    {},
-  );
 
   events.forEach((event) => {
-    const dateKey = event.timestampStart.slice(0, 10);
+    const dateKey = toISODate(new Date(event.timestampStart));
 
     if (
       event.dataType === "ambient_light" &&
@@ -604,16 +552,6 @@ export function buildLiveTrendSeries(
         heartRateByDate[dateKey] = [];
       }
       heartRateByDate[dateKey].push(event.valueNumeric);
-    }
-
-    if (event.dataType === "exercise_session") {
-      if (exerciseByDate[dateKey] === undefined) {
-        exerciseByDate[dateKey] = 0;
-      }
-      exerciseByDate[dateKey] +=
-        typeof event.valueNumeric === "number"
-          ? Math.round(event.valueNumeric)
-          : 1;
     }
   });
 
@@ -639,17 +577,17 @@ export function buildLiveTrendSeries(
     );
   });
 
-  const exerciseValues = dates.map((date) => exerciseByDate[date] ?? 0);
+  const exerciseValues = dates.map(
+    (date) => buildMetricObservation("exercise", date, events, []).value ?? 0,
+  );
   const {
     averageSpeedCoveredDays,
     averageSpeedValues,
     elevationCoveredDays,
     elevationGainValues,
   } = buildDailyLocationTrendData(dates, events);
-  const { intensityValues, restValues } = buildDailyCompositeValues(
-    dates,
-    events,
-  );
+  const { intensityValues, restValues } =
+    compositeValues ?? buildDailyCompositeValues(dates, events);
   const { importedSleepValues, importedSleepSourceLabel, inferredSleepValues } =
     buildDailySleepValues(dates, events);
   const completenessLabel = buildAverageCompletenessLabel(normalizedAggregates);
@@ -664,18 +602,20 @@ export function buildLiveTrendSeries(
       dates,
       "body",
       completenessLabel,
-      "Phone sensor",
+      stepSourceLabel(events),
     ),
     createTrendSeries(
       "activeMinutes",
       "Active Minutes",
       "min",
       "physical",
-      normalizedAggregates.map((record) => record.activeMinutes),
+      normalizedAggregates.map(
+        (record) => record.activeSummary?.supportedMinutes ?? null,
+      ),
       dates,
       "body",
-      completenessLabel,
-      "Activity recognition",
+      "Partial timing coverage; gaps mean unavailable",
+      "Timed activity + steps · Partial coverage",
     ),
     createTrendSeries(
       "activityIntensity",
@@ -818,7 +758,7 @@ export function buildLiveTrendSeries(
     ),
     createTrendSeries(
       "dataCompleteness",
-      "Data Completeness",
+      "Signal types observed",
       "%",
       "hero",
       normalizedAggregates.map((record) =>
@@ -834,7 +774,7 @@ export function buildLiveTrendSeries(
           Math.max(normalizedAggregates.length, 1)) *
           100,
       )}% range average`,
-      "Repository aggregate",
+      "Signal diversity, not continuous observation coverage",
     ),
     createTrendSeries(
       "heartRate",
@@ -860,7 +800,78 @@ export function buildLiveTrendSeries(
     ),
   ];
 
-  return series.filter((entry): entry is TrendSeries => entry !== null);
+  const observed = new Map<string, Set<string>>();
+  for (const event of events) {
+    const date = toISODate(
+      new Date(
+        event.dataType === "sleep_inferred"
+          ? event.timestampEnd
+          : event.timestampStart,
+      ),
+    );
+    const types = observed.get(date) ?? new Set<string>();
+    types.add(event.dataType);
+    observed.set(date, types);
+  }
+  const signalForSeries: Record<string, string[]> = {
+    steps: ["steps"],
+    activeMinutes: ["activity", "motion_context", "steps"],
+    distanceMeters: ["location"],
+    avgSpeed: ["location"],
+    elevationGain: ["location"],
+    screenTime: ["app_usage", "screen_state"],
+    unlockCount: ["unlock_event"],
+    sleepEstimate: ["sleep_inferred"],
+    importedSleep: ["sleep_inferred"],
+    inferredSleep: ["sleep_inferred"],
+    heartRate: ["heart_rate"],
+    exerciseSessions: ["exercise_session"],
+    ambientLight: ["ambient_light"],
+    mobilityRadius: ["location"],
+  };
+  return series
+    .filter((entry): entry is TrendSeries => entry !== null)
+    .map((entry) => {
+      const points = entry.points.map((point, index) => ({
+        ...point,
+        value:
+          entry.key === "importedSleep" || entry.key === "inferredSleep"
+            ? sleepEventsForWakeDate(
+                events.filter(
+                  (event) =>
+                    event.source ===
+                    (entry.key === "importedSleep"
+                      ? "health_connect"
+                      : "inferred"),
+                ),
+                dates[index],
+              ).length
+              ? point.value
+              : null
+            : (signalForSeries[entry.key] ?? []).length
+              ? signalForSeries[entry.key].some((type) =>
+                  observed.get(dates[index])?.has(type),
+                )
+                ? point.value
+                : null
+              : observed.has(dates[index])
+                ? point.value
+                : null,
+      }));
+      const values = points
+        .map((point) => point.value)
+        .filter((value): value is number => value !== null);
+      return {
+        ...entry,
+        points,
+        // Eligible matched-week comparisons live in What changed; endpoints are not comparisons.
+        change: null,
+        variability: calculateVariability(
+          values.filter((v): v is number => v !== null),
+        ),
+        coverageLabel: `${values.length}/${dates.length} days with available observations`,
+      };
+    });
 }
 
 export function buildLiveTrendSurfaces(
@@ -972,4 +983,51 @@ export function buildLiveHeatmap(events: ZentraEventRecord[]): HeatmapCell[] {
     ...cell,
     value: Math.round((cell.value / maxValue) * 100),
   }));
+}
+
+export async function buildLiveTrendSeriesAsync(
+  aggregates: DailyAggregateRecord[],
+  range: { start: string; end: string },
+  events: ZentraEventRecord[],
+  signal?: AbortSignal,
+): Promise<TrendSeries[]> {
+  const maxima = await buildNormalizationMaximaAsync(events, signal);
+  const values = {
+    intensityValues: [] as number[],
+    restValues: [] as number[],
+  };
+  for (const date of enumerateISODateRange(range.start, range.end)) {
+    if (signal?.aborted) throw new Error("Work cancelled");
+    const startTimestamp = parseISODate(date).toISOString(),
+      endTimestamp = parseISODate(shiftISODate(date, 1)).toISOString();
+    const daily = events.filter(
+      (e) =>
+        e.timestampStart < endTimestamp && e.timestampEnd >= startTimestamp,
+    );
+    const buckets = (
+      await buildUnifiedTimelineAsync(
+        daily,
+        { startTimestamp, endTimestamp, resolution: "hour" },
+        signal,
+        maxima,
+      )
+    ).filter((b) => b.hasAnyData);
+    values.intensityValues.push(
+      buckets.length
+        ? Math.round(
+            buckets.reduce((n, b) => n + b.intensityScore, 0) / buckets.length,
+          )
+        : 0,
+    );
+    values.restValues.push(
+      buckets.length
+        ? Math.round(
+            buckets.reduce((n, b) => n + b.restCompositeScore, 0) /
+              buckets.length,
+          )
+        : 0,
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  return buildLiveTrendSeries(aggregates, range, events, values);
 }
