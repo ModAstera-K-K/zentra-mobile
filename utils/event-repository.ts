@@ -1,3 +1,11 @@
+import {
+  cachedActiveMinutes,
+  isActiveSummaryCurrent,
+} from "@/utils/active-minutes-cache";
+import { startPerfTimer } from "@/utils/perf";
+import { invalidateRepositorySession } from "@/utils/repository-session";
+import { cancelHealthSync } from "@/utils/health-sync-session";
+import { readDataRevision } from "@/utils/repository-revision";
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import type {
@@ -16,7 +24,7 @@ import {
 } from "@/utils/repository-aggregates";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
 
-interface EventRow {
+export interface EventRow {
   id: string;
   timestamp_start: string;
   timestamp_end: string;
@@ -36,6 +44,7 @@ interface AggregateRow {
   date: string;
   steps_total: number;
   active_minutes: number;
+  active_summary: string | null;
   distance_meters: number;
   screen_time_seconds: number;
   unlock_count: number;
@@ -98,7 +107,9 @@ function enqueueRetriedWrite<T>(task: () => Promise<T>): Promise<T> {
   return enqueueWrite(() => retryLockedWrite(task));
 }
 
-function enqueueDatabaseOperation<T>(task: () => Promise<T>): Promise<T> {
+export function enqueueDatabaseOperation<T>(
+  task: () => Promise<T>,
+): Promise<T> {
   const nextTask = databaseOperationQueue.then(task, task);
   databaseOperationQueue = nextTask.then(
     () => undefined,
@@ -123,7 +134,7 @@ function parseMetadata(metadata: string): ZentraEventRecord["metadata"] {
   }
 }
 
-function mapEventRow(row: EventRow): ZentraEventRecord {
+export function mapEventRow(row: EventRow): ZentraEventRecord {
   return {
     id: row.id,
     timestampStart: row.timestamp_start,
@@ -146,6 +157,9 @@ function mapAggregateRow(row: AggregateRow): DailyAggregateRecord {
     date: row.date,
     stepsTotal: row.steps_total,
     activeMinutes: row.active_minutes,
+    activeSummary: row.active_summary
+      ? JSON.parse(row.active_summary)
+      : undefined,
     distanceMeters: row.distance_meters,
     screenTimeSeconds: row.screen_time_seconds,
     unlockCount: row.unlock_count,
@@ -176,16 +190,23 @@ async function getEventsBetweenWithDatabase(
   database: SQLiteDatabase,
   startIso: string,
   endExclusiveIso: string,
+  activityContext = false,
 ): Promise<ZentraEventRecord[]> {
+  const stopQuery = startPerfTimer("repository.range_query");
   const rows = await database.getAllAsync<EventRow>(
     `SELECT * FROM events
       WHERE timestamp_start >= ? AND timestamp_start < ?
+      ${activityContext ? "AND data_type IN ('activity','steps')" : ""}
       ORDER BY timestamp_start ASC`,
     startIso,
     endExclusiveIso,
   );
 
-  return rows.map(mapEventRow);
+  stopQuery({ rows: rows.length });
+  const stopMap = startPerfTimer("repository.range_decode");
+  const events = rows.map(mapEventRow);
+  stopMap({ rows: rows.length });
+  return events;
 }
 
 async function getEventsBetween(
@@ -208,7 +229,7 @@ async function getAggregateEventsForDateWithDatabase(
   );
   const overlappingAppUsageRows = await database.getAllAsync<EventRow>(
     `SELECT * FROM events
-      WHERE data_type = 'app_usage'
+      WHERE data_type IN ('app_usage','sleep_inferred','exercise_session','steps')
       AND timestamp_start < ?
       AND timestamp_end > ?
       ORDER BY timestamp_start ASC`,
@@ -227,7 +248,7 @@ async function getAggregateEventsForDateWithDatabase(
   );
 }
 
-async function rebuildAggregateForDate(
+export async function rebuildAggregateForDate(
   database: SQLiteDatabase,
   date: string,
 ): Promise<void> {
@@ -241,13 +262,22 @@ async function rebuildAggregateForDate(
     return;
   }
 
-  const aggregate = buildDailyAggregateRecord(date, events);
+  const activeSummary = await cachedActiveMinutes(database, date, events, () =>
+    getEventsBetweenWithDatabase(
+      database,
+      parseISODate(shiftISODate(date, -1)).toISOString(),
+      parseISODate(date).toISOString(),
+      true,
+    ),
+  );
+  const aggregate = buildDailyAggregateRecord(date, events, activeSummary);
 
   await database.runAsync(
     `INSERT OR REPLACE INTO daily_aggregates (
       date,
       steps_total,
       active_minutes,
+      active_summary,
       distance_meters,
       screen_time_seconds,
       unlock_count,
@@ -256,10 +286,11 @@ async function rebuildAggregateForDate(
       top_activity,
       data_completeness,
       computed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     aggregate.date,
     aggregate.stepsTotal,
     aggregate.activeMinutes,
+    JSON.stringify(aggregate.activeSummary),
     aggregate.distanceMeters,
     aggregate.screenTimeSeconds,
     aggregate.unlockCount,
@@ -744,6 +775,30 @@ export async function getDailyAggregatesForRange(
 ): Promise<DailyAggregateRecord[]> {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
+    const dates = await database.getAllAsync<{ date: string }>(
+      `SELECT DISTINCT date(timestamp_start,'localtime') AS date FROM events WHERE date(timestamp_start,'localtime') BETWEEN ? AND ? UNION SELECT DISTINCT date(timestamp_end,'localtime') AS date FROM events WHERE data_type='sleep_inferred' AND date(timestamp_end,'localtime') BETWEEN ? AND ?`,
+      start,
+      end,
+      start,
+      end,
+    );
+    const cached = await database.getAllAsync<{
+      date: string;
+      active_summary: string | null;
+    }>(
+      "SELECT date,active_summary FROM daily_aggregates WHERE date BETWEEN ? AND ?",
+      start,
+      end,
+    );
+    const present = new Set(cached.map((row) => row.date));
+    for (const row of dates)
+      if (!present.has(row.date))
+        await rebuildAggregateForDate(database, row.date);
+    for (const row of cached)
+      if (
+        !(await isActiveSummaryCurrent(database, row.date, row.active_summary))
+      )
+        await rebuildAggregateForDate(database, row.date);
     const rows = await database.getAllAsync<AggregateRow>(
       `SELECT * FROM daily_aggregates
         WHERE date >= ? AND date <= ?
@@ -769,7 +824,14 @@ export async function getDailyAggregateForDate(
     );
 
     if (row) {
-      return mapAggregateRow(row);
+      if (await isActiveSummaryCurrent(database, date, row.active_summary))
+        return mapAggregateRow(row);
+      await rebuildAggregateForDate(database, date);
+      const refreshed = await database.getFirstAsync<AggregateRow>(
+        "SELECT * FROM daily_aggregates WHERE date=?",
+        date,
+      );
+      return refreshed ? mapAggregateRow(refreshed) : null;
     }
 
     const events = await getAggregateEventsForDateWithDatabase(database, date);
@@ -778,13 +840,26 @@ export async function getDailyAggregateForDate(
       return null;
     }
 
-    const aggregate = buildDailyAggregateRecord(date, events);
+    const activeSummary = await cachedActiveMinutes(
+      database,
+      date,
+      events,
+      () =>
+        getEventsBetweenWithDatabase(
+          database,
+          parseISODate(shiftISODate(date, -1)).toISOString(),
+          parseISODate(date).toISOString(),
+          true,
+        ),
+    );
+    const aggregate = buildDailyAggregateRecord(date, events, activeSummary);
 
     await database.runAsync(
       `INSERT OR REPLACE INTO daily_aggregates (
         date,
         steps_total,
         active_minutes,
+        active_summary,
         distance_meters,
         screen_time_seconds,
         unlock_count,
@@ -793,10 +868,11 @@ export async function getDailyAggregateForDate(
         top_activity,
         data_completeness,
         computed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       aggregate.date,
       aggregate.stepsTotal,
       aggregate.activeMinutes,
+      JSON.stringify(aggregate.activeSummary),
       aggregate.distanceMeters,
       aggregate.screenTimeSeconds,
       aggregate.unlockCount,
@@ -830,11 +906,18 @@ export async function getGroupedEventsForRange(
 }
 
 export async function clearRepositoryData(): Promise<void> {
+  cancelHealthSync();
+  invalidateRepositorySession();
   await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
 
     await database.runAsync("DELETE FROM events");
     await database.runAsync("DELETE FROM daily_aggregates");
+    await database.runAsync("DELETE FROM derived_cache");
+    await database.runAsync("DELETE FROM health_sync_state");
+    await database.runAsync("DELETE FROM health_snapshot_records");
+    await database.runAsync("DELETE FROM health_snapshot_runs");
+    await database.runAsync("DELETE FROM event_changes");
     await database.runAsync("DELETE FROM collector_diagnostics");
   });
 }
@@ -905,5 +988,28 @@ export async function pruneLocationEventsBefore(
     );
 
     return deletedCount;
+  });
+}
+
+export async function getRepositoryRevision(
+  start?: string,
+  end?: string,
+): Promise<string> {
+  return enqueueDatabaseOperation(async () =>
+    readDataRevision(await getLocalDatabase(), start, end),
+  );
+}
+
+export async function getEventsByIds(
+  ids: string[],
+): Promise<ZentraEventRecord[]> {
+  if (!ids.length) return [];
+  return enqueueDatabaseOperation(async () => {
+    const db = await getLocalDatabase();
+    const rows = await db.getAllAsync<EventRow>(
+      "SELECT * FROM events WHERE id IN (SELECT value FROM json_each(?)) ORDER BY timestamp_start",
+      JSON.stringify(ids),
+    );
+    return rows.map(mapEventRow);
   });
 }

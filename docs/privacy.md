@@ -20,6 +20,7 @@ Zentra is designed to run locally on the device.
 ## What stays on-device
 
 - Collected event history is stored in a local SQLite database with `events`, `daily_aggregates`, and `collector_diagnostics` tables.
+- Per-type health cursors, import coverage, source provenance, resnapshot bookkeeping, committed revisions and rebuildable derived caches also stay in SQLite. Optional performance diagnostics are local console output only.
 - Local app state such as collector toggles, export timestamp, data mode, onboarding state, and location retention preference is stored in AsyncStorage.
 - Current signal snapshots such as recent location samples and latest step or battery state are stored locally in AsyncStorage.
 - Theme preference is stored locally in AsyncStorage when the user selects a non-system theme.
@@ -34,7 +35,7 @@ Zentra is designed to run locally on the device.
 
 ## Delete-all-data behavior verified against the current code
 
-- The in-app wipe action clears the local SQLite repository tables used for events, aggregates, and collector diagnostics.
+- The in-app wipe action clears events, aggregates, collector diagnostics, health cursors, resnapshot bookkeeping, revisions and derived caches; late import/cache work is invalidated.
 - It also resets locally persisted app state, including onboarding state, collector toggles, data mode, export history, location retention preference, cached signal snapshots, and theme preference.
 - It does not revoke OS-level permissions already granted in Android or iOS settings. Those remain under system control.
 

@@ -69,6 +69,8 @@ function buildDailyAggregatesCsv(records: DailyAggregateRecord[]): string {
     "top_activity",
     "data_completeness",
     "computed_at",
+    "active_minutes_quality",
+    "active_minutes_calculation_version",
   ]);
 
   const rows = records.map((record) =>
@@ -84,6 +86,8 @@ function buildDailyAggregatesCsv(records: DailyAggregateRecord[]): string {
       record.topActivity ?? "",
       record.dataCompleteness,
       record.computedAt,
+      record.activeSummary?.quality ?? "missing",
+      record.activeSummary?.calculationVersion ?? "",
     ]),
   );
 

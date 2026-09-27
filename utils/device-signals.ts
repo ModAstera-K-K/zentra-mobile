@@ -1,3 +1,6 @@
+import { activeMinutesValue } from "@/utils/active-minutes-presentation";
+import { stepSourceLabel } from "@/utils/metric-source-label";
+import { resolveStepTotal } from "@/utils/source-resolution";
 import * as Battery from "expo-battery";
 import { Platform } from "react-native";
 
@@ -16,7 +19,6 @@ import type {
   TodayLiveSnapshot,
   ZentraEventRecord,
 } from "@/types/zentra";
-import { getCurrentActivityLabel } from "@/utils/activity-summary";
 import { getCollectorTelemetryState } from "@/utils/collector-telemetry";
 import { deriveDiagnosticPermissionStatus } from "@/utils/collector-permission-status";
 import { formatBytes, formatMinutes, formatNumber } from "@/utils/format";
@@ -105,7 +107,9 @@ function formatSpeed(valueKmh: number | null): string {
     return "Waiting";
   }
 
-  return valueKmh >= 10 ? `${Math.round(valueKmh)} km/h` : `${valueKmh.toFixed(1)} km/h`;
+  return valueKmh >= 10
+    ? `${Math.round(valueKmh)} km/h`
+    : `${valueKmh.toFixed(1)} km/h`;
 }
 
 function formatBatteryValue(level: number | null): string {
@@ -145,50 +149,42 @@ export function buildLiveDashboardMetrics(
   const mobilityRadius =
     todayAggregate?.mobilityRadiusMeters ??
     calculateMobilityRadius(todaySnapshot.locationSamples);
-  const averageSpeedKmh = calculateAverageSpeedKmh(todaySnapshot.locationSamples);
-  const elevationSummary = calculateElevationSummary(todaySnapshot.locationSamples);
-  const currentActivity = getCurrentActivityLabel(todayEvents);
-  const cumulativeSteps = computeCumulativeSteps(todayEvents);
-  const hasSteps = cumulativeSteps > 0 || todaySnapshot.stepCount !== null;
-  const displaySteps = hasSteps
-    ? formatNumber(
-        cumulativeSteps > 0 ? cumulativeSteps : (todaySnapshot.stepCount ?? 0),
-      )
-    : "Waiting";
+  const averageSpeedKmh = calculateAverageSpeedKmh(
+    todaySnapshot.locationSamples,
+  );
+  const elevationSummary = calculateElevationSummary(
+    todaySnapshot.locationSamples,
+  );
+
+  const cumulativeSteps =
+    resolveStepTotal(todayEvents) ?? todaySnapshot.stepCount;
+  const hasSteps = cumulativeSteps !== null;
+  const displaySteps = hasSteps ? formatNumber(cumulativeSteps) : "Waiting";
 
   return [
     metric(
       "steps",
       "Steps",
       displaySteps,
-      collectors.steps.enabled
-        ? signals.stepPermissionStatus === "granted"
-          ? "Cumulative steps recorded today."
-          : "Allow motion access so Zentra can count your steps."
-        : "Turn on Steps in Settings to start counting.",
+      hasSteps
+        ? stepSourceLabel(todayEvents)
+        : collectors.steps.enabled
+          ? signals.stepPermissionStatus === "granted"
+            ? "Cumulative steps recorded today."
+            : "Allow motion access so Zentra can count your steps."
+          : "Turn on Steps in Settings to start counting.",
       "hero",
       hasSteps,
     ),
     metric(
       "activeMinutes",
       "Active Minutes",
-      todayAggregate
-        ? formatNumber(todayAggregate.activeMinutes)
-        : collectors.activity.enabled || collectors.steps.enabled
-          ? "0"
-          : "Waiting",
-      collectors.activity.enabled || collectors.steps.enabled
-        ? currentActivity
-          ? todayAggregate && todayAggregate.activeMinutes > 0
-            ? `Current activity: ${currentActivity}. Total time spent in non-idle activities today.`
-            : `Current activity: ${currentActivity}. Zentra is waiting for more activity data to build the day.`
-          : todayAggregate && todayAggregate.activeMinutes > 0
-            ? "Total time spent walking, running, or in other non-idle activities today."
-            : "Active minutes appear once movement is detected from sensors or steps."
-        : "Turn on Activity or Steps in Settings to start.",
+      activeMinutesValue(todayAggregate?.activeSummary),
+      todayAggregate?.activeSummary?.supportedMinutes != null
+        ? "Partial timing coverage. Tap to review sources and estimates."
+        : "No reliable activity timing yet. Steps alone do not establish duration.",
       "physical",
-      Boolean(currentActivity) ||
-        Boolean(todayAggregate && todayAggregate.activeMinutes > 0),
+      todayAggregate?.activeSummary?.supportedMinutes != null,
     ),
     metric(
       "screenTime",
@@ -250,7 +246,7 @@ export function buildLiveDashboardMetrics(
         : "Turn on Location in Settings.",
       "physical",
       elevationSummary !== null,
-    )
+    ),
   ];
 }
 
@@ -293,7 +289,9 @@ export function buildLiveSleepEstimate(
     confidence: sleepEvent.confidence,
     available: true,
     detail: isImported
-      ? `Pulled in from your ${sourceLabel} history.`
+      ? sleepEvent.metadata.sleep_estimated === true
+        ? `Imported sleep-session estimate from ${sourceLabel}; no asleep stages supplied.`
+        : `Recorded asleep intervals from ${sourceLabel}, without overlapping stages.`
       : "Inferred from screen, unlock, and charging patterns on your device.",
     sourceLabel,
     isImported,

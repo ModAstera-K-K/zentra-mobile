@@ -20,7 +20,9 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
     <Card elevated>
       <View style={styles.eyebrowRow}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-          {"Last night's rest"}
+          {sleepEstimate.isImported
+            ? "Last night's sleep"
+            : "Last night's inferred rest"}
         </Text>
         {sleepEstimate.available ? (
           <View
@@ -82,8 +84,10 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
       </Text>
       <Text style={[styles.meta, { color: palette.mutedForeground }]}>
         {sleepEstimate.available
-          ? `${Math.round(sleepEstimate.confidence * 100)}% confident · ${sleepEstimate.sourceLabel}`
-          : "Unavailable in this build"}
+          ? sleepEstimate.isImported
+            ? sleepEstimate.sourceLabel
+            : `${Math.round(sleepEstimate.confidence * 100)}% confidence estimate · ${sleepEstimate.sourceLabel}`
+          : "No readable records for this night"}
       </Text>
     </Card>
   );

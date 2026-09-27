@@ -1,3 +1,6 @@
+import { ActiveMinutesRefreshStatus } from "@/components/zentra/ActiveMinutesRefreshStatus";
+import { useTabPerformance } from "@/hooks/use-tab-performance";
+import { groupExportEvents } from "@/utils/export-data";
 import React from "react";
 import {
   ActivityIndicator,
@@ -47,9 +50,9 @@ import {
   shiftISODate,
 } from "@/utils/dates";
 import {
+  getRepositoryRevision,
   getDailyAggregatesForRange,
   getEventsForRange,
-  getGroupedEventsForRange,
 } from "@/utils/event-repository";
 import { buildExportEvents, createDemoCollectors } from "@/utils/mock-data";
 import {
@@ -59,8 +62,8 @@ import {
   estimateUnifiedExportBundleBytes,
 } from "@/utils/export";
 import { formatBytes } from "@/utils/format";
-import { startPerfTimer, timeSyncOperation } from "@/utils/perf";
-import { buildUnifiedTimeline } from "@/utils/unified-timeline";
+import { startPerfTimer } from "@/utils/perf";
+import { buildUnifiedTimelineAsync } from "@/utils/unified-timeline";
 import { useShallow } from "zustand/react/shallow";
 
 const PRESETS: ExportPreset[] = ["today", "week", "month", "all", "custom"];
@@ -85,6 +88,7 @@ export default function ExportScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const isFocused = useIsFocused();
+  useTabPerformance("export");
   const noteExport = useAppStore((state) => state.noteExport);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
@@ -131,6 +135,7 @@ export default function ExportScreen() {
     start: string;
     end: string;
     dataVersion: string | null;
+    rangeRevision: string;
   } | null>(null);
   const range =
     preset === "custom" ? customRange : getExportRangeForPreset(preset);
@@ -227,15 +232,31 @@ export default function ExportScreen() {
       });
 
       try {
-        const [events, aggregates, rawEvents] = await Promise.all([
-          getGroupedEventsForRange(range.start, range.end),
+        const rangeRevision = await getRepositoryRevision(
+          range.start,
+          range.end,
+        );
+        if (isCancelled) return;
+        if (
+          prev?.start === range.start &&
+          prev.end === range.end &&
+          prev.rangeRevision === rangeRevision
+        ) {
+          lastLoadedRangeRef.current = {
+            ...prev,
+            dataVersion: repositoryState.todayDataUpdatedAt,
+          };
+          return;
+        }
+        const [aggregates, rawEvents] = await Promise.all([
           getDailyAggregatesForRange(range.start, range.end),
           getEventsForRange(range.start, range.end),
         ]);
 
         stopLoad({
           aggregateCount: aggregates.length,
-          eventTypeCount: Object.keys(events).length,
+          eventTypeCount: new Set(rawEvents.map((event) => event.dataType))
+            .size,
           isCancelled,
           rawEventCount: rawEvents.length,
         });
@@ -244,13 +265,14 @@ export default function ExportScreen() {
           return;
         }
 
-        setLiveEvents(events);
+        setLiveEvents(groupExportEvents(rawEvents));
         setLiveAggregates(aggregates);
         setLiveRawEvents(rawEvents);
         lastLoadedRangeRef.current = {
           start: range.start,
           end: range.end,
           dataVersion: repositoryState.todayDataUpdatedAt,
+          rangeRevision,
         };
       } catch {
         stopLoad({ isCancelled, result: "error" });
@@ -302,6 +324,7 @@ export default function ExportScreen() {
 
   React.useEffect(() => {
     if (
+      !isFocused ||
       exportMode !== "unified" ||
       !hasValidRange ||
       !rawEventsForTimeline.length
@@ -314,53 +337,57 @@ export default function ExportScreen() {
     let isCancelled = false;
     setIsComputingTimeline(true);
 
+    const controller = new AbortController();
     const interaction = InteractionManager.runAfterInteractions(() => {
-      const stopCompute = startPerfTimer("export.compute_unified_timeline", {
-        eventCount: rawEventsForTimeline.length,
-        rangeEnd: range.end,
-        rangeStart: range.start,
-        resolution,
-        screen: "export",
-      });
-
-      try {
-        const nextTimelineBuckets = timeSyncOperation(
-          "export.compute_unified_timeline.sync",
-          () => {
-            const startDate = parseISODate(range.start);
-            const endDate = parseISODate(shiftISODate(range.end, 1));
-            return buildUnifiedTimeline(rawEventsForTimeline, {
-              resolution,
-              startTimestamp: startDate.toISOString(),
-              endTimestamp: endDate.toISOString(),
-            });
-          },
-        );
-
-        if (!isCancelled) {
-          setTimelineBuckets(nextTimelineBuckets);
-        }
-
-        stopCompute({
-          bucketCount: nextTimelineBuckets.length,
-          cancelled: isCancelled,
+      void (async () => {
+        const stopCompute = startPerfTimer("export.compute_unified_timeline", {
+          eventCount: rawEventsForTimeline.length,
+          rangeEnd: range.end,
+          rangeStart: range.start,
+          resolution,
+          screen: "export",
         });
-      } catch {
-        stopCompute({ cancelled: isCancelled, result: "error" });
-      } finally {
-        if (!isCancelled) {
-          setIsComputingTimeline(false);
+
+        try {
+          const nextTimelineBuckets = await buildUnifiedTimelineAsync(
+            rawEventsForTimeline,
+            {
+              resolution,
+              startTimestamp: parseISODate(range.start).toISOString(),
+              endTimestamp: parseISODate(
+                shiftISODate(range.end, 1),
+              ).toISOString(),
+            },
+            controller.signal,
+          );
+
+          if (!isCancelled) {
+            setTimelineBuckets(nextTimelineBuckets);
+          }
+
+          stopCompute({
+            bucketCount: nextTimelineBuckets.length,
+            cancelled: isCancelled,
+          });
+        } catch {
+          stopCompute({ cancelled: isCancelled, result: "error" });
+        } finally {
+          if (!isCancelled) {
+            setIsComputingTimeline(false);
+          }
         }
-      }
+      })();
     });
 
     return () => {
       isCancelled = true;
+      controller.abort();
       interaction.cancel();
       setIsComputingTimeline(false);
     };
   }, [
     exportMode,
+    isFocused,
     hasValidRange,
     range.end,
     range.start,
@@ -456,6 +483,13 @@ export default function ExportScreen() {
 
   return (
     <ScreenShell subtitle="Take your data with you" title="Export">
+      <ActiveMinutesRefreshStatus
+        enabled={
+          dataMode !== "demo" && repositoryState.isHydrated && hasValidRange
+        }
+        start={range.start}
+        end={range.end}
+      />
       <ScreenLead
         body={
           dataMode === "demo"

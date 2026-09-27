@@ -1,3 +1,4 @@
+import type { HealthRecordType, HealthSyncPage } from "@/types/health-sync";
 import * as ExpoLinking from "expo-linking";
 import { Platform } from "react-native";
 
@@ -25,9 +26,7 @@ export interface NativeHealthConnectRecord {
 }
 
 export type HealthConnectAvailability =
-  | "available"
-  | "not_installed"
-  | "unsupported";
+  "available" | "not_installed" | "unsupported";
 export type UsageAccessPermissionStatus = PermissionStatus;
 
 export interface NativeUsageEvent {
@@ -47,6 +46,21 @@ interface NativeSignalsSubscription {
 }
 
 interface NativeSignalsModule {
+  readHealthSyncPageAsync?: (
+    type: string,
+    start: string,
+    end: string,
+    cursor: string | null,
+  ) => Promise<HealthSyncPage>;
+  readHealthStepTimingAsync?: (
+    start: string,
+    end: string,
+  ) => Promise<NativeHealthConnectRecord[]>;
+  readHealthStepsAsync?: (
+    start: string,
+    end: string,
+  ) => Promise<NativeHealthConnectRecord[]>;
+  requestHealthHistoryAsync?: () => Promise<boolean>;
   addListener: (
     eventName: "onActivityTransition",
     listener: (payload: NativeActivityTransition) => void,
@@ -109,8 +123,7 @@ function loadNativeSignalsModule(): NativeSignalsModule | null {
     // Local Expo modules only exist in rebuilt native dev clients.
     // Keep the JS app functional before native rebuild by treating absence as unsupported.
     const module = require("../../modules/zentra-native-signals").default as
-      | NativeSignalsModule
-      | undefined;
+      NativeSignalsModule | undefined;
     return module ?? null;
   } catch {
     return null;
@@ -125,7 +138,7 @@ export function hasRequiredHealthConnectPermissions(
   grantedPermissions: string[],
 ): boolean {
   const grantedSet = new Set(grantedPermissions);
-  return REQUIRED_HEALTH_CONNECT_PERMISSIONS.every((permission) =>
+  return REQUIRED_HEALTH_CONNECT_PERMISSIONS.some((permission) =>
     grantedSet.has(permission),
   );
 }
@@ -380,4 +393,41 @@ export async function readHealthConnectRecordsAsync(
   }
 
   return module.readHealthConnectRecordsAsync(startIso, endIso);
+}
+
+export async function readHealthSyncPage(
+  type: HealthRecordType,
+  start: string,
+  end: string,
+  cursor: string | null,
+): Promise<HealthSyncPage> {
+  const module = loadNativeSignalsModule();
+  if (!module?.readHealthSyncPageAsync)
+    throw new Error("Update the native app to enable reliable health imports");
+  return module.readHealthSyncPageAsync(type, start, end, cursor);
+}
+export async function readHealthSteps(
+  start: string,
+  end: string,
+): Promise<NativeHealthConnectRecord[]> {
+  const module = loadNativeSignalsModule();
+  if (!module?.readHealthStepsAsync)
+    throw new Error("Health statistics require an updated native app");
+  return module.readHealthStepsAsync(start, end);
+}
+export async function requestHealthHistory(): Promise<boolean> {
+  if (Platform.OS === "ios") return true;
+  return (
+    (await loadNativeSignalsModule()?.requestHealthHistoryAsync?.()) ?? false
+  );
+}
+
+export async function readHealthStepTiming(
+  start: string,
+  end: string,
+): Promise<NativeHealthConnectRecord[]> {
+  const module = loadNativeSignalsModule();
+  if (!module?.readHealthStepTimingAsync)
+    throw new Error("Update the native app to read activity timing");
+  return module.readHealthStepTimingAsync(start, end);
 }

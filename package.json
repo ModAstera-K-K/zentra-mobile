@@ -26,7 +26,8 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "check:no-network": "node ./scripts/check-no-network.mjs",
-    "check:privacy": "node ./scripts/check-no-network.mjs"
+    "check:privacy": "node ./scripts/check-no-network.mjs",
+    "test": "node --import ./tests/register.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",

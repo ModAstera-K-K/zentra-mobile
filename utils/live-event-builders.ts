@@ -123,9 +123,13 @@ function createHealthConnectEvent(
     record.recordType === "sleep" ? "sleep_inferred" : record.recordType;
 
   return {
-    ...createBaseEvent(dataType, "health_connect", record.startTime),
+    ...createBaseEvent(
+      dataType,
+      "health_connect",
+      new Date(record.startTime).toISOString(),
+    ),
     id: `health-connect-${record.recordType}-${record.id}`,
-    timestampEnd: record.endTime,
+    timestampEnd: new Date(record.endTime).toISOString(),
     valueNumeric: record.valueNumeric ?? undefined,
     valueText: record.valueText ?? undefined,
     valueJson: record.valueJson ?? undefined,
@@ -153,10 +157,14 @@ export function createMotionContextEvent(summary: {
   sedentaryRatio: number;
   burstRatio: number;
   stability: number;
+  timestampStart?: string;
+  timestampEnd?: string;
 }): ZentraEventRecord {
   const timestamp = new Date().toISOString();
   return {
     ...createBaseEvent("motion_context", "sensor", timestamp),
+    timestampStart: summary.timestampStart ?? timestamp,
+    timestampEnd: summary.timestampEnd ?? timestamp,
     valueText: summary.label,
     valueNumeric: summary.avgAccel,
     unit: "g",

@@ -2,7 +2,7 @@ import React from "react";
 import { LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line, Polyline, Text as SvgText } from "react-native-svg";
 
-import { EmptyState } from "@/components/zentra/EmptyState";
+import { DailyRhythmStatus } from "@/components/zentra/DailyRhythmStatus";
 import { Card } from "@/components/ui/Card";
 import {
   Colors,
@@ -15,7 +15,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { UnifiedTimelineBucket } from "@/types/zentra";
 import {
   buildChartCoordinates,
-  buildPolylinePoints,
+  buildPolylineSegments,
   pickAxisLabelIndices,
 } from "@/utils/charts";
 
@@ -64,10 +64,10 @@ function getNormalizedModeValue(
 function buildNormalizedPoints(
   buckets: UnifiedTimelineBucket[],
   mode: ActivityMode,
-): { label: string; value: number }[] {
+): { label: string; value: number | null }[] {
   return buckets.map((bucket) => ({
     label: bucket.label,
-    value: getNormalizedModeValue(bucket, mode),
+    value: bucket.hasAnyData ? getNormalizedModeValue(bucket, mode) : null,
   }));
 }
 
@@ -134,7 +134,7 @@ export const ActivityStrip = React.memo(function ActivityStrip({
   }, [seriesData, innerWidth, innerHeight]);
 
   const seriesPolylines = React.useMemo(
-    () => seriesCoordinates.map((coords) => buildPolylinePoints(coords)),
+    () => seriesCoordinates.map((coords) => buildPolylineSegments(coords)),
     [seriesCoordinates],
   );
 
@@ -151,11 +151,7 @@ export const ActivityStrip = React.memo(function ActivityStrip({
 
   if (!buckets.length || !buckets.some((bucket) => bucket.hasAnyData)) {
     return (
-      <EmptyState
-        body="Turn on the Activity or Location collector in Settings. Your rhythm through the day will appear here."
-        iconName="pulse-outline"
-        title="No daily rhythm yet"
-      />
+      <DailyRhythmStatus loading={!buckets.length} />
     );
   }
 
@@ -186,7 +182,10 @@ export const ActivityStrip = React.memo(function ActivityStrip({
 
   return (
     <Card>
-      <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+      <Text
+        accessibilityRole="header"
+        style={[styles.eyebrow, { color: palette.textSecondary }]}
+      >
         Daily rhythm
       </Text>
 
@@ -233,23 +232,25 @@ export const ActivityStrip = React.memo(function ActivityStrip({
               y2={CHART_HEIGHT - CHART_INSET_Y}
             />
           ) : null}
-          {MODES.map((m, modeIndex) => (
-            <Polyline
-              key={m.key}
-              fill="none"
-              points={seriesPolylines[modeIndex]}
-              stroke={getModeColor(m.key, palette)}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeOpacity={0.85}
-              strokeWidth={1.5}
-            />
-          ))}
+          {MODES.flatMap((m, modeIndex) =>
+            seriesPolylines[modeIndex].map((points, index) => (
+              <Polyline
+                key={`${m.key}-${index}`}
+                fill="none"
+                points={points}
+                stroke={getModeColor(m.key, palette)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeOpacity={0.85}
+                strokeWidth={1.5}
+              />
+            )),
+          )}
           {MODES.map((m, modeIndex) => {
             const coords = seriesCoordinates[modeIndex];
             const coord =
               coords[Math.max(0, Math.min(clampedIndex, coords.length - 1))];
-            if (!coord) return null;
+            if (!coord || !Number.isFinite(coord.y)) return null;
             return (
               <Circle
                 key={`dot-${m.key}`}
@@ -293,7 +294,9 @@ export const ActivityStrip = React.memo(function ActivityStrip({
           return (
             <View key={m.key} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: color }]} />
-              <Text style={[styles.legendValue, { color }]}>{value}/100</Text>
+              <Text style={[styles.legendValue, { color }]}>
+                {selectedBucket.hasAnyData ? `${value}/100` : "No data"}
+              </Text>
               <Text
                 style={[styles.legendLabel, { color: palette.textSecondary }]}
               >

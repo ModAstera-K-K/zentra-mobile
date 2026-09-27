@@ -14,7 +14,7 @@ const perfAggregates = new Map<string, PerfAggregate>();
 const SUMMARY_LOG_EVERY = 10;
 
 function shouldLogPerf(): boolean {
-  return false;
+  return process.env.EXPO_PUBLIC_LOCAL_PERF === "1";
 }
 
 function nowMs(): number {
@@ -148,4 +148,12 @@ export function timeSyncOperation<T>(
   } finally {
     stop();
   }
+}
+
+export function recordLocalDuration(label: string, durationMs: number): void {
+  if (!shouldLogPerf()) return;
+  recordPerfSample(label, durationMs);
+  console.info(`[perf] ${label}`, {
+    durationMs: Number(durationMs.toFixed(1)),
+  });
 }

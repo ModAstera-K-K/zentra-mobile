@@ -1,3 +1,6 @@
+import { activeMinutesDetail } from "@/utils/active-minutes-presentation";
+import { stepSourceLabel } from "@/utils/metric-source-label";
+import { selectResolvedStepEvents } from "@/utils/source-resolution";
 import { Platform } from "react-native";
 
 import type {
@@ -349,7 +352,6 @@ function getEventProvenanceLabel(event: ZentraEventRecord): string {
   }
 }
 
-
 function parseLocationLabel(valueJson?: string): string {
   const location = parseLocationPayload(valueJson);
   if (!location) {
@@ -594,9 +596,9 @@ function buildDeviceContextValue(todaySnapshot: TodayLiveSnapshot): string {
 function buildStepsVisual(
   events: ZentraEventRecord[],
 ): TodayDetailVisual | null {
-  const stepEvents = sortEventsAscending(events).filter(
-    (event) => typeof event.valueNumeric === "number",
-  );
+  const stepEvents = sortEventsAscending(
+    selectResolvedStepEvents(events),
+  ).filter((event) => typeof event.valueNumeric === "number");
 
   if (!stepEvents.length) {
     return null;
@@ -610,7 +612,12 @@ function buildStepsVisual(
   let prevCount: number | null = null;
   for (const event of sensorEvents) {
     const current = Math.max(0, Math.round(event.valueNumeric ?? 0));
-    const delta = prevCount === null ? 0 : Math.max(0, current - prevCount);
+    const delta =
+      typeof event.metadata.step_delta === "number"
+        ? event.metadata.step_delta
+        : prevCount === null || current < prevCount
+          ? current
+          : current - prevCount;
     sensorDeltas.set(event.id, delta);
     prevCount = current;
   }
@@ -928,7 +935,8 @@ function buildCompletenessVisual(
 
   return {
     type: "distribution",
-    annotation: "Coverage across the core signal families tracked today.",
+    annotation:
+      "Signal types observed today; this does not measure continuous observation coverage.",
     bars: eventCounts.map((entry) => ({
       label: entry.label,
       value: entry.value,
@@ -1396,7 +1404,7 @@ function buildMetricFacts(
   switch (metric.key) {
     case "steps":
       return [
-        { label: "Source", value: getMetricSourceLabel(metric.key) },
+        { label: "Source", value: stepSourceLabel(context.todayEvents) },
         {
           label: "Last update",
           value: context.todaySnapshot.stepLastUpdatedAt
@@ -1466,7 +1474,9 @@ function buildMetricFacts(
         {
           label: "Average speed",
           value:
-            averageSpeedKmh !== null ? `${averageSpeedKmh.toFixed(1)} km/h` : "Waiting",
+            averageSpeedKmh !== null
+              ? `${averageSpeedKmh.toFixed(1)} km/h`
+              : "Waiting",
         },
       ];
     }
@@ -1720,9 +1730,9 @@ export function buildTodaySecondaryMetrics(
     },
     {
       key: "dataCompleteness",
-      label: "Completeness",
+      label: "Signal types observed",
       value: formatPercent(completenessValue * 100),
-      detail: `${getCoverageCount(todayEvents)} of ${CORE_SIGNAL_TYPES.length} core signals have surfaced today.`,
+      detail: `${getCoverageCount(todayEvents)} of ${CORE_SIGNAL_TYPES.length} signal types seen; capture may be incomplete.`,
       tone: "hero",
       available: completenessValue > 0,
     },
@@ -1780,6 +1790,13 @@ export function buildTodayMetricDetailPayload(
   metric: MetricLike,
   context: TodayVisualizationContext,
 ): TodayDetailPayload {
+  if (metric.key === "activeMinutes" && context.todayAggregate?.activeSummary) {
+    return activeMinutesDetail(
+      context.todayAggregate.activeSummary,
+      context.todayEvents,
+      context.todayAggregate.stepsTotal,
+    );
+  }
   const relatedEvents = getRelatedEvents(context.todayEvents, metric.key);
 
   return {

@@ -6,10 +6,12 @@ export interface ChartCoordinate {
 }
 
 function getExtents(points: TrendPoint[]): { max: number; min: number } {
-  const values = points.map((point) => point.value);
+  const values = points
+    .map((point) => point.value)
+    .filter((value): value is number => value !== null);
   return {
-    max: Math.max(...values),
-    min: Math.min(...values),
+    max: values.reduce((a, b) => Math.max(a, b), 0),
+    min: values.length ? values.reduce((a, b) => Math.min(a, b), Infinity) : 0,
   };
 }
 
@@ -37,7 +39,10 @@ export function buildChartCoordinates(
           : (index / (points.length - 1)) * width;
     return {
       x,
-      y: height - ((point.value - min) / range) * height,
+      y:
+        point.value === null
+          ? Number.NaN
+          : height - ((point.value - min) / range) * height,
     };
   });
 }
@@ -64,4 +69,16 @@ export function pickAxisLabelIndices(count: number, maxLabels = 5): number[] {
   }
   indices.push(count - 1);
   return indices;
+}
+
+export function buildPolylineSegments(
+  coordinates: ChartCoordinate[],
+): string[] {
+  const segments: ChartCoordinate[][] = [[]];
+  for (const coordinate of coordinates) {
+    if (!Number.isFinite(coordinate.y)) {
+      if (segments.at(-1)!.length) segments.push([]);
+    } else segments.at(-1)!.push(coordinate);
+  }
+  return segments.filter((segment) => segment.length).map(buildPolylinePoints);
 }

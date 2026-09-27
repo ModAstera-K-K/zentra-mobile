@@ -117,10 +117,9 @@ export function buildBucketCompositeScores(
   bucket: UnifiedTimelineBucket,
   maxima: ActivityScoreMaxima,
 ): { intensityScore: number; restCompositeScore: number } {
-  // Buckets with no data at all are treated as full rest — the device was
-  // idle or off, which is the strongest rest signal available.
+  // Missing observations do not establish rest. Consumers use hasAnyData for gaps.
   if (!bucket.hasAnyData) {
-    return { intensityScore: 0, restCompositeScore: 100 };
+    return { intensityScore: 0, restCompositeScore: 0 };
   }
 
   const intensityValues = [

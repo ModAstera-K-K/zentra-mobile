@@ -1,3 +1,4 @@
+import { markTabPress } from "@/utils/navigation-performance";
 import React from "react";
 import { Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,6 +35,9 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      screenListeners={({ route }) => ({
+        tabPress: () => markTabPress(route.name),
+      })}
       screenOptions={{
         lazy: true,
         freezeOnBlur: true,

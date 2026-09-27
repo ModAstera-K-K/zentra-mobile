@@ -68,7 +68,16 @@ export const MetricCard = React.memo(function MetricCard({
         </View>
         <View style={[styles.accent, { backgroundColor: accent }]} />
       </View>
-      <Text style={[styles.value, { color: accent }]}>{metric.value}</Text>
+      <View style={styles.valueRow}>
+        <Text style={[styles.value, { color: accent }]}>{metric.value}</Text>
+        {metric.key === "activeMinutes" &&
+        metric.available &&
+        metric.value.endsWith(" min") ? (
+          <Text style={[styles.partial, { color: palette.textSecondary }]}>
+            · Partial
+          </Text>
+        ) : null}
+      </View>
       <View style={[styles.rule, { backgroundColor: palette.border }]} />
       <Text style={[styles.detail, { color: palette.textSecondary }]}>
         {metric.detail}
@@ -78,6 +87,13 @@ export const MetricCard = React.memo(function MetricCard({
 });
 
 const styles = StyleSheet.create({
+  valueRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "baseline",
+    gap: Spacing.xs,
+  },
+  partial: { fontFamily: Fonts.body, fontSize: FontSizes.xs },
   card: {
     height: "100%",
     gap: Spacing.sm,

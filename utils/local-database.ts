@@ -1,4 +1,7 @@
+import { ACTIVE_MINUTES_MIGRATION } from "@/utils/active-minutes-migration";
 import { openDatabaseAsync, type SQLiteDatabase } from "expo-sqlite";
+
+import { REVISION_SCHEMA } from "@/utils/repository-revision";
 
 const DATABASE_NAME = "zentra.db";
 const SQLITE_LOCK_RETRY_DELAYS_MS = [150, 300, 600, 1200, 2000];
@@ -103,8 +106,10 @@ async function runMigrations(database: SQLiteDatabase): Promise<void> {
   for (const migration of MIGRATIONS_SQL) {
     try {
       await retryLockedExecAsync(database, migration);
-    } catch {
-      // Column already exists — safe to skip
+    } catch (error) {
+      // Only a duplicate column is safe to skip; failed migrations must surface.
+      if (!(error instanceof Error) || !/duplicate column/i.test(error.message))
+        throw error;
     }
   }
 }
@@ -114,6 +119,20 @@ async function initializeDatabase(
 ): Promise<SQLiteDatabase> {
   await retryLockedExecAsync(database, SCHEMA_SQL);
   await runMigrations(database);
+  const version = await database.getFirstAsync<{ user_version: number }>(
+    "PRAGMA user_version",
+  );
+  if ((version?.user_version ?? 0) < 2) {
+    await database.withTransactionAsync(async () => {
+      await database.execAsync(REVISION_SCHEMA);
+      await database.execAsync("DELETE FROM daily_aggregates");
+    });
+  }
+  if ((version?.user_version ?? 0) < 3) {
+    await database.withTransactionAsync(async () => {
+      await database.execAsync(ACTIVE_MINUTES_MIGRATION);
+    });
+  }
   return database;
 }
 

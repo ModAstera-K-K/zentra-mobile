@@ -1,3 +1,4 @@
+import { HealthSourcesCard } from "@/components/zentra/HealthSourcesCard";
 import React from "react";
 import {
   Alert,
@@ -282,9 +283,11 @@ export default function SettingsScreen() {
     }
 
     setHealthConnectPermissionStatus(
-      hasRequiredHealthConnectPermissions(grantedHealthPermissions)
-        ? "granted"
-        : "not_requested",
+      Platform.OS === "ios"
+        ? "unknown"
+        : hasRequiredHealthConnectPermissions(grantedHealthPermissions)
+          ? "granted"
+          : "not_requested",
     );
   }, []);
 
@@ -456,13 +459,20 @@ export default function SettingsScreen() {
           await refreshNativePermissionStatuses();
           await retryCollectors();
 
+          if (Platform.OS === "ios") {
+            Alert.alert(
+              "Apple Health access reviewed",
+              "Zentra will read the records Apple Health makes available. Read permission status is private.",
+            );
+            return;
+          }
           Alert.alert(
             hasRequiredHealthConnectPermissions(grantedPermissions)
               ? `${healthPlatformName} connected`
               : `${healthPlatformName} still needs permissions`,
             hasRequiredHealthConnectPermissions(grantedPermissions)
               ? `${healthPlatformName} access was granted. Zentra will retry the import now.`
-              : `Grant all requested ${healthPlatformName} permissions, then return to Zentra and tap Retry signals. Required permissions: ${getRequiredHealthConnectPermissions().length}.`,
+              : `Allow the ${healthPlatformName} record types you want to import, then return to Zentra and tap Retry signals. Required permissions: ${getRequiredHealthConnectPermissions().length}.`,
           );
           return;
         }
@@ -696,6 +706,7 @@ export default function SettingsScreen() {
           })}
         </View>
       </Card>
+      <HealthSourcesCard />
 
       <Card elevated style={styles.section}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>

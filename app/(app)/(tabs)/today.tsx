@@ -1,3 +1,9 @@
+import { activeEvidenceRows } from "@/utils/active-evidence";
+import { useActiveMinutesRefresh } from "@/hooks/use-active-minutes-refresh";
+import { useSleepSummary } from "@/hooks/use-sleep-summary";
+import { loadNormalizationMaxima } from "@/utils/activity-cache";
+import { useTabPerformance } from "@/hooks/use-tab-performance";
+import { InsightsSection } from "@/components/zentra/InsightsSection";
 import React from "react";
 import {
   ActivityIndicator,
@@ -56,12 +62,13 @@ import { buildDemoTimelineEvents } from "@/utils/demo-timeline-events";
 import {
   getEventsForRange,
   getRepositoryDateBounds,
+  getRepositoryRevision,
 } from "@/utils/event-repository";
 import { useIsFocused } from "@react-navigation/native";
 import {
-  buildMonthlyActivityPattern,
-  buildNormalizationMaxima,
-  buildUnifiedDailyTimeline,
+  buildNormalizationMaximaAsync,
+  buildMonthlyActivityPatternAsync,
+  buildUnifiedTimelineAsync,
 } from "@/utils/unified-timeline";
 import { getActivityRecognitionPermissionStatusAsync } from "@/utils/native/zentra-native-signals";
 import {
@@ -77,7 +84,7 @@ import {
   buildSleepEstimate,
   createDemoCollectors,
 } from "@/utils/mock-data";
-import { startPerfTimer, timeSyncOperation } from "@/utils/perf";
+import { startPerfTimer } from "@/utils/perf";
 import { useShallow } from "zustand/react/shallow";
 
 function getActivityNormalizationLabel(
@@ -94,6 +101,7 @@ function getActivityNormalizationLabel(
 }
 
 type TodaySectionKey =
+  | "insights"
   | "pattern"
   | "metrics"
   | "activityStrip"
@@ -126,7 +134,7 @@ const PatternSection = React.memo(function PatternSection({
   onSelectCell: (cell: ActivityPatternCell) => void;
   textSecondary: string;
 }) {
-  if (!hasLoadedPattern && !isDemoMode) {
+  if ((!hasLoadedPattern && !isDemoMode) || !cells.length) {
     return (
       <View style={styles.sectionBlock}>
         <Card>
@@ -330,6 +338,7 @@ export default function TodayScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const isFocused = useIsFocused();
+  useTabPerformance("today");
   const collectors = useAppStore((state) => state.collectors);
   const activityNormalizationWindow = useAppStore(
     (state) => state.activityNormalizationWindow,
@@ -403,6 +412,9 @@ export default function TodayScreen() {
     })),
   );
   const isDemoMode = dataMode === "demo";
+  const activeRefresh = useActiveMinutesRefresh(
+    !isDemoMode && repository.isHydrated,
+  );
   const demoCollectors = React.useMemo(
     () => createDemoCollectors(collectors),
     [collectors],
@@ -414,7 +426,9 @@ export default function TodayScreen() {
   const [historicalPatternEvents, setHistoricalPatternEvents] = React.useState<
     ZentraEventRecord[]
   >([]);
+  const [monthCells, setMonthCells] = React.useState<ActivityPatternCell[]>([]);
   const [hasLoadedPattern, setHasLoadedPattern] = React.useState(false);
+  const [isComputingPattern, setIsComputingPattern] = React.useState(false);
   const [isLoadingPatternHistory, setIsLoadingPatternHistory] =
     React.useState(false);
   const [isRefreshingTodayData, setIsRefreshingTodayData] =
@@ -434,9 +448,7 @@ export default function TodayScreen() {
   React.useEffect(() => {
     latestSignalValuesRef.current = signalValues;
   }, [signalValues]);
-  const lastFetchedWindowRef = React.useRef<ActivityNormalizationWindow | null>(
-    null,
-  );
+  const lastFetchedWindowRef = React.useRef<string | null>(null);
   const patternSourceEventsRef = React.useRef<ZentraEventRecord[]>([]);
   const todayAnchor = React.useMemo(() => {
     const now = new Date();
@@ -474,7 +486,7 @@ export default function TodayScreen() {
     const readyForFirstPaint =
       (isDemoMode || repository.isHydrated) &&
       hasEnabledCollectors &&
-      (isDemoMode || hasLoadedPattern);
+      monthCells.length > 0;
 
     if (!readyForFirstPaint || !focusReadyStopRef.current) {
       return;
@@ -489,6 +501,7 @@ export default function TodayScreen() {
     focusReadyStopRef.current = null;
   }, [
     collectors,
+    monthCells.length,
     hasLoadedPattern,
     isDemoMode,
     isFocused,
@@ -512,22 +525,9 @@ export default function TodayScreen() {
       return;
     }
 
-    // Invalidate cached pattern when the repository ingests new data so the
-    // activity pattern re-fetches after a Health Connect import or any other
-    // collector that writes historical events.  Also invalidated by
-    // pull-to-refresh via setHasLoadedPattern(false).
-    if (
-      hasLoadedPattern &&
-      lastFetchedAnchorRef.current === todayAnchor &&
-      lastFetchedWindowRef.current === activityNormalizationWindow
-    ) {
-      return;
-    }
-
     let isCancelled = false;
 
     async function loadPatternHistoryEvents(): Promise<void> {
-      setIsLoadingPatternHistory(true);
       const stopLoadPattern = startPerfTimer("today.load_pattern_history", {
         normalizationWindow: activityNormalizationWindow,
         screen: "today",
@@ -548,7 +548,7 @@ export default function TodayScreen() {
             setHistoricalPatternEvents([]);
             setHasLoadedPattern(true);
             lastFetchedAnchorRef.current = todayAnchor;
-            lastFetchedWindowRef.current = activityNormalizationWindow;
+            lastFetchedWindowRef.current = `${activityNormalizationWindow}:${repository.todayDataUpdatedAt}`;
           }
 
           stopLoadPattern({
@@ -556,17 +556,35 @@ export default function TodayScreen() {
             rangeStart: range.start,
             reason: "empty_range",
           });
-          setIsLoadingPatternHistory(false);
+          if (!isCancelled) setIsLoadingPatternHistory(false);
           return;
         }
 
-        const events = await getEventsForRange(range.start, historicalEnd);
+        const visibleStart =
+          range.start < shiftISODate(todayAnchor, -28)
+            ? shiftISODate(todayAnchor, -28)
+            : range.start;
+        const historyRevision = await getRepositoryRevision(
+          visibleStart,
+          historicalEnd,
+        );
+        const historyKey = `${activityNormalizationWindow}:${historyRevision}`;
+        if (
+          lastFetchedWindowRef.current === historyKey &&
+          lastFetchedAnchorRef.current === todayAnchor
+        ) {
+          stopLoadPattern({ reason: "cached" });
+          return;
+        }
+        if (isCancelled) return;
+        setIsLoadingPatternHistory(true);
+        const events = await getEventsForRange(visibleStart, historicalEnd);
 
         if (!isCancelled) {
           setHistoricalPatternEvents(events);
           setHasLoadedPattern(true);
           lastFetchedAnchorRef.current = todayAnchor;
-          lastFetchedWindowRef.current = activityNormalizationWindow;
+          lastFetchedWindowRef.current = historyKey;
         }
 
         stopLoadPattern({
@@ -574,10 +592,10 @@ export default function TodayScreen() {
           rangeStart: range.start,
           reason: "loaded",
         });
-        setIsLoadingPatternHistory(false);
+        if (!isCancelled) setIsLoadingPatternHistory(false);
       } catch {
         stopLoadPattern({ reason: "error" });
-        setIsLoadingPatternHistory(false);
+        if (!isCancelled) setIsLoadingPatternHistory(false);
         // keep previous data on failure
       }
     }
@@ -596,7 +614,7 @@ export default function TodayScreen() {
     repository.isHydrated,
     todayAnchor,
     activityNormalizationWindow,
-    hasLoadedPattern,
+    repository.todayDataUpdatedAt,
   ]);
 
   // Heartbeat: refresh dashboard on a 30-second interval and when the app
@@ -710,7 +728,20 @@ export default function TodayScreen() {
             repository.todayAggregate,
             repository.todayEvents,
           );
-      setMetrics(result);
+      setMetrics(
+        result.map((metric) =>
+          metric.key === "activeMinutes" && !isDemoMode
+            ? {
+                ...metric,
+                detail: activeRefresh.error
+                  ? `Update unavailable: ${activeRefresh.error}. Cached coverage may be incomplete.`
+                  : activeRefresh.updating
+                    ? `${metric.detail} Updating…`
+                    : metric.detail,
+              }
+            : metric,
+        ),
+      );
     });
     return () => interaction.cancel();
   }, [
@@ -721,16 +752,17 @@ export default function TodayScreen() {
     repository.todaySnapshot,
     repository.todayAggregate,
     repository.todayEvents,
+    activeRefresh.error,
+    activeRefresh.updating,
     // signalValues is intentionally omitted — metrics only needs permission/
     // capability fields (signalMeta). Including signalValues would re-trigger
     // this effect on every sensor tick (step, lux, battery).
   ]);
+  const liveSleepSummary = useSleepSummary(!isDemoMode);
   const sleepEstimate = React.useMemo(
     () =>
-      isDemoMode
-        ? buildSleepEstimate(demoCollectors, true)
-        : buildLiveSleepEstimate(repository.latestSleepEvent),
-    [isDemoMode, demoCollectors, repository.latestSleepEvent],
+      isDemoMode ? buildSleepEstimate(demoCollectors, true) : liveSleepSummary,
+    [isDemoMode, demoCollectors, liveSleepSummary],
   );
   // Defer visible collectors computation until after interactions.
   // Depends on both signal slices since collector labels show sensor values.
@@ -823,21 +855,13 @@ export default function TodayScreen() {
     () => buildDemoTimelineEvents(demoCollectors),
     [demoCollectors],
   );
+  const patternVersionRef = React.useRef(0);
   const patternSourceEvents = React.useMemo(() => {
     const next = isDemoMode
       ? demoPatternEvents
       : [...historicalPatternEvents, ...(repository.todayEvents ?? [])];
 
-    // Reference-stable: return previous array if contents are unchanged
-    const prev = patternSourceEventsRef.current;
-    if (
-      prev.length === next.length &&
-      prev.length > 0 &&
-      prev[prev.length - 1]?.id === next[next.length - 1]?.id
-    ) {
-      return prev;
-    }
-
+    patternVersionRef.current++;
     patternSourceEventsRef.current = next;
     return next;
   }, [
@@ -849,80 +873,148 @@ export default function TodayScreen() {
   const [dailyRhythmBuckets, setDailyRhythmBuckets] = React.useState<
     UnifiedTimelineBucket[]
   >([]);
-  const [monthCells, setMonthCells] = React.useState<ActivityPatternCell[]>([]);
   const lastRhythmKeyRef = React.useRef<string | null>(null);
   const lastMonthKeyRef = React.useRef<string | null>(null);
 
-  const normalizationMaxima = React.useMemo(
-    () => buildNormalizationMaxima(patternSourceEvents, "hour"),
-    [patternSourceEvents],
-  );
+  const normalizationInputRef = React.useRef<string | null>(null);
+  const [normalizationMaxima, setNormalizationMaxima] = React.useState<Awaited<
+    ReturnType<typeof buildNormalizationMaximaAsync>
+  > | null>(null);
+  React.useEffect(() => {
+    if (!isFocused) return;
+    const inputKey = `${todayAnchor}:${activityNormalizationWindow}:${repository.todayDataUpdatedAt}:${isDemoMode}`;
+    if (normalizationInputRef.current === inputKey) return;
+    const controller = new AbortController();
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      void (
+        isDemoMode
+          ? buildNormalizationMaximaAsync(demoPatternEvents, controller.signal)
+          : loadNormalizationMaxima(
+              activityNormalizationWindow === "all"
+                ? "1970-01-01"
+                : getActivityNormalizationRange(
+                    todayAnchor,
+                    activityNormalizationWindow,
+                  ).start,
+              todayAnchor,
+              controller.signal,
+            )
+      )
+        .then((value) => {
+          if (!controller.signal.aborted) {
+            normalizationInputRef.current = inputKey;
+            setNormalizationMaxima(value);
+          }
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      controller.abort();
+      interaction.cancel();
+    };
+  }, [
+    isFocused,
+    demoPatternEvents,
+    isDemoMode,
+    todayAnchor,
+    activityNormalizationWindow,
+    repository.todayDataUpdatedAt,
+  ]);
 
   React.useEffect(() => {
-    const key = `${todayAnchor}|${patternSourceEvents.length}|${patternSourceEvents.at(-1)?.id ?? ""}`;
+    if (!isFocused || !normalizationMaxima) return;
+    const key = `${todayAnchor}|${activityNormalizationWindow}|${repository.todayDataUpdatedAt}|${isDemoMode}|${patternVersionRef.current}|${Object.values(normalizationMaxima).join(",")}`;
     if (key === lastRhythmKeyRef.current) return;
 
     const todayEventsForCompute = isDemoMode
       ? demoPatternEvents
       : (repository.todayEvents ?? []);
 
+    const controller = new AbortController();
     const interaction = InteractionManager.runAfterInteractions(() => {
-      const result = timeSyncOperation(
-        "today.compute_daily_rhythm",
-        () =>
-          buildUnifiedDailyTimeline(
-            todayEventsForCompute,
-            todayAnchor,
-            "hour",
-            patternSourceEvents,
-            normalizationMaxima,
-          ),
-        {
-          eventCount: todayEventsForCompute.length,
-          normalizationEventCount: patternSourceEvents.length,
-          screen: "today",
-        },
-      );
-      lastRhythmKeyRef.current = key;
-      setDailyRhythmBuckets(result);
+      void (async () => {
+        const result = await buildUnifiedTimelineAsync(
+          todayEventsForCompute,
+          {
+            startTimestamp: new Date(`${todayAnchor}T00:00:00`).toISOString(),
+            endTimestamp: new Date(
+              `${shiftISODate(todayAnchor, 1)}T00:00:00`,
+            ).toISOString(),
+            resolution: "hour",
+          },
+          controller.signal,
+          normalizationMaxima,
+        );
+        if (controller.signal.aborted) return;
+        lastRhythmKeyRef.current = key;
+        setDailyRhythmBuckets(result);
+      })().catch(() => undefined);
     });
 
-    return () => interaction.cancel();
+    return () => {
+      controller.abort();
+      interaction.cancel();
+    };
   }, [
     isDemoMode,
     demoPatternEvents,
     todayAnchor,
     patternSourceEvents,
     normalizationMaxima,
+    isFocused,
+    activityNormalizationWindow,
+    repository.todayDataUpdatedAt,
     repository.todayEvents,
   ]);
 
   React.useEffect(() => {
-    const key = `${todayAnchor}|${patternSourceEvents.length}|${patternSourceEvents.at(-1)?.id ?? ""}`;
+    if (
+      !isFocused ||
+      !normalizationMaxima ||
+      (!isDemoMode && !hasLoadedPattern)
+    )
+      return;
+    const normalizationKey = `${todayAnchor}:${activityNormalizationWindow}:${repository.todayDataUpdatedAt}:${isDemoMode}`;
+    if (normalizationInputRef.current !== normalizationKey) return;
+    const key = `${todayAnchor}|${activityNormalizationWindow}|${repository.todayDataUpdatedAt}|${isDemoMode}|${patternVersionRef.current}|${Object.values(normalizationMaxima).join(",")}`;
     if (key === lastMonthKeyRef.current) return;
 
+    setIsComputingPattern(true);
+    const controller = new AbortController();
     const interaction = InteractionManager.runAfterInteractions(() => {
-      const result = timeSyncOperation(
-        "today.compute_month_pattern",
-        () =>
-          buildMonthlyActivityPattern(
-            patternSourceEvents,
-            todayAnchor,
-            "hour",
-            patternSourceEvents,
-            normalizationMaxima,
-          ),
-        {
-          eventCount: patternSourceEvents.length,
-          screen: "today",
-        },
-      );
-      lastMonthKeyRef.current = key;
-      setMonthCells(result);
+      void (async () => {
+        const result = await buildMonthlyActivityPatternAsync(
+          patternSourceEvents,
+          todayAnchor,
+          "hour",
+          patternSourceEvents,
+          normalizationMaxima,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        lastMonthKeyRef.current = key;
+        setMonthCells(result);
+      })()
+        .catch(() => undefined)
+        .finally(() => {
+          if (!controller.signal.aborted) setIsComputingPattern(false);
+        });
     });
 
-    return () => interaction.cancel();
-  }, [patternSourceEvents, todayAnchor, normalizationMaxima]);
+    return () => {
+      controller.abort();
+      interaction.cancel();
+    };
+  }, [
+    patternSourceEvents,
+    hasLoadedPattern,
+    todayAnchor,
+    normalizationMaxima,
+    isFocused,
+    isDemoMode,
+    activityNormalizationWindow,
+    repository.todayDataUpdatedAt,
+  ]);
 
   const handleSelectPatternCell = React.useCallback(
     (cell: ActivityPatternCell) => {
@@ -935,13 +1027,24 @@ export default function TodayScreen() {
 
   const handleSelectMetric = React.useCallback(
     (metric: DashboardMetric) => {
-      setSelectedDetail(
-        buildTodayMetricDetailPayload(metric, {
-          todayAggregate: repository.todayAggregate,
-          todayEvents: repository.todayEvents,
-          todaySnapshot: repository.todaySnapshot,
-        }),
-      );
+      const payload = buildTodayMetricDetailPayload(metric, {
+        todayAggregate: repository.todayAggregate,
+        todayEvents: repository.todayEvents,
+        todaySnapshot: repository.todaySnapshot,
+      });
+      setSelectedDetail(payload);
+      if (
+        metric.key === "activeMinutes" &&
+        repository.todayAggregate?.activeSummary
+      ) {
+        void activeEvidenceRows(repository.todayAggregate.activeSummary)
+          .then((rows) => {
+            setSelectedDetail((current) =>
+              current === payload ? { ...payload, rows } : current,
+            );
+          })
+          .catch(() => undefined);
+      }
     },
     [
       repository.todayAggregate,
@@ -952,13 +1055,24 @@ export default function TodayScreen() {
 
   const handleSelectSecondaryMetric = React.useCallback(
     (metric: (typeof secondaryMetrics)[number]) => {
-      setSelectedDetail(
-        buildTodayMetricDetailPayload(metric, {
-          todayAggregate: repository.todayAggregate,
-          todayEvents: repository.todayEvents,
-          todaySnapshot: repository.todaySnapshot,
-        }),
-      );
+      const payload = buildTodayMetricDetailPayload(metric, {
+        todayAggregate: repository.todayAggregate,
+        todayEvents: repository.todayEvents,
+        todaySnapshot: repository.todaySnapshot,
+      });
+      setSelectedDetail(payload);
+      if (
+        metric.key === "activeMinutes" &&
+        repository.todayAggregate?.activeSummary
+      ) {
+        void activeEvidenceRows(repository.todayAggregate.activeSummary)
+          .then((rows) => {
+            setSelectedDetail((current) =>
+              current === payload ? { ...payload, rows } : current,
+            );
+          })
+          .catch(() => undefined);
+      }
     },
     [
       repository.todayAggregate,
@@ -1005,6 +1119,7 @@ export default function TodayScreen() {
       "pattern",
       "metrics",
       "activityStrip",
+      "insights",
       "sleep",
       "backgroundStatus",
       "recentSignals",
@@ -1012,7 +1127,7 @@ export default function TodayScreen() {
     ];
 
     if (secondaryMetrics.length) {
-      items.splice(3, 0, "secondaryMetrics");
+      items.splice(4, 0, "secondaryMetrics");
     }
 
     return items;
@@ -1021,6 +1136,8 @@ export default function TodayScreen() {
   const renderSection = React.useCallback(
     ({ item }: { item: TodaySectionKey }) => {
       switch (item) {
+        case "insights":
+          return <InsightsSection limit={3} />;
         case "pattern":
           return (
             <PatternSection
@@ -1028,7 +1145,9 @@ export default function TodayScreen() {
               cells={monthCells}
               hasLoadedPattern={hasLoadedPattern}
               isDemoMode={isDemoMode}
-              isLoadingPatternHistory={isLoadingPatternHistory}
+              isLoadingPatternHistory={
+                isLoadingPatternHistory || isComputingPattern
+              }
               mutedForeground={palette.mutedForeground}
               onSelectCell={handleSelectPatternCell}
               textSecondary={palette.textSecondary}
@@ -1123,6 +1242,7 @@ export default function TodayScreen() {
       hasLoadedPattern,
       isDemoMode,
       isLoadingPatternHistory,
+      isComputingPattern,
       metrics,
       monthCells,
       palette.mutedForeground,

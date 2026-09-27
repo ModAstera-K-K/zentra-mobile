@@ -1,3 +1,6 @@
+import { ActiveMinutesRefreshStatus } from "@/components/zentra/ActiveMinutesRefreshStatus";
+import { useTabPerformance } from "@/hooks/use-tab-performance";
+import { InsightsSection } from "@/components/zentra/InsightsSection";
 import React from "react";
 import {
   FlatList,
@@ -33,13 +36,14 @@ import {
   toISODate,
 } from "@/utils/dates";
 import {
+  getRepositoryRevision,
   getDailyAggregatesForRange,
   getEventsForRange,
 } from "@/utils/event-repository";
 import {
   GROUP_LABELS,
   GROUP_ORDER,
-  buildLiveTrendSeries,
+  buildLiveTrendSeriesAsync,
   buildLiveTrendSurfaces,
   groupTrendSeries,
 } from "@/utils/live-trends";
@@ -67,6 +71,7 @@ export default function TrendsScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const isFocused = useIsFocused();
+  useTabPerformance("trends");
   const [range, setRange] = React.useState<TrendRange>("30d");
   const [customRange, setCustomRange] = React.useState(() => {
     const end = toISODate(new Date());
@@ -91,6 +96,7 @@ export default function TrendsScreen() {
     start: string;
     end: string;
     dataVersion: string | null;
+    rangeRevision: string;
   } | null>(null);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
@@ -106,11 +112,10 @@ export default function TrendsScreen() {
     [collectors],
   );
 
-
   const rangeSelection: { start: string; end: string } =
     range === "custom" ? customRange : getDateRangeForTrendRange(range);
 
-    // Check if user entered a range that is valid
+  // Check if user entered a range that is valid
   const validCustom =
     range === "custom" &&
     isValidISODate(customRange.start) &&
@@ -129,7 +134,6 @@ export default function TrendsScreen() {
       : range === "custom"
         ? toISODate(new Date())
         : rangeSelection.end;
-
 
   const series = React.useMemo(
     () =>
@@ -241,6 +245,7 @@ export default function TrendsScreen() {
 
     let isCancelled = false;
 
+    const controller = new AbortController();
     async function loadLiveTrends(): Promise<void> {
       setIsLoadingLiveData(true);
       const stopLoad = startPerfTimer("trends.load_live_range", {
@@ -252,9 +257,25 @@ export default function TrendsScreen() {
       let nextSurfaceCount = 0;
 
       try {
+        const rangeRevision = await getRepositoryRevision(
+          shiftISODate(rangeStart, -1),
+          rangeEnd,
+        );
+        if (isCancelled) return;
+        if (
+          prev?.start === rangeStart &&
+          prev.end === rangeEnd &&
+          prev.rangeRevision === rangeRevision
+        ) {
+          lastLoadedRangeRef.current = {
+            ...prev,
+            dataVersion: repository.todayDataUpdatedAt,
+          };
+          return;
+        }
         const [aggregates, trendEvents] = await Promise.all([
           getDailyAggregatesForRange(rangeStart, rangeEnd),
-          getEventsForRange(rangeStart, rangeEnd),
+          getEventsForRange(shiftISODate(rangeStart, -1), rangeEnd),
         ]);
         // Guard before CPU-intensive computation — switching tabs sets isCancelled
         // but the check used to sit after buildLiveTrendSeries, which is O(N_days × N_events).
@@ -262,10 +283,11 @@ export default function TrendsScreen() {
           return;
         }
 
-        const nextSeries = buildLiveTrendSeries(
+        const nextSeries = await buildLiveTrendSeriesAsync(
           aggregates,
           { start: rangeStart, end: rangeEnd },
           trendEvents,
+          controller.signal,
         );
         const nextSurfaces = buildLiveTrendSurfaces(trendEvents);
         nextSeriesCount = nextSeries.length;
@@ -281,7 +303,10 @@ export default function TrendsScreen() {
           start: rangeStart,
           end: rangeEnd,
           dataVersion: repository.todayDataUpdatedAt,
+          rangeRevision,
         };
+      } catch {
+        // Keep the last successful range visible; a later refresh can retry.
       } finally {
         stopLoad({
           cancelled: isCancelled,
@@ -301,6 +326,7 @@ export default function TrendsScreen() {
 
     return () => {
       isCancelled = true;
+      controller.abort();
       interaction.cancel();
     };
   }, [
@@ -404,6 +430,7 @@ export default function TrendsScreen() {
   const listHeader = React.useMemo(
     () => (
       <>
+        <InsightsSection />
         <View style={styles.rangeRow}>
           {RANGE_OPTIONS.map((option) => (
             <Chip
@@ -437,6 +464,11 @@ export default function TrendsScreen() {
       subtitle="How your days connect"
       title="Trends"
     >
+      <ActiveMinutesRefreshStatus
+        enabled={!isDemoMode && repository.isHydrated}
+        start={rangeStart}
+        end={rangeEnd}
+      />
       {isDemoMode || hasLiveTrendData ? (
         <FlatList
           contentContainerStyle={{
