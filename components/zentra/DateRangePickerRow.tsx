@@ -262,10 +262,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   nativeLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   nativePickerShell: {
     borderRadius: 18,
@@ -289,7 +288,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     flex: 1,
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     minHeight: 44,
     paddingHorizontal: Spacing.md,

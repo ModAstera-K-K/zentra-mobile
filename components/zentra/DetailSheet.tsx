@@ -9,10 +9,11 @@ import {
   View,
 } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { MetricDetailVisual } from '@/components/zentra/MetricDetailVisual';
 import {
   getActionIcon,
-  getDetailFactIcon,
 } from '@/constants/iconography';
 import { Colors, Fonts, FontSizes, IconSizes, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -27,6 +28,7 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const visible = payload !== null;
+  const insets = useSafeAreaInsets();
   const [showRows, setShowRows] = React.useState(false);
 
   React.useEffect(() => {
@@ -37,11 +39,11 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.overlay}>
         <Pressable onPress={onClose} style={[styles.scrim, { backgroundColor: palette.overlay }]} />
-        <View style={[styles.sheet, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+        <View accessibilityViewIsModal style={[styles.sheet, { backgroundColor: palette.card, borderColor: palette.border }]}>
           {payload ? (
             <ScrollView
               bounces={false}
-              contentContainerStyle={styles.content}
+              contentContainerStyle={[styles.content, { paddingBottom: Math.max(24, insets.bottom + 16) }]}
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.header}>
@@ -54,6 +56,8 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
                   </Text>
                 </View>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close details"
                   onPress={onClose}
                   style={[styles.closeButton, { borderColor: palette.border }]}
                 >
@@ -76,17 +80,12 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
               <View style={[styles.rule, { backgroundColor: palette.border }]} />
 
               <View style={styles.factGrid}>
-                {payload.facts.map((fact) => (
+                {payload.facts.map((fact, index) => (
                   <View
                     key={`${payload.key}-${fact.label}`}
-                    style={[styles.factCard, { backgroundColor: palette.card, borderColor: palette.border }]}
+                    style={[styles.factCard, { borderTopColor: palette.divider, borderTopWidth: index ? 1 : 0 }]}
                   >
                     <View style={styles.factLabelRow}>
-                      <Ionicons
-                        color={palette.textSecondary}
-                        name={getDetailFactIcon(fact.label)}
-                        size={IconSizes.inline}
-                      />
                       <Text style={[styles.factLabel, { color: palette.textSecondary }]}>{fact.label}</Text>
                     </View>
                     <Text style={[styles.factValue, { color: palette.foreground }]}>{fact.value}</Text>
@@ -96,14 +95,14 @@ export function DetailSheet({ onClose, payload }: DetailSheetProps) {
 
               {payload.rows.length ? (
                 <View style={styles.section}>
-                  <Pressable onPress={() => setShowRows((current) => !current)} style={styles.toggleRow}>
+                  <Pressable accessibilityRole="button" accessibilityState={{ expanded: showRows }} onPress={() => setShowRows((current) => !current)} style={styles.toggleRow}>
                     <Ionicons
                       color={palette.textSecondary}
                       name={showRows ? 'chevron-down-outline' : 'chevron-forward-outline'}
                       size={IconSizes.inline}
                     />
                     <Text style={[styles.sectionLabel, { color: palette.textSecondary }]}>
-                      {showRows ? 'Hide recent rows' : 'Show recent rows'}
+                      {showRows ? 'Hide supporting records' : 'Show supporting records'}
                     </Text>
                   </Pressable>
                   {showRows ? payload.rows.map((row, index) => (
@@ -140,15 +139,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.xs,
     justifyContent: 'center',
-    minHeight: 36,
+    minHeight: 48,
     minWidth: 68,
     paddingHorizontal: Spacing.md,
   },
   closeLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   content: {
     gap: Spacing.lg,
@@ -156,10 +154,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing['3xl'],
   },
   eventLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   eventLabelRow: {
     alignItems: 'center',
@@ -171,11 +168,11 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
   },
   factCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: Spacing.xs,
-    minWidth: '48%',
-    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.lg,
+    paddingVertical: Spacing.md,
+    minHeight: 48,
   },
   eventValue: {
     fontFamily: Fonts.body,
@@ -183,28 +180,25 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
-    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   factLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   factLabelRow: {
+    flex: 1,
     alignItems: 'center',
     flexDirection: 'row',
     gap: Spacing.xs,
   },
-  factGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
-  },
+  factGrid: { gap: 0 },
   factValue: {
+    flex: 1.7,
+    textAlign: 'right',
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
@@ -231,9 +225,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
-  rule: {
-    height: 1,
-  },
+  rule: { height: 0 },
   scrim: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -241,15 +233,13 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   sectionLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     maxHeight: '84%',
     minHeight: '46%',
     overflow: 'hidden',
@@ -260,6 +250,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   toggleRow: {
+    minHeight: 48,
     alignItems: 'center',
     flexDirection: 'row',
     gap: Spacing.xs,
@@ -270,7 +261,7 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xl,
   },
   value: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes['2xl'],
   },
 });

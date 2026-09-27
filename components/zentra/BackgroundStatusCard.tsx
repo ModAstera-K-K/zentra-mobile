@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { Card } from "@/components/ui/Card";
@@ -85,6 +85,7 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
 }: BackgroundStatusCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const [showDetails, setShowDetails] = React.useState(false);
   const hasFailure = Boolean(
     lastBackgroundTaskFailureAt || lastReconcileOutcome === "failure",
   );
@@ -94,7 +95,7 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
     lastBackgroundTaskFailureMessage ?? lastReconcileFailureMessage;
 
   return (
-    <Card elevated>
+    <Card variant="open">
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         Background status
       </Text>
@@ -102,7 +103,7 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
         style={[
           styles.summary,
           {
-            backgroundColor: palette.card,
+            backgroundColor: "transparent",
             borderColor: palette.border,
           },
         ]}
@@ -139,7 +140,11 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
         ) : null}
       </View>
 
-      <View style={styles.factsColumn}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails }} onPress={() => setShowDetails(current => !current)} style={[styles.disclosure, { backgroundColor: palette.card }]}>
+        <Text style={[styles.factValue, { color: palette.foreground }]}>Collection details</Text>
+        <Ionicons accessible={false} name={showDetails ? "chevron-up" : "chevron-down"} color={palette.textSecondary} size={18} />
+      </Pressable>
+      {showDetails ? <View style={styles.factsColumn}>
         <View style={[styles.factRow, { borderBottomColor: palette.border }]}>
           <Text style={[styles.factLabel, { color: palette.textSecondary }]}>
             Service state
@@ -307,24 +312,23 @@ export const BackgroundStatusCard = React.memo(function BackgroundStatusCard({
             </View>
           </View>
         ) : null}
-      </View>
+      </View> : null}
     </Card>
   );
 });
 
 const styles = StyleSheet.create({
+  disclosure: { minHeight: 48, padding: Spacing.md, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: Spacing.md },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   factLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   factRow: {
     borderBottomWidth: 1,
@@ -348,11 +352,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   summary: {
-    borderRadius: 18,
-    borderWidth: 1,
     gap: Spacing.xs,
     marginBottom: Spacing.md,
-    padding: Spacing.md,
+    padding: 0,
   },
   summaryDetail: {
     fontFamily: Fonts.body,

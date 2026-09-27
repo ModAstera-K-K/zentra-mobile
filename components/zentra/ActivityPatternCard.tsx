@@ -9,8 +9,8 @@ import {
 
 import { EmptyState } from "@/components/zentra/EmptyState";
 import { Card } from "@/components/ui/Card";
+import { SectionHeading } from "@/components/ui/SectionHeading";
 import {
-  BorderRadius,
   Colors,
   Fonts,
   FontSizes,
@@ -18,7 +18,7 @@ import {
 } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { ActivityPatternCell } from "@/types/zentra";
-import { hexToRgba } from "@/utils/colors";
+import { patternIntensityColor } from "@/utils/pattern-presentation";
 
 interface ActivityPatternCardProps {
   cells: ActivityPatternCell[];
@@ -27,19 +27,6 @@ interface ActivityPatternCardProps {
 }
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function getIntensityColor(
-  colorScheme: "light" | "dark",
-  intensity: number,
-  palette: (typeof Colors)["light"],
-): string {
-  const alpha = 0.16 + (intensity / 100) * 0.7;
-  const base = palette.signalHuman;
-
-  return colorScheme === "light"
-    ? hexToRgba(base, Math.min(alpha, 0.82))
-    : hexToRgba(base, Math.min(alpha + 0.04, 0.88));
-}
 
 const PatternCell = React.memo(function PatternCell({
   cell,
@@ -83,12 +70,16 @@ const PatternCell = React.memo(function PatternCell({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${cell.detailLabel}, ${cell.hasAnyData ? `relative intensity ${Math.round(cell.intensity)} out of 100` : "No records"}`}
+      accessibilityHint="Opens the selected day"
       onPress={handlePress}
       style={[
         styles.patternCell,
         {
-          backgroundColor: getIntensityColor(colorScheme, cell.intensity, palette),
+          backgroundColor: cell.hasAnyData ? patternIntensityColor(colorScheme, cell.intensity, palette) : "transparent",
           borderColor: palette.border,
+          borderStyle: cell.hasAnyData ? "solid" : "dashed",
           height: size,
           width: size,
         },
@@ -117,9 +108,9 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const { width } = useWindowDimensions();
-  const totalGap = Spacing.sm * 6;
-  const availableWidth = width - Spacing.lg * 2 - Spacing.xl * 2;
-  const cellSize = Math.max(32, Math.floor((availableWidth - totalGap) / 7));
+  const [measuredWidth, setMeasuredWidth] = React.useState(0);
+  const availableWidth = measuredWidth || width - Spacing.lg * 2;
+  const cellSize = Math.max(24, Math.floor((availableWidth - 6 * 6) / 7));
 
   if (!cells.length) {
     return (
@@ -142,12 +133,8 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
   }
 
   return (
-    <Card>
-      <View style={styles.header}>
-        <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-          Activity pattern
-        </Text>
-      </View>
+    <Card variant="open">
+      <SectionHeading title="Activity pattern" meta="4 weeks" />
 
       <View style={styles.weekdayRow}>
         {WEEKDAY_LABELS.map((day) => (
@@ -163,7 +150,7 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
         ))}
       </View>
 
-      <View style={styles.monthGrid}>
+      <View style={styles.monthGrid} onLayout={event => setMeasuredWidth(event.nativeEvent.layout.width)}>
         {cells.map((cell) => (
           <PatternCell
             key={cell.id}
@@ -172,6 +159,14 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
             size={cellSize}
           />
         ))}
+      </View>
+
+      <View style={styles.key}>
+        <Text style={[styles.keyText, { color: palette.textSecondary }]}>Low</Text>
+        {[0, 33, 67, 100].map(intensity => <View key={intensity} style={[styles.keySwatch, { backgroundColor: patternIntensityColor(colorScheme, intensity, palette) }]} />)}
+        <Text style={[styles.keyText, { color: palette.textSecondary }]}>High</Text>
+        <View style={[styles.keySwatch, { borderColor: palette.border, borderWidth: 1, borderStyle: "dashed", marginLeft: Spacing.sm }]} />
+        <Text style={[styles.keyText, { color: palette.textSecondary }]}>No records</Text>
       </View>
 
       <Text style={[styles.footer, { color: palette.textSecondary }]}>
@@ -184,54 +179,44 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
 });
 
 const styles = StyleSheet.create({
-  description: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.sm,
-    lineHeight: 20,
-  },
-  eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
+  key: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4, marginTop: Spacing.md },
+  keyText: { fontFamily: Fonts.body, fontSize: 11 },
+  keySwatch: { width: 12, height: 12, borderRadius: 3 },
+
+
   footer: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
     marginTop: Spacing.lg,
   },
-  header: {
-    gap: Spacing.xs,
-    marginBottom: Spacing.lg,
-  },
+
   monthGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: Spacing.sm,
+    gap: 6,
   },
   patternCell: {
-    alignItems: "flex-start",
-    borderRadius: BorderRadius.md,
+    borderRadius: 6,
     borderWidth: 1,
-    justifyContent: "flex-end",
-    padding: Spacing.sm,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 2,
   },
   patternLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
-    letterSpacing: 0.4,
+    letterSpacing: 0,
   },
   weekdayLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.6,
+    letterSpacing: 0,
     textAlign: "center",
-    textTransform: "uppercase",
   },
   weekdayRow: {
     flexDirection: "row",
-    gap: Spacing.sm,
+    gap: 6,
     marginBottom: Spacing.sm,
   },
 });

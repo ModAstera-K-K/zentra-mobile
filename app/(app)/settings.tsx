@@ -24,7 +24,7 @@ import {
   getDataModeIcon,
   getThemePreferenceIcon,
 } from "@/constants/iconography";
-import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   useAppearanceStore,
@@ -916,10 +916,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   leadMeta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   backButton: {
     alignSelf: "flex-start",
@@ -928,13 +927,12 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: Spacing.md,
-    marginBottom: Spacing.lg,
+    marginBottom: Layout.sectionGap,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
   },
   themeRow: {
     flexDirection: "row",
@@ -962,9 +960,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   diagnosticKey: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
 });

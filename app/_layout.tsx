@@ -4,15 +4,6 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import {
-  JetBrainsMono_400Regular,
-  JetBrainsMono_500Medium,
-} from "@expo-google-fonts/jetbrains-mono";
-import {
-  SpaceGrotesk_300Light,
-  SpaceGrotesk_400Regular,
-  SpaceGrotesk_500Medium,
-} from "@expo-google-fonts/space-grotesk";
 
 import { NavigationThemes } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -30,11 +21,8 @@ export default function RootLayout() {
   const bootstrapApp = useAppStore((state) => state.bootstrap);
 
   const [fontsLoaded] = useFonts({
-    InterLight: SpaceGrotesk_300Light,
-    InterRegular: SpaceGrotesk_400Regular,
-    InterMedium: SpaceGrotesk_500Medium,
-    JetBrainsMonoRegular: JetBrainsMono_400Regular,
-    JetBrainsMonoMedium: JetBrainsMono_500Medium,
+    JetBrainsMonoRegular: require("@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf"),
+    JetBrainsMonoMedium: require("@expo-google-fonts/jetbrains-mono/500Medium/JetBrainsMono_500Medium.ttf"),
   });
 
   useEffect(() => {

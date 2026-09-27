@@ -29,6 +29,7 @@ import {
   Colors,
   Fonts,
   FontSizes,
+  Layout,
   IconSizes,
   Spacing,
 } from "@/constants/theme";
@@ -801,20 +802,18 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   leadMeta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   section: {
     gap: Spacing.md,
-    marginBottom: Spacing.lg,
+    marginBottom: Layout.sectionGap,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
-    textTransform: "uppercase",
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
   },
   labelRow: {
     alignItems: "center",
@@ -840,19 +839,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     flex: 1,
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     minHeight: 44,
     paddingHorizontal: Spacing.md,
   },
   summaryLabel: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
   },
   summaryValue: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes["2xl"],
   },
   bundleProgressRow: {
@@ -861,9 +859,8 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   bundleProgressText: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
 });

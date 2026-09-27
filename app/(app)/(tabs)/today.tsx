@@ -22,14 +22,14 @@ import { BackgroundStatusCard } from "@/components/zentra/BackgroundStatusCard";
 import { CompletenessCard } from "@/components/zentra/CompletenessCard";
 import { DetailSheet } from "@/components/zentra/DetailSheet";
 import { EmptyState } from "@/components/zentra/EmptyState";
-import { MetricCard } from "@/components/zentra/MetricCard";
+import { MetricGrid } from "@/components/zentra/MetricGrid";
 import { PilotLight } from "@/components/zentra/PilotLight";
 import { RecentSignalFeed } from "@/components/zentra/RecentSignalFeed";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { SignalSummaryCard } from "@/components/zentra/SignalSummaryCard";
 import { SleepEstimateCard } from "@/components/zentra/SleepEstimateCard";
 import { Card } from "@/components/ui/Card";
-import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
+import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import type {
@@ -169,23 +169,6 @@ const PatternSection = React.memo(function PatternSection({
   );
 });
 
-const MetricsSection = React.memo(function MetricsSection({
-  metrics,
-  onPress,
-}: {
-  metrics: DashboardMetric[];
-  onPress: (metric: DashboardMetric) => void;
-}) {
-  return (
-    <View style={styles.metricGrid}>
-      {metrics.map((metric) => (
-        <View key={metric.key} style={styles.metricCell}>
-          <MetricCard metric={metric} onPress={onPress} />
-        </View>
-      ))}
-    </View>
-  );
-});
 
 const ActivityStripSection = React.memo(function ActivityStripSection({
   buckets,
@@ -1155,7 +1138,7 @@ export default function TodayScreen() {
           );
         case "metrics":
           return (
-            <MetricsSection metrics={metrics} onPress={handleSelectMetric} />
+            <MetricGrid metrics={metrics} onPress={handleSelectMetric} />
           );
         case "activityStrip":
           return <ActivityStripSection buckets={dailyRhythmBuckets} />;
@@ -1358,16 +1341,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 0,
   },
-  metricGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  metricCell: {
-    height: 228,
-    width: "48%",
-  },
   patternLoading: {
     alignItems: "center",
     gap: Spacing.sm,
@@ -1375,10 +1348,9 @@ const styles = StyleSheet.create({
     minHeight: 120,
   },
   patternLoadingText: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   patternRefreshingRow: {
     alignItems: "center",
@@ -1387,19 +1359,17 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   patternRefreshingText: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   sectionBlock: {
-    marginBottom: Spacing.lg,
+    marginBottom: Layout.sectionGap,
   },
   statusLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   subtitleAccessory: {
     alignItems: "center",

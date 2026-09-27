@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 import type { AppIconName } from "@/constants/iconography";
-import { Colors, IconSizes, Layout } from "@/constants/theme";
+import { Colors, Fonts, IconSizes, Layout } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 function TabBarIcon({
@@ -44,7 +44,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: palette.primary,
         tabBarActiveBackgroundColor: "transparent",
-        tabBarInactiveTintColor: palette.mutedForeground,
+        tabBarInactiveTintColor: palette.textSecondary,
         sceneStyle: {
           backgroundColor: palette.background,
         },
@@ -53,7 +53,7 @@ export default function TabLayout() {
           borderColor: palette.border,
           borderRadius: 0,
           borderTopColor: palette.border,
-          borderTopWidth: 1,
+          borderTopWidth: 0,
           bottom: 0,
           elevation: 0,
           height: isAndroid ? 72 : Layout.tabBarHeight,
@@ -69,10 +69,9 @@ export default function TabLayout() {
           marginHorizontal: 0,
         },
         tabBarLabelStyle: {
-          fontFamily: "JetBrainsMonoRegular",
+          fontFamily: Fonts.bodyMedium,
           fontSize: 11,
-          letterSpacing: 0.6,
-          textTransform: "uppercase",
+          fontWeight: "500",
         },
         tabBarIconStyle: {
           marginBottom: 2,

@@ -18,7 +18,7 @@ export const TrendSurfaceCard = React.memo(function TrendSurfaceCard({
   const palette = Colors[colorScheme];
 
   return (
-    <Card>
+    <Card variant="open">
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         {surface.title}
       </Text>
@@ -60,17 +60,15 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   meta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   metaRow: {
     alignItems: "baseline",
@@ -79,15 +77,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   metric: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes.xl,
   },
   sourceLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.8,
+    letterSpacing: 0,
     marginTop: Spacing.xs,
-    textTransform: "uppercase",
   },
   summary: {
     fontFamily: Fonts.body,

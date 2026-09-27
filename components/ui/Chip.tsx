@@ -21,6 +21,9 @@ export function Chip({ label, active = false, leadingIconName, onPress, style }:
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={label}
       onPress={onPress}
       style={({ pressed }) => [
         styles.base,
@@ -45,20 +48,19 @@ export function Chip({ label, active = false, leadingIconName, onPress, style }:
 const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
-    borderRadius: BorderRadius.pill,
+    borderRadius: BorderRadius.sm,
     borderWidth: 1,
     flexDirection: 'row',
     gap: Spacing.xs,
-    minHeight: 38,
+    minHeight: 48,
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
   label: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
   pressed: {
     opacity: 0.9,

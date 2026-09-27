@@ -100,3 +100,33 @@ Validation completed for 026:
   This is source-level checking, not native visual or font-scaling verification.
 - No Android device attached (`adb devices`): no installation, actual-day source
   reconciliation, native screenshots, or release p95 navigation measurements.
+
+## Tiles + rows interface
+
+The approved interface uses six primary metric tiles with persistent “View details”
+actions and full-width Signal summary disclosure rows with inset separators. The
+shared typography, palette, soft groups and detail-sheet treatment apply across
+Today, Trends, Export and Settings. Monthly activity pattern, findings, sleep,
+background diagnostics, recent signals, source controls and signal health remain.
+Optional summary metrics retain their existing availability conditions.
+
+Daily Rhythm separates Movement, Screen and inferred Rest into traces with the same
+0–100 scale and shared hour inspection. Existing scores are unchanged; missing
+buckets are gaps and isolated observations stay visible. Tiles use flexible heights
+and switch to one column below 360 points or at font scales of 1.5 and above.
+
+Lazy tabs, virtualization, cached content and deferred calculations remain. The
+continuous status animation and introductory fade were removed so content appears
+immediately and interaction handles cannot indefinitely delay deferred calculations.
+System fonts replace the old font aliases; only the remaining two local mono faces
+are bundled. No new data queries, dependencies or network services were introduced.
+
+Validation: 39 regression tests, typecheck, lint, no-network checks, and Android/iOS
+Hermes exports passed. React Native web checks at 390 × 844 and 320 × 720 covered
+light/dark layouts, the six live tiles, summary rows, detail actions, keyboard
+activation, shared rhythm selection and tab navigation. The compact layout had no
+horizontal overflow. Browser sensor support is limited and required temporary
+SQLite preview configuration; these checks are not native-device validation.
+Installed release performance, native screen readers, physical-device gestures and
+OS font scaling still need the release checks above. CI now runs the regression
+suite with Node 22.

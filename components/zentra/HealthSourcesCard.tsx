@@ -70,7 +70,7 @@ export function HealthSourcesCard() {
   }
   if (mode === "demo") return null;
   return (
-    <Card>
+    <Card style={styles.section}>
       <Text
         accessibilityRole="header"
         style={[styles.title, { color: palette.foreground }]}
@@ -81,10 +81,10 @@ export function HealthSourcesCard() {
         Imports stay on this device. Readable records may not represent
         continuous capture.
       </Text>
-      {HEALTH_RECORD_TYPES.map((type) => {
+      {HEALTH_RECORD_TYPES.map((type, index) => {
         const state = states.find((s) => s.record_type === type);
         return (
-          <View key={type} style={styles.row}>
+          <View key={type} style={[styles.row, { borderTopColor: palette.divider, borderTopWidth: index ? 1 : 0 }]}>
             <Text style={{ color: palette.foreground }}>
               {type.replaceAll("_", " ")} · {state?.status ?? "Not imported"}
             </Text>
@@ -162,7 +162,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginBottom: Spacing.md,
   },
-  row: { gap: Spacing.xs, marginVertical: Spacing.sm },
+  section: { marginBottom: 34 },
+  row: { gap: Spacing.xs, paddingVertical: Spacing.md },
   button: {
     minHeight: 48,
     justifyContent: "center",

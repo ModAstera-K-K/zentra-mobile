@@ -121,7 +121,7 @@ export const TrendChartCard = React.memo(function TrendChartCard({
   }
 
   return (
-    <Card>
+    <Card variant="open">
       <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
         {series.label}
       </Text>
@@ -218,7 +218,7 @@ export const TrendChartCard = React.memo(function TrendChartCard({
               <SvgText
                 key={`x-label-${labelIndex}`}
                 fill={palette.mutedForeground}
-                fontFamily="JetBrainsMonoRegular"
+                fontFamily={Fonts.body}
                 fontSize={9}
                 textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
                 x={coord.x}
@@ -237,6 +237,9 @@ export const TrendChartCard = React.memo(function TrendChartCard({
           </Text>
         )}
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${expanded ? "Compact" : "Expand"} ${series.label} chart`}
+          accessibilityState={{ expanded }}
           onPress={() => setExpanded((current) => !current)}
           style={styles.expandToggle}
         >
@@ -266,11 +269,10 @@ export const TrendChartCard = React.memo(function TrendChartCard({
 
 const styles = StyleSheet.create({
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   metaRow: {
     alignItems: "flex-end",
@@ -279,24 +281,22 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   metric: {
-    fontFamily: Fonts.monoMedium,
+    fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes["2xl"],
   },
   unit: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
   },
   change: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   submeta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   submetaRow: {
     flexDirection: "row",
@@ -311,13 +311,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   expandToggle: {
+    minHeight: 48,
+    justifyContent: "center",
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
   },
   sourceLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
 });

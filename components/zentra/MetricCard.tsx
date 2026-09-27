@@ -3,140 +3,59 @@ import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { Card } from "@/components/ui/Card";
-import {
-  getMetricIcon,
-  getMetricIconColor,
-  isMetricIconKey,
-} from "@/constants/iconography";
-import {
-  Colors,
-  Fonts,
-  FontSizes,
-  IconSizes,
-  Spacing,
-  type AppPalette,
-} from "@/constants/theme";
+import { Colors, Fonts, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { DashboardMetric } from "@/types/zentra";
+import { metricQuality, metricReadout, metricToneColor } from "@/utils/metric-card-presentation";
 
 interface MetricCardProps {
   metric: DashboardMetric;
   onPress?: (metric: DashboardMetric) => void;
 }
 
-function getToneColor(metric: DashboardMetric, palette: AppPalette): string {
-  switch (metric.tone) {
-    case "physical":
-      return palette.signalPhysical;
-    case "human":
-      return palette.signalHuman;
-    case "cool":
-      return palette.signalCool;
-    default:
-      return palette.primary;
-  }
-}
-
-export const MetricCard = React.memo(function MetricCard({
-  metric,
-  onPress,
-}: MetricCardProps) {
-  const colorScheme = useColorScheme();
-  const palette = Colors[colorScheme];
-  const accent = getToneColor(metric, palette);
-  const iconColor = getMetricIconColor(metric.tone, palette);
-  const iconName = isMetricIconKey(metric.key)
-    ? getMetricIcon(metric.key)
-    : "ellipse-outline";
-  const handlePress = React.useCallback(
-    () => onPress?.(metric),
-    [metric, onPress],
-  );
+export const MetricCard = React.memo(function MetricCard({ metric, onPress }: MetricCardProps) {
+  const palette = Colors[useColorScheme()];
+  const accent = metricToneColor(metric.tone, palette);
+  const readout = metricReadout(metric);
+  const quality = metricQuality(metric);
+  const handlePress = React.useCallback(() => onPress?.(metric), [metric, onPress]);
 
   return (
-    <Card onPress={handlePress} style={styles.card}>
-      <View style={styles.header}>
-        <View style={styles.labelRow}>
-          <Ionicons
-            color={iconColor}
-            name={iconName}
-            size={IconSizes.compact}
-          />
-          <Text style={[styles.label, { color: palette.textSecondary }]}>
-            {metric.label}
-          </Text>
-        </View>
-        <View style={[styles.accent, { backgroundColor: accent }]} />
-      </View>
+    <Card
+      accessibilityLabel={`${metric.label}: ${readout.value}${readout.unit ? ` ${readout.unit}` : ""}${quality ? `, ${quality}` : ""}`}
+      accessibilityHint="Opens details, sources and coverage"
+      onPress={onPress ? handlePress : undefined}
+      style={styles.card}
+      testID={`metric-${metric.key}`}
+    >
+      <Text style={[styles.label, { color: palette.foreground }]}>{metric.label}</Text>
       <View style={styles.valueRow}>
-        <Text style={[styles.value, { color: accent }]}>{metric.value}</Text>
-        {metric.key === "activeMinutes" &&
-        metric.available &&
-        metric.value.endsWith(" min") ? (
-          <Text style={[styles.partial, { color: palette.textSecondary }]}>
-            · Partial
-          </Text>
+        <Text style={[styles.value, !metric.available && styles.unavailable, { color: accent }]}>{readout.value}</Text>
+        {readout.unit ? <Text style={[styles.unit, { color: palette.textSecondary }]}>{readout.unit}</Text> : null}
+        {quality ? (
+          <Text style={[styles.quality, { color: palette.textSecondary }, quality === "Partial" && { backgroundColor: palette.qualityBackground, color: palette.qualityForeground }]}>{quality}</Text>
         ) : null}
       </View>
-      <View style={[styles.rule, { backgroundColor: palette.border }]} />
-      <Text style={[styles.detail, { color: palette.textSecondary }]}>
-        {metric.detail}
-      </Text>
+      <Text style={[styles.detail, { color: palette.textSecondary }]}>{metric.detail}</Text>
+      {onPress ? (
+        <View style={styles.action} accessible={false}>
+          <Text style={[styles.actionLabel, { color: palette.foreground }]}>View details</Text>
+          <Ionicons accessible={false} color={palette.textSecondary} name="chevron-forward" size={16} />
+        </View>
+      ) : null}
     </Card>
   );
 });
 
 const styles = StyleSheet.create({
-  valueRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "baseline",
-    gap: Spacing.xs,
-  },
-  partial: { fontFamily: Fonts.body, fontSize: FontSizes.xs },
-  card: {
-    height: "100%",
-    gap: Spacing.sm,
-    paddingBottom: Spacing["2xl"],
-  },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  labelRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexShrink: 1,
-    gap: Spacing.sm,
-    minWidth: 0,
-  },
-  accent: {
-    borderRadius: 999,
-    height: 8,
-    opacity: 0.55,
-    width: 8,
-  },
-  label: {
-    flexShrink: 1,
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-  value: {
-    fontFamily: Fonts.monoMedium,
-    fontSize: FontSizes["2xl"],
-    marginTop: Spacing.xs,
-  },
-  rule: {
-    height: 1,
-    marginVertical: Spacing.sm,
-  },
-  detail: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.sm,
-    lineHeight: 20,
-    marginTop: "auto",
-  },
+  card: { flex: 1, gap: 10, padding: 14, minHeight: 188 },
+  label: { fontFamily: Fonts.bodyMedium, fontWeight: "500", fontSize: 14, lineHeight: 20 },
+  valueRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", gap: Spacing.xs },
+  value: { fontFamily: Fonts.body, fontSize: 30, fontVariant: ["tabular-nums"], letterSpacing: -0.6, flexShrink: 1 },
+  unavailable: { fontSize: 18, letterSpacing: 0 },
+  unit: { fontFamily: Fonts.body, fontSize: 12 },
+  quality: { fontFamily: Fonts.body, fontSize: 11, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, alignSelf: "center" },
+  detail: { fontFamily: Fonts.body, fontSize: 12, lineHeight: 18 },
+  action: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: Spacing.sm, paddingTop: 6, marginTop: "auto" },
+  actionLabel: { fontFamily: Fonts.bodyMedium, fontWeight: "500", fontSize: 12, lineHeight: 18 },
 });

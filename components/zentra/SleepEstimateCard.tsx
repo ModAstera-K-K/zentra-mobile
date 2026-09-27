@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { Card } from "@/components/ui/Card";
 import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
@@ -15,9 +15,10 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
 }: SleepEstimateCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
+  const { fontScale } = useWindowDimensions();
 
   return (
-    <Card elevated>
+    <Card>
       <View style={styles.eyebrowRow}>
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
           {sleepEstimate.isImported
@@ -53,8 +54,8 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
           </View>
         ) : null}
       </View>
-      <View style={styles.row}>
-        <View>
+      <View style={[styles.row, fontScale >= 1.5 && styles.stacked]}>
+        <View style={styles.stat}>
           <Text style={[styles.label, { color: palette.mutedForeground }]}>
             Start
           </Text>
@@ -62,7 +63,7 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
             {sleepEstimate.startLabel}
           </Text>
         </View>
-        <View>
+        <View style={[styles.stat, fontScale < 1.5 && styles.divided, { borderLeftColor: palette.divider }]}>
           <Text style={[styles.label, { color: palette.mutedForeground }]}>
             End
           </Text>
@@ -70,7 +71,7 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
             {sleepEstimate.endLabel}
           </Text>
         </View>
-        <View>
+        <View style={[styles.stat, fontScale < 1.5 && styles.divided, { borderLeftColor: palette.divider }]}>
           <Text style={[styles.label, { color: palette.mutedForeground }]}>
             Duration
           </Text>
@@ -94,6 +95,9 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
 });
 
 const styles = StyleSheet.create({
+  stat: { flex: 1, minWidth: 0, gap: 4 },
+  divided: { borderLeftWidth: 1, paddingLeft: Spacing.sm },
+  stacked: { flexDirection: "column", gap: Spacing.lg },
   eyebrowRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -101,10 +105,11 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   eyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs,
-    letterSpacing: 1.4,
-    textTransform: "uppercase",
+    flex: 1,
+    paddingRight: Spacing.sm,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 20,
+    letterSpacing: 0,
   },
   sourceBadge: {
     borderRadius: 999,
@@ -113,25 +118,24 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   sourceLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
+    gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
   label: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
     marginBottom: Spacing.xs,
-    textTransform: "uppercase",
   },
   value: {
-    fontFamily: Fonts.monoMedium,
-    fontSize: FontSizes.xl,
+    fontFamily: Fonts.bodyMedium,
+    fontSize: 18,
   },
   detail: {
     fontFamily: Fonts.body,
@@ -139,10 +143,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   meta: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.2,
+    letterSpacing: 0,
     marginTop: Spacing.md,
-    textTransform: "uppercase",
   },
 });

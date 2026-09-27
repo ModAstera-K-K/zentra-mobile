@@ -13,7 +13,7 @@ export const DailyRhythmStatus = React.memo(function DailyRhythmStatus({
   const palette = Colors[useColorScheme()];
 
   return (
-    <Card>
+    <Card variant="open">
       <Text
         accessibilityRole="header"
         style={[styles.title, { color: palette.textSecondary }]}
@@ -36,11 +36,10 @@ export const DailyRhythmStatus = React.memo(function DailyRhythmStatus({
 
 const styles = StyleSheet.create({
   title: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   content: {
     minHeight: 158,

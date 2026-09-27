@@ -375,6 +375,9 @@ export default function TrendsScreen() {
                 {item.group.series.map((entry) => (
                   <Pressable
                     key={entry.key}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${entry.label} chart`}
+                    accessibilityState={{ selected: !hiddenSeriesKeys.has(entry.key) }}
                     onPress={() =>
                       setHiddenSeriesKeys((current) => {
                         const next = new Set(current);
@@ -503,11 +506,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   groupLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.3,
+    letterSpacing: 0,
     marginBottom: Spacing.md,
-    textTransform: "uppercase",
   },
   helper: {
     fontFamily: Fonts.body,
@@ -522,7 +524,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   sectionBlock: {
-    marginBottom: Spacing.lg,
+    marginBottom: Layout.sectionGap,
   },
   seriesToggleRow: {
     flexDirection: "row",
@@ -531,15 +533,16 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   seriesToggle: {
-    borderRadius: 999,
+    borderRadius: 10,
     borderWidth: 1,
+    minHeight: 48,
+    justifyContent: "center",
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
   },
   seriesToggleLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.body,
     fontSize: FontSizes.xs,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
+    letterSpacing: 0,
   },
 });
