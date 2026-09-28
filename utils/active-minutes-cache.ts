@@ -11,7 +11,7 @@ import {
 } from "@/utils/repository-session";
 
 export function activeCacheKey(date: string): string {
-  return `active-minutes-v2:${date}:${parseISODate(date).getTimezoneOffset()}`;
+  return `active-minutes-v3:${date}:${parseISODate(date).getTimezoneOffset()}`;
 }
 export async function activityRevision(
   db: SQLiteDatabase,
@@ -78,8 +78,8 @@ export async function cachedActiveMinutes(
   // A single bounded read; no history reconstruction or native queries on this path.
   const history = await db.getAllAsync<{ payload: string; cache_key: string }>(
     `SELECT c.payload,c.cache_key FROM derived_cache c WHERE c.cache_key >= ? AND c.cache_key < ? AND CAST(c.revision AS INTEGER) = (SELECT COALESCE(MAX(revision),0) FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session') AND start_date <= date(json_extract(c.payload,'$.date'),'+1 day') AND end_date >= date(json_extract(c.payload,'$.date'),'-1 day'))`,
-    `active-minutes-v2:${shiftISODate(date, -30)}:`,
-    `active-minutes-v2:${date}:`,
+    `active-minutes-v3:${shiftISODate(date, -30)}:`,
+    `active-minutes-v3:${date}:`,
   );
   const valid = history
     .filter(
@@ -112,7 +112,7 @@ export async function summaryRevision(
     shiftISODate(date, 1),
     shiftISODate(date, -31),
   );
-  return `${row?.revision ?? 0}:${parseISODate(date).getTimezoneOffset()}:v2`;
+  return `${row?.revision ?? 0}:${parseISODate(date).getTimezoneOffset()}:v3`;
 }
 export async function isActiveSummaryCurrent(
   db: SQLiteDatabase,
@@ -123,7 +123,7 @@ export async function isActiveSummaryCurrent(
   try {
     const summary = JSON.parse(payload) as ActiveMinutesSummary;
     return (
-      summary.calculationVersion === 2 &&
+      summary.calculationVersion === 3 &&
       summary.revision === (await summaryRevision(db, date))
     );
   } catch {

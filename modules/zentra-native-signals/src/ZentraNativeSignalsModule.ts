@@ -3,13 +3,25 @@ import { NativeModule, requireOptionalNativeModule } from "expo";
 import { ZentraNativeSignalsModuleEvents } from "./ZentraNativeSignals.types";
 
 declare class ZentraNativeSignalsModule extends NativeModule<ZentraNativeSignalsModuleEvents> {
+  readActivityHistoryPageAsync(
+    start: string,
+    end: string,
+    cursor: string | null,
+    limit: number,
+  ): Promise<import("../../../types/activity-history").ActivityHistoryPage>;
+  cancelActivityHistoryAsync(): Promise<void>;
   readHealthSyncPageAsync(
     type: string,
     start: string,
     end: string,
     cursor: string | null,
   ): Promise<import("../../../types/health-sync").HealthSyncPage>;
-  readHealthStepTimingAsync(start: string, end: string): Promise<import("../../../utils/native/zentra-native-signals").NativeHealthConnectRecord[]>;
+  readHealthStepTimingAsync(
+    start: string,
+    end: string,
+  ): Promise<
+    import("../../../utils/native/zentra-native-signals").NativeHealthConnectRecord[]
+  >;
   readHealthStepsAsync(
     start: string,
     end: string,

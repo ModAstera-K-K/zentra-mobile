@@ -1,3 +1,4 @@
+import { ActivityHistoryStatus } from "@/components/zentra/ActivityHistoryStatus";
 import { HealthSourcesCard } from "@/components/zentra/HealthSourcesCard";
 import React from "react";
 import {
@@ -868,9 +869,15 @@ export default function SettingsScreen() {
             Background failure detail {lastBackgroundTaskFailureMessage}
           </Text>
         ) : null}
-        <Text style={[styles.detail, { color: palette.textSecondary }]}>
-          Buffered activity queue depth {bufferedActivityQueueDepth}
-        </Text>
+        {Platform.OS === "ios" ? (
+          <ActivityHistoryStatus
+            style={[styles.detail, { color: palette.textSecondary }]}
+          />
+        ) : (
+          <Text style={[styles.detail, { color: palette.textSecondary }]}>
+            Buffered activity queue depth {bufferedActivityQueueDepth}
+          </Text>
+        )}
         <Text style={[styles.detail, { color: palette.textSecondary }]}>
           Repository diagnostics{" "}
           {diagnostics.length

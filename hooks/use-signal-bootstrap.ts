@@ -640,7 +640,7 @@ export function useSignalBootstrap(): void {
         nextState === "active" &&
         (previousState === "background" || previousState === "inactive")
       ) {
-        void runResumeReconcile();
+        void runResumeReconcile().catch(() => undefined);
       }
     });
 

@@ -1,3 +1,4 @@
+import { cancelActivityHistory } from "@/utils/activity-history-session";
 import { create } from "zustand";
 
 import type {
@@ -119,6 +120,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setCollectorEnabled: async (key, enabled) => {
+    if (key === "activity" && !enabled) cancelActivityHistory();
     const nextCollectors = {
       ...get().collectors,
       [key]: buildUpdatedCollector(get().collectors[key], enabled),
@@ -149,6 +151,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearAllData: async () => {
+    cancelActivityHistory();
     set({
       isHydrated: true,
       ...createInitialAppState(),

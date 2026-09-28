@@ -33,6 +33,19 @@ public class ZentraNativeSignalsModule: Module {
       self.activityController.stopUpdates()
     }
 
+    AsyncFunction("readActivityHistoryPageAsync") { (start: String, end: String, cursor: String?, limit: Int?, promise: Promise) in
+      self.activityController.readHistory(start: start, end: end, cursor: cursor, limit: limit ?? 250) { result in
+        switch result {
+        case .success(let page): promise.resolve(page)
+        case .failure(let error): promise.reject("ACTIVITY_HISTORY_READ", error.localizedDescription)
+        }
+      }
+    }
+
+    AsyncFunction("cancelActivityHistoryAsync") {
+      self.activityController.cancelHistory()
+    }
+
     AsyncFunction("getHealthConnectAvailabilityAsync") {
       self.healthKitController.getAvailability()
     }

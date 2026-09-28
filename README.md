@@ -88,7 +88,7 @@ Because F-Droid and Google Play use different signing keys, they install as sepa
 | Health records import | Health Connect | HealthKit | Platform-native health integration |
 | App usage / screen time | Yes | No | Android-specific surface |
 | Ambient light | Yes | No | Android-specific hardware path |
-| Motion context / activity recognition | Yes | No | Android-first implementation |
+| Motion context / activity recognition | Yes | Partial | iOS Core Motion live activity and recovery of up to 7 days of OS-retained history; background execution is best effort |
 | Sleep inference | Yes | Yes | Labeled as inferred, with confidence scores |
 
 ## Project structure

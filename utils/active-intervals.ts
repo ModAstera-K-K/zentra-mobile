@@ -1,3 +1,4 @@
+import { activityStream } from "@/utils/activity-stream";
 import type { ActiveInterval, ActiveKind } from "@/types/active-minutes";
 import type { ZentraEventRecord } from "@/types/zentra";
 import { sourceIdentity } from "@/utils/source-resolution";
@@ -47,7 +48,10 @@ export function activityInterval(
     weight,
     estimated,
     recordIds: [event.id],
-    source: sourceIdentity(event),
+    source:
+      event.dataType === "activity"
+        ? activityStream(event)
+        : sourceIdentity(event),
   };
 }
 export function workoutIntervals(event: ZentraEventRecord): ActiveInterval[] {

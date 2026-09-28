@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import type { ReconcileOutcome, ReconcileTrigger } from "@/types/zentra";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import { getLatestCollectorDiagnosticForKey } from "@/utils/event-repository";
@@ -40,15 +41,25 @@ export async function runImportantCollectorReconcile(
 
   const { collectors } = useAppStore.getState();
   let boundedReason: string | null = null;
+  let activityHistoryRemaining = false;
 
   try {
     if (collectors.activity.enabled) {
       await repositoryStore.drainBufferedActivityTransitions({
         batchSize: options.activityDrainBatchSize,
         maxBatches: options.activityDrainMaxBatches,
+        budgetMs:
+          options.budgetMs == null
+            ? undefined
+            : Math.max(0, options.budgetMs - (Date.now() - startedAtMs)),
       });
       await repositoryStore.refreshTodayData();
 
+      if (
+        Platform.OS === "ios" &&
+        useRepositoryStore.getState().activityHistory?.windows.length
+      )
+        activityHistoryRemaining = true;
       const remainingBufferedEvents =
         await repositoryStore.refreshBufferedActivityQueueDepth();
       if (
@@ -101,6 +112,8 @@ export async function runImportantCollectorReconcile(
       await repositoryStore.refreshBufferedActivityQueueDepth();
     }
 
+    if (!boundedReason && activityHistoryRemaining)
+      boundedReason = "activity_history_remaining";
     const durationMs = Date.now() - startedAtMs;
     const outcome: ReconcileOutcome = boundedReason ? "bounded" : "success";
 
