@@ -1,3 +1,4 @@
+import { restPresentation } from "@/utils/rest-presentation";
 import { activeMinutesValue } from "@/utils/active-minutes-presentation";
 import { stepSourceLabel } from "@/utils/metric-source-label";
 import { resolveStepTotal } from "@/utils/source-resolution";
@@ -261,7 +262,7 @@ export function buildLiveSleepEstimate(
       confidence: 0,
       available: false,
       detail:
-        "Sleep patterns show up once Zentra has screen-state history or health records to work with.",
+        "No supported overnight window yet. Available motion or screen history can support estimated rest; missing records do not count as rest. Imported sleep appears when available.",
       sourceLabel: "Waiting",
       isImported: false,
     };
@@ -295,6 +296,7 @@ export function buildLiveSleepEstimate(
       : "Inferred from screen, unlock, and charging patterns on your device.",
     sourceLabel,
     isImported,
+    ...restPresentation(sleepEvent),
   };
 }
 

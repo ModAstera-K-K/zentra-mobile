@@ -7,18 +7,22 @@ export function sleepEventsForWakeDate(
   date: string,
 ): ZentraEventRecord[] {
   const origins = new Map<string, ZentraEventRecord[]>();
+  const selected: ZentraEventRecord[] = [];
   for (const event of events) {
     if (
       event.dataType !== "sleep_inferred" ||
       event.metadata.stale_import === true
     )
       continue;
+    if (typeof event.metadata.rest_wake_date === "string") {
+      if (event.metadata.rest_wake_date === date) selected.push(event);
+      continue;
+    }
     const key = `${event.source}:${event.metadata.health_platform ?? ""}:${event.metadata.source_app ?? ""}`;
     const group = origins.get(key) ?? [];
     group.push(event);
     origins.set(key, group);
   }
-  const selected: ZentraEventRecord[] = [];
   for (const records of origins.values()) {
     records.sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
     let group: ZentraEventRecord[] = [],

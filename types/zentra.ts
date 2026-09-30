@@ -93,6 +93,13 @@ export interface ActivityHour {
 }
 
 export interface SleepEstimate {
+  isAdjusted?: boolean;
+  canAdjust?: boolean;
+  wakeDate?: string;
+  startTimestamp?: string;
+  endTimestamp?: string;
+  qualityLabel?: string;
+  coverageDetail?: string;
   startLabel: string;
   endLabel: string;
   durationLabel: string;

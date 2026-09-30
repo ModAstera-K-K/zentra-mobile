@@ -1,7 +1,8 @@
-import { sleepEventsForWakeDate } from "@/utils/sleep-wake-date";
+import { sleepTimelineEvents } from "@/utils/sleep-timeline";
 import { sleepIntervals } from "@/utils/sleep-intervals";
 import type { ZentraEventRecord } from "@/types/zentra";
 import { toISODate } from "@/utils/dates";
+import { selectSleepForWakeDate } from "@/utils/sleep-selection";
 
 export function sourceIdentity(event: ZentraEventRecord): string {
   return `${event.source}:${event.metadata.health_platform ?? ""}:${event.metadata.source_app ?? "unknown"}`;
@@ -61,11 +62,12 @@ export function resolvedTimelineEvents(
   const selected = new Set(
     selectResolvedStepEvents(events).map((event) => event.id),
   );
-  return events.filter(
+  return [...events.filter(
     (event) =>
       event.metadata.stale_import !== true &&
+      event.dataType !== "sleep_inferred" &&
       (event.dataType !== "steps" || selected.has(event.id)),
-  );
+  ), ...sleepTimelineEvents(events)];
 }
 
 export function mergedDurationMinutes(events: ZentraEventRecord[]): number {
@@ -89,12 +91,7 @@ export function resolvedSleepMinutes(
   events: ZentraEventRecord[],
   wakeDate: string,
 ): number | null {
-  const sleep = sleepEventsForWakeDate(events, wakeDate);
-  const imported = sleep.filter((event) => event.source === "health_connect");
-  const source = [...new Set(imported.map(sourceIdentity))].sort()[0];
-  const chosen = imported.length
-    ? imported.filter((event) => sourceIdentity(event) === source)
-    : sleep.filter((event) => event.source === "inferred");
+  const chosen = selectSleepForWakeDate(events, wakeDate);
   return chosen.length
     ? Math.round(mergedDurationMinutes(sleepIntervals(chosen)))
     : null;

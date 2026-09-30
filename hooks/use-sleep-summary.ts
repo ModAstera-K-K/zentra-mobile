@@ -19,7 +19,9 @@ export function useSleepSummary(enabled: boolean) {
         if (!cancelled)
           setSummary(buildLiveSleepEstimate(sleepSummaryEvent(events, today)));
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setSummary({ ...buildLiveSleepEstimate(null), qualityLabel: "Records unavailable", detail: "Could not read this night's records. Reopen this screen to retry." });
+      });
     return () => {
       cancelled = true;
     };
