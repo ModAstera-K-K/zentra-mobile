@@ -1,7 +1,10 @@
 import { Platform } from "react-native";
 import type { ReconcileOutcome, ReconcileTrigger } from "@/types/zentra";
 import { useAppStore, useRepositoryStore } from "@/stores";
-import { getLatestCollectorDiagnosticForKey } from "@/utils/event-repository";
+import {
+  compactEventChanges,
+  getLatestCollectorDiagnosticForKey,
+} from "@/utils/event-repository";
 import { syncAppUsageCollector } from "@/utils/collectors/app-usage-collector";
 import { syncHealthConnectCollector } from "@/utils/collectors/health-connect-collector";
 import { syncSleepCollector } from "@/utils/collectors/sleep-collector";
@@ -114,6 +117,15 @@ export async function runImportantCollectorReconcile(
 
     if (!boundedReason && activityHistoryRemaining)
       boundedReason = "activity_history_remaining";
+
+    // Housekeeping only: a failure here must not fail the reconcile.
+    if (!boundedReason && !budgetExceeded(startedAtMs, options.budgetMs))
+      await compactEventChanges({
+        budgetMs:
+          options.budgetMs == null
+            ? undefined
+            : options.budgetMs - (Date.now() - startedAtMs),
+      }).catch(() => undefined);
     const durationMs = Date.now() - startedAtMs;
     const outcome: ReconcileOutcome = boundedReason ? "bounded" : "success";
 

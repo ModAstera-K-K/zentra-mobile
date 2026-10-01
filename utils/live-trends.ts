@@ -1,3 +1,4 @@
+import { sleepNightSummaries } from "@/utils/sleep-night-summaries";
 import { buildMetricObservation } from "@/utils/metric-observations";
 import { sleepEventsForWakeDate } from "@/utils/sleep-wake-date";
 import { stepSourceLabel } from "@/utils/metric-source-label";
@@ -114,7 +115,7 @@ function createTrendSeries(
       value,
     })),
     change:
-      key === "activeMinutes"
+      key === "activeMinutes" || ((key === "inferredSleep" || key === "importedSleep") && (values[0] == null || values.at(-1) == null))
         ? null
         : calculateChange(values[0] ?? 0, values.at(-1) ?? 0),
     variability: calculateVariability(
@@ -201,11 +202,7 @@ function buildSleepStartHeatmap(
   const cellMap = new Map(
     cells.map((cell) => [`${cell.dayLabel}-${cell.hourLabel}`, cell]),
   );
-  const sleepEvents = events.filter(
-    (event) =>
-      event.dataType === "sleep_inferred" &&
-      typeof event.valueNumeric === "number",
-  );
+  const sleepEvents = sleepNightSummaries(events);
 
   if (!sleepEvents.length) {
     return null;
@@ -241,17 +238,17 @@ function buildSleepStartHeatmap(
 
   return {
     key: "sleepStartHeatmap",
-    title: "Sleep Timing",
-    summary: `Sleep windows most often begin around ${strongestCell.hourLabel}:00.`,
+    title: sources.has("inferred") ? "Sleep and Rest Timing" : "Sleep Timing",
+    summary: `Selected overnight windows most often begin around ${strongestCell.hourLabel}:00.`,
     tone: "human",
     group: "health",
     valueLabel: `${sleepEvents.length}`,
-    metaLabel: "sleep windows",
-    coverageLabel: `${sleepEvents.length} recorded sleep window${sleepEvents.length === 1 ? "" : "s"} in range`,
+    metaLabel: "overnight windows",
+    coverageLabel: `${sleepEvents.length} selected overnight window${sleepEvents.length === 1 ? "" : "s"} in range`,
     sourceLabel,
     visual: {
       type: "heatmap",
-      annotation: "When sleep windows usually begin across this range.",
+      annotation: "When selected sleep or estimated-rest windows begin across this range.",
       cells: cells.map((cell) => ({
         ...cell,
         value: Math.round((cell.value / maxValue) * 100),
@@ -471,18 +468,18 @@ function buildDailySleepValues(
   dates: string[],
   events: ZentraEventRecord[],
 ): {
-  importedSleepValues: number[];
+  importedSleepValues: (number | null)[];
   importedSleepSourceLabel: string;
-  inferredSleepValues: number[];
+  inferredSleepValues: (number | null)[];
 } {
   const imported = events.filter((e) => e.source === "health_connect");
   const inferred = events.filter((e) => e.source === "inferred");
   return {
     importedSleepValues: dates.map(
-      (date) => resolvedSleepMinutes(imported, date) ?? 0,
+      (date) => resolvedSleepMinutes(imported, date),
     ),
     inferredSleepValues: dates.map(
-      (date) => resolvedSleepMinutes(inferred, date) ?? 0,
+      (date) => resolvedSleepMinutes(inferred, date),
     ),
     importedSleepSourceLabel: getHealthSourceLabel(imported, "Health import"),
   };
@@ -695,14 +692,14 @@ export function buildLiveTrendSeries(
     ),
     createTrendSeries(
       "inferredSleep",
-      "Inferred Sleep",
+      "Estimated Rest",
       "min",
       "human",
       inferredSleepValues,
       dates,
       "health",
-      buildDaysWithDataLabel(inferredSleepValues, dates, "with inferred sleep"),
-      "Local inference",
+      buildDaysWithDataLabel(inferredSleepValues, dates, "with estimated rest"),
+      "Local inference / user-reported adjustments",
     ),
     createTrendSeries(
       "importedSleep",

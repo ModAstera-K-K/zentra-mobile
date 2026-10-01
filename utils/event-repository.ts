@@ -7,9 +7,16 @@ import {
   isActiveSummaryCurrent,
 } from "@/utils/active-minutes-cache";
 import { startPerfTimer } from "@/utils/perf";
+import { runCooperatively } from "@/utils/cooperative-work";
+import { readEventPages, type PagedEventRow } from "@/utils/event-pages";
 import { invalidateRepositorySession } from "@/utils/repository-session";
 import { cancelHealthSync } from "@/utils/health-sync-session";
-import { readDataRevision } from "@/utils/repository-revision";
+import {
+  compactEventChangesFrom,
+  markEventChangesCompacted,
+  readDataRevision,
+  readEventChangeCompactionState,
+} from "@/utils/repository-revision";
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import type {
@@ -208,8 +215,53 @@ async function getEventsBetweenWithDatabase(
 
   stopQuery({ rows: rows.length });
   const stopMap = startPerfTimer("repository.range_decode");
-  const events = rows.map(mapEventRow);
+  const events = await runCooperatively(decodeEventRowsWork(rows));
   stopMap({ rows: rows.length });
+  return events;
+}
+
+function* decodeEventRowsWork(
+  rows: EventRow[],
+): Generator<void, ZentraEventRecord[]> {
+  const events: ZentraEventRecord[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (i && i % 50 === 0) yield;
+    events.push(mapEventRow(rows[i]));
+  }
+  return events;
+}
+
+/**
+ * Paged, cooperatively decoded read for screens. Each page is its own queued
+ * database operation, so writes and other reads interleave between pages.
+ */
+async function readEventRange(
+  start: string,
+  end: string,
+  filter?: { where: string; params: string[] },
+): Promise<ZentraEventRecord[]> {
+  const { startIso, endExclusiveIso } = getRangeBounds(start, end);
+  const stopRead = startPerfTimer("repository.range_read");
+  const events = await readEventPages<
+    EventRow & PagedEventRow,
+    ZentraEventRecord
+  >(
+    (sql, params) =>
+      enqueueDatabaseOperation(async () =>
+        (await getLocalDatabase()).getAllAsync<EventRow & PagedEventRow>(
+          sql,
+          ...params,
+        ),
+      ),
+    {
+      start: startIso,
+      endExclusive: endExclusiveIso,
+      where: filter?.where,
+      params: filter?.params,
+    },
+    mapEventRow,
+  );
+  stopRead({ rows: events.length });
   return events;
 }
 
@@ -949,9 +1001,31 @@ export async function getEventsForRange(
   start: string,
   end: string,
 ): Promise<ZentraEventRecord[]> {
-  return enqueueDatabaseOperation(async () => {
-    const { startIso, endExclusiveIso } = getRangeBounds(start, end);
-    return getEventsBetween(startIso, endExclusiveIso);
+  return readEventRange(start, end);
+}
+
+/**
+ * Events that touch a local day, including records from the day before that
+ * run past midnight. The overlap filter runs in SQLite so the earlier day's
+ * other rows never cross the bridge.
+ */
+export async function getEventsOverlappingDay(
+  date: string,
+): Promise<ZentraEventRecord[]> {
+  return readEventRange(shiftISODate(date, -1), date, {
+    where: "timestamp_end >= ?",
+    params: [getRangeBounds(date, date).startIso],
+  });
+}
+
+/** Records from the previous day that are still running at local midnight. */
+export async function getEventsCarriedIntoDay(
+  date: string,
+): Promise<ZentraEventRecord[]> {
+  const prior = shiftISODate(date, -1);
+  return readEventRange(prior, prior, {
+    where: "timestamp_end > ?",
+    params: [getRangeBounds(date, date).startIso],
   });
 }
 
@@ -1006,6 +1080,52 @@ export async function getRepositoryRevision(
   return enqueueDatabaseOperation(async () =>
     readDataRevision(await getLocalDatabase(), start, end),
   );
+}
+
+// Collectors add a change row per write; compact once a day's worth piles up.
+const EVENT_CHANGE_COMPACTION_THRESHOLD = 5_000;
+const EVENT_CHANGE_COMPACTION_CHUNK_DAYS = 7;
+
+/**
+ * Compact event_changes in short, separately queued chunks so screens reading
+ * the database are never stuck behind one long delete. Resumes from the start
+ * next time if the budget runs out before the marker is written.
+ */
+export async function compactEventChanges(
+  options: { budgetMs?: number } = {},
+): Promise<"skipped" | "partial" | "complete"> {
+  const startedAtMs = Date.now();
+  const state = await enqueueDatabaseOperation(async () =>
+    readEventChangeCompactionState(await getLocalDatabase()),
+  );
+  if (
+    !state.firstDate ||
+    state.maxRevision - state.compactedRevision <
+      EVENT_CHANGE_COMPACTION_THRESHOLD
+  )
+    return "skipped";
+
+  let cursor: string | null = state.firstDate;
+  while (cursor) {
+    if (
+      options.budgetMs != null &&
+      Date.now() - startedAtMs >= options.budgetMs
+    )
+      return "partial";
+    const from: string = cursor;
+    cursor = await enqueueRetriedWrite(async () =>
+      compactEventChangesFrom(
+        await getLocalDatabase(),
+        from,
+        shiftISODate(from, EVENT_CHANGE_COMPACTION_CHUNK_DAYS),
+      ),
+    );
+  }
+
+  await enqueueRetriedWrite(async () =>
+    markEventChangesCompacted(await getLocalDatabase(), state.maxRevision),
+  );
+  return "complete";
 }
 
 export async function getEventsByIds(
