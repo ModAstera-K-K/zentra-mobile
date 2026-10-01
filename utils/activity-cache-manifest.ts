@@ -16,10 +16,51 @@ export interface ActivityCacheDay {
   key: string;
   revision: number;
   payload?: string;
+  /** Present from `samplesFrom` onward: the day's cached hourly score inputs. */
+  samplesKey?: string;
+  samples?: string;
+}
+
+export function activitySamplesKey(
+  date: string,
+  timezoneOffset: number,
+): string {
+  return `hourly-samples-v1:${date}:${timezoneOffset}`;
 }
 
 /** Two reads for the entire window instead of two bridge calls per day. */
 export async function readActivityCacheManifest(
+  db: SQLiteDatabase,
+  start: string,
+  end: string,
+  timezoneOffset: number,
+  samplesFrom?: string,
+): Promise<ActivityCacheDay[]> {
+  const manifest = await readMaximaManifest(db, start, end, timezoneOffset);
+  if (samplesFrom === undefined) return manifest;
+  const first = samplesFrom < start ? start : samplesFrom;
+  const samples =
+    first > end
+      ? []
+      : await db.getAllAsync<CachedDay>(
+          "SELECT cache_key,revision,payload FROM derived_cache WHERE cache_key>=? AND cache_key<?",
+          `hourly-samples-v1:${first}:`,
+          `hourly-samples-v1:${shiftISODate(end, 1)}:`,
+        );
+  const byKey = new Map(samples.map((row) => [row.cache_key, row]));
+  return manifest.map((day) => {
+    if (day.date < first) return day;
+    const samplesKey = activitySamplesKey(day.date, timezoneOffset),
+      row = byKey.get(samplesKey);
+    return {
+      ...day,
+      samplesKey,
+      samples: row?.revision === day.revision ? row.payload : undefined,
+    };
+  });
+}
+
+async function readMaximaManifest(
   db: SQLiteDatabase,
   start: string,
   end: string,

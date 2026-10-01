@@ -1,5 +1,6 @@
 import type {
   ActivityPatternCell,
+  ActivityScoreMaxima,
   MetricTone,
   UnifiedTimelineBucket,
   UnifiedTimelineWindow,
@@ -174,6 +175,7 @@ function buildVisualForCell(
   cell: ActivityPatternCell,
   relatedEvents: ZentraEventRecord[],
   allEvents: ZentraEventRecord[],
+  precomputedMaxima?: ActivityScoreMaxima | null,
 ): TodayDetailVisual | null {
   if (!cell.hasAnyData) {
     return null;
@@ -194,7 +196,12 @@ function buildVisualForCell(
     return null;
   }
 
-  const buckets = buildUnifiedTimeline(relatedEvents, window, allEvents);
+  const buckets = buildUnifiedTimeline(
+    relatedEvents,
+    window,
+    allEvents,
+    precomputedMaxima,
+  );
 
   return {
     type: "line",
@@ -287,9 +294,14 @@ function getMetaLabel(cell: ActivityPatternCell): string {
   return "Month detail";
 }
 
+/**
+ * Pass the maxima the grid was scored with so the hourly chart matches the
+ * cell; without them the chart normalizes against `events` alone.
+ */
 export function buildActivityPatternDetailPayload(
   cell: ActivityPatternCell,
   events: ZentraEventRecord[],
+  precomputedMaxima?: ActivityScoreMaxima | null,
 ): TodayDetailPayload {
   const relatedEvents = filterEventsForCell(cell, events);
 
@@ -301,7 +313,7 @@ export function buildActivityPatternDetailPayload(
     summary: buildSummary(cell, relatedEvents),
     tone: getTone(cell),
     meta: getMetaLabel(cell),
-    visual: buildVisualForCell(cell, relatedEvents, events),
+    visual: buildVisualForCell(cell, relatedEvents, events, precomputedMaxima),
     facts: buildFacts(cell, relatedEvents),
     rows: buildRows(relatedEvents),
   };

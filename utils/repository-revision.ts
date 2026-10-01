@@ -41,3 +41,74 @@ export async function readDataRevision(
         );
   return String(row?.revision ?? 0);
 }
+
+const COMPACTION_MARKER_KEY = "event-changes-compacted";
+
+export interface EventChangeCompactionState {
+  compactedRevision: number;
+  firstDate: string | null;
+  maxRevision: number;
+}
+
+export async function readEventChangeCompactionState(
+  db: SQLiteDatabase,
+): Promise<EventChangeCompactionState> {
+  const row = await db.getFirstAsync<{
+    compacted_revision: number | null;
+    first_date: string | null;
+    max_revision: number;
+  }>(
+    `SELECT
+      (SELECT COALESCE(MAX(revision),0) FROM event_changes) AS max_revision,
+      (SELECT revision FROM derived_cache WHERE cache_key=?) AS compacted_revision,
+      (SELECT MIN(start_date) FROM event_changes) AS first_date`,
+    COMPACTION_MARKER_KEY,
+  );
+  return {
+    compactedRevision: Number(row?.compacted_revision ?? 0),
+    firstDate: row?.first_date ?? null,
+    maxRevision: Number(row?.max_revision ?? 0),
+  };
+}
+
+/**
+ * Drop change rows superseded by a later row with the same dates and data
+ * type. Every reader takes MAX(revision) filtered on those columns, so their
+ * results are unchanged, but the table no longer grows with every write.
+ * Returns the next start_date to compact, or null when the table is done.
+ */
+export async function compactEventChangesFrom(
+  db: SQLiteDatabase,
+  fromDate: string,
+  toDateExclusive: string,
+): Promise<string | null> {
+  await db.runAsync(
+    `DELETE FROM event_changes
+      WHERE start_date >= ? AND start_date < ?
+      AND revision NOT IN (
+        SELECT MAX(revision) FROM event_changes
+          WHERE start_date >= ? AND start_date < ?
+          GROUP BY start_date, end_date, data_type
+      )`,
+    fromDate,
+    toDateExclusive,
+    fromDate,
+    toDateExclusive,
+  );
+  const next = await db.getFirstAsync<{ start_date: string | null }>(
+    "SELECT MIN(start_date) AS start_date FROM event_changes WHERE start_date >= ?",
+    toDateExclusive,
+  );
+  return next?.start_date ?? null;
+}
+
+export async function markEventChangesCompacted(
+  db: SQLiteDatabase,
+  revision: number,
+): Promise<void> {
+  await db.runAsync(
+    "INSERT OR REPLACE INTO derived_cache(cache_key,revision,payload) VALUES(?,?,'')",
+    COMPACTION_MARKER_KEY,
+    revision,
+  );
+}

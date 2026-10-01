@@ -24,7 +24,6 @@ import {
   getEventsForRange,
   getLatestCollectorDiagnostics,
   getLatestEventByType,
-  getTodayLiveSnapshot,
   initializeEventRepository,
 } from "@/utils/event-repository";
 import {
@@ -40,6 +39,9 @@ import {
   readBufferedActivityTransitionsSinceAsync,
 } from "@/utils/native/zentra-native-signals";
 import { toISODate } from "@/utils/dates";
+import { buildTodaySnapshot } from "@/utils/repository-aggregates";
+import { clearTodayPatternSnapshot } from "@/utils/today-pattern-snapshot";
+import { repositoryEpoch } from "@/utils/repository-session";
 
 const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
   stepCount: null,
@@ -100,6 +102,8 @@ interface RepositoryStoreState {
   lastReconcileTrigger: ReconcileTrigger | null;
   lastUpdatedAt: string | null;
   todayDataUpdatedAt: string | null;
+  /** Repository epoch; changes when local data is wiped. */
+  dataEpoch: number;
   diagnosticsUpdatedAt: string | null;
   sleepUpdatedAt: string | null;
   todaySnapshot: TodayLiveSnapshot;
@@ -190,6 +194,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   lastReconcileTrigger: null,
   lastUpdatedAt: null,
   todayDataUpdatedAt: null,
+  dataEpoch: repositoryEpoch(),
   diagnosticsUpdatedAt: null,
   sleepUpdatedAt: null,
   todaySnapshot: EMPTY_TODAY_SNAPSHOT,
@@ -213,20 +218,20 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
     const [
-      todaySnapshot,
       diagnostics,
       diagnosticsHistory,
       todayAggregate,
       latestSleepEvent,
       todayEvents,
     ] = await Promise.all([
-      getTodayLiveSnapshot(),
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
       getDailyAggregateForDate(todayDate),
       getLatestEventByType("sleep_inferred"),
       getEventsForRange(todayDate, todayDate),
     ]);
+    // Same local-day window as the events above: no second full-day read.
+    const todaySnapshot = buildTodaySnapshot(todayEvents);
 
     const updatedAt = new Date().toISOString();
 
@@ -292,20 +297,20 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
     const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
     const [
-      todaySnapshot,
       diagnostics,
       diagnosticsHistory,
       todayAggregate,
       latestSleepEvent,
       todayEvents,
     ] = await Promise.all([
-      getTodayLiveSnapshot(),
       getLatestCollectorDiagnostics(),
       getCollectorDiagnosticsHistory(),
       getDailyAggregateForDate(todayDate),
       getLatestEventByType("sleep_inferred"),
       getEventsForRange(todayDate, todayDate),
     ]);
+    // Same local-day window as the events above: no second full-day read.
+    const todaySnapshot = buildTodaySnapshot(todayEvents);
 
     const updatedAt = new Date().toISOString();
 
@@ -348,11 +353,11 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
         get().todayAggregate?.date === todayDate
       )
         return;
-      const [todaySnapshot, todayAggregate, todayEvents] = await Promise.all([
-        getTodayLiveSnapshot(),
+      const [todayAggregate, todayEvents] = await Promise.all([
         getDailyAggregateForDate(todayDate),
         getEventsForRange(todayDate, todayDate),
       ]);
+      const todaySnapshot = buildTodaySnapshot(todayEvents);
 
       const updatedAt = new Date().toISOString();
       const stableTodayEvents = stableEvents(get().todayEvents, todayEvents);
@@ -587,9 +592,11 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
   clearRepositoryData: async () => {
     await clearRepositoryDataFromDb();
+    await clearTodayPatternSnapshot();
     const updatedAt = new Date().toISOString();
 
     set({
+      dataEpoch: repositoryEpoch(),
       backgroundCollectionServiceCheckedAt: null,
       backgroundCollectionServiceState: null,
       backgroundTaskRegistrationCheckedAt: null,

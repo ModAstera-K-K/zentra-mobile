@@ -18,3 +18,16 @@ export async function runCooperatively<T>(
     }
   }
 }
+
+/**
+ * For async loops that are not generators: await the returned function between
+ * items and it yields only once the current time slice is spent.
+ */
+export function createCooperativeYield(): () => Promise<void> {
+  let started = performance.now();
+  return async () => {
+    if (performance.now() - started < 8) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    started = performance.now();
+  };
+}
