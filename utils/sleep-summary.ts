@@ -3,12 +3,13 @@ import { selectSleepForWakeDate } from "@/utils/sleep-selection";
 import {
   resolvedSleepMinutes,
 } from "@/utils/source-resolution";
+import { compareTimestamps } from "@/utils/dates";
 
 export function sleepSummaryEvent(
   events: ZentraEventRecord[],
   wakeDate: string,
 ): ZentraEventRecord | null {
-  const selected = selectSleepForWakeDate(events, wakeDate).sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+  const selected = selectSleepForWakeDate(events, wakeDate).sort((a, b) => compareTimestamps(a.timestampStart, b.timestampStart));
   if (!selected.length) return null;
   return {
     ...selected[0],

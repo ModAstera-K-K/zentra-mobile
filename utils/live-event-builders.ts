@@ -1,3 +1,4 @@
+import { compareTimestamps } from "@/utils/dates";
 import { activityTransitionMetadata } from "@/utils/activity-stream";
 import { Platform } from "react-native";
 
@@ -316,7 +317,7 @@ export function createUsageDerivedEvents(usageEvents: NativeUsageEvent[]): {
 
   usageEvents
     .slice()
-    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+    .sort((left, right) => compareTimestamps(left.timestamp, right.timestamp))
     .forEach((event) => {
       switch (event.eventType) {
         case "activity_resumed": {

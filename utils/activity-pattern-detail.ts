@@ -14,6 +14,7 @@ import type {
 } from "@/utils/today-visualization";
 import { formatNumber, formatPercent } from "@/utils/format";
 import { buildUnifiedTimeline } from "@/utils/unified-timeline";
+import { compareTimestamps } from "@/utils/dates";
 
 function getTone(cell: ActivityPatternCell): MetricTone {
   switch (cell.dominantKind) {
@@ -75,7 +76,7 @@ function filterEventsForCell(
   return events
     .filter((event) => overlapsWindow(event, startMs, endMs))
     .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
+      compareTimestamps(left.timestampStart, right.timestampStart),
     );
 }
 
@@ -237,7 +238,7 @@ function buildFacts(
 function buildRows(events: ZentraEventRecord[]): TodayDetailFact[] {
   return [...events]
     .sort((left, right) =>
-      right.timestampStart.localeCompare(left.timestampStart),
+      compareTimestamps(right.timestampStart, left.timestampStart),
     )
     .slice(0, 8)
     .map((event) => ({

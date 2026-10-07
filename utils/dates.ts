@@ -8,6 +8,15 @@ export function toISODate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/**
+ * Order stored UTC timestamps. For these strings a plain comparison gives the
+ * same order as localeCompare and as SQLite's ORDER BY, without the collator
+ * call that makes localeCompare many times slower on Hermes.
+ */
+export function compareTimestamps(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export function parseISODate(value: string): Date {
   return new Date(`${value}T00:00:00`);
 }

@@ -1,3 +1,4 @@
+import { compareTimestamps } from "@/utils/dates";
 import type { LocationSample } from "@/types/zentra";
 
 export interface ElevationSummary {
@@ -40,7 +41,7 @@ export function calculateAverageSpeedKmh(
 
   const sorted = samples
     .slice()
-    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+    .sort((left, right) => compareTimestamps(left.timestamp, right.timestamp));
 
   for (let index = 1; index < sorted.length; index += 1) {
     const previous = sorted[index - 1];

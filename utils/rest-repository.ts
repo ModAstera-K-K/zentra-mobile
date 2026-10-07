@@ -1,5 +1,6 @@
 import { getLocalDatabase } from "@/utils/local-database";
-import { enqueueDatabaseOperation, mapEventRow, rebuildAggregateForDate, type EventRow } from "@/utils/event-repository";
+import { decodeEventRowsWork, enqueueDatabaseOperation, mapEventRow, rebuildAggregateForDate, type EventRow } from "@/utils/event-repository";
+import { runCooperatively } from "@/utils/cooperative-work";
 import { repositoryEpoch, assertRepositoryEpoch } from "@/utils/repository-session";
 import { getLocalDatesForEvents } from "@/utils/repository-aggregates";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
@@ -20,7 +21,8 @@ export function reconcileRestEstimates(now = new Date()): Promise<number> {
       AND data_type IN ('activity','screen_state','app_usage','unlock_event','steps','exercise_session','motion_context','location','charging_state','sleep_inferred')
       ORDER BY timestamp_start`,
       parseISODate(shiftISODate(date, -8)).toISOString(), now.toISOString());
-    const events = rows.map(mapEventRow);
+    // Eight days of records: decode in slices rather than block the thread.
+    const events = await runCooperatively(decodeEventRowsWork(rows));
     const gaps = pendingRestHistoryGaps(await readActivityHistoryState(db));
     const next = RELEASE_FLAGS.restInference ? await inferSleepEventsAsync(events, date, now, gaps) : [];
     const changed = await commitRestEstimates(db, next, events, restWakeDates(date), () => assertRepositoryEpoch(epoch));

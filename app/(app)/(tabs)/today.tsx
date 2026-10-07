@@ -6,6 +6,10 @@ import {
   loadActivityHistory,
   type ActivityHistory,
 } from "@/utils/activity-cache";
+import {
+  startActivityCacheSession,
+  type ActivityCacheSession,
+} from "@/utils/activity-cache-session";
 import { useTabPerformance } from "@/hooks/use-tab-performance";
 import { InsightsSection } from "@/components/zentra/InsightsSection";
 import React from "react";
@@ -84,11 +88,13 @@ import {
 import { useIsFocused } from "@react-navigation/native";
 import {
   assembleMonthlyActivityPattern,
+  carryPatternCellsForward,
   buildNormalizationMaximaAsync,
   buildPatternDayCellFromSamples,
   buildPatternDayCellsAsync,
   buildUnifiedTimelineAsync,
   getMonthlyPatternGrid,
+  patternDayCellsByDate,
   rescoreTimeline,
   type ActivityPatternDayCell,
 } from "@/utils/unified-timeline";
@@ -123,6 +129,8 @@ function getActivityNormalizationLabel(
   }
 }
 
+const NO_PENDING_DATES: ReadonlySet<string> = new Set();
+
 type TodaySectionKey =
   | "insights"
   | "pattern"
@@ -144,10 +152,10 @@ const PatternSection = React.memo(function PatternSection({
   error,
   hasLoadedPattern,
   isDemoMode,
-  isLoadingPatternHistory,
   mutedForeground,
   onRetry,
   onSelectCell,
+  statusLabel,
   textSecondary,
 }: {
   activityNormalizationWindow: ActivityNormalizationWindow;
@@ -155,10 +163,11 @@ const PatternSection = React.memo(function PatternSection({
   error: string | null;
   hasLoadedPattern: boolean;
   isDemoMode: boolean;
-  isLoadingPatternHistory: boolean;
   mutedForeground: string;
   onRetry: () => void;
   onSelectCell: (cell: ActivityPatternCell) => void;
+  /** Shown under the grid while it is still being brought up to date. */
+  statusLabel: string | null;
   textSecondary: string;
 }) {
   if (((!hasLoadedPattern && !isDemoMode) || !cells.length) && error) {
@@ -216,13 +225,13 @@ const PatternSection = React.memo(function PatternSection({
             Try again
           </Button>
         </View>
-      ) : isLoadingPatternHistory && !isDemoMode ? (
+      ) : statusLabel ? (
         <View style={styles.patternRefreshingRow}>
           <ActivityIndicator color={mutedForeground} size="small" />
           <Text
             style={[styles.patternRefreshingText, { color: textSecondary }]}
           >
-            Refreshing pattern...
+            {statusLabel}
           </Text>
         </View>
       ) : null}
@@ -478,7 +487,6 @@ export default function TodayScreen() {
     React.useState<PermissionStatus>("not_requested");
   const [selectedDetail, setSelectedDetail] =
     React.useState<TodayDetailPayload | null>(null);
-  const [isComputingPattern, setIsComputingPattern] = React.useState(false);
   const [isLoadingPatternHistory, setIsLoadingPatternHistory] =
     React.useState(false);
   const [isRefreshingTodayData, setIsRefreshingTodayData] =
@@ -542,21 +550,10 @@ export default function TodayScreen() {
   const [rhythmError, setRhythmError] = React.useState<string | null>(null);
   const [patternRetry, setPatternRetry] = React.useState(0);
 
-  // Past days only change when their own revision does. Keying history work on
-  // it, instead of the global todayDataUpdatedAt, stops live writes for today
-  // from cancelling and restarting the history load.
-  const [historyRevision, setHistoryRevision] = React.useState<{
-    anchor: string;
-    key: string;
-    maximaStart: string;
-  } | null>(null);
-
-  React.useEffect(() => {
-    if (isDemoMode || !repository.isHydrated || !isFocused) {
-      return;
-    }
-
-    let isCancelled = false;
+  // What the stored history is loaded for. New data inside it does not change
+  // the scope; it only moves the revision, which queues another pass.
+  const historyScope = React.useMemo(() => {
+    if (isDemoMode) return null;
     const maximaStart =
       activityNormalizationWindow === "all"
         ? "1970-01-01"
@@ -564,19 +561,47 @@ export default function TodayScreen() {
             todayAnchor,
             activityNormalizationWindow,
           ).start;
+    return {
+      anchor: todayAnchor,
+      key: `${dataEpoch}:${todayAnchor}:${activityNormalizationWindow}`,
+      maximaStart,
+    };
+  }, [activityNormalizationWindow, dataEpoch, isDemoMode, todayAnchor]);
+
+  const historySessionRef = React.useRef<ActivityCacheSession | null>(null);
+  const [latestHistoryRevision, setLatestHistoryRevision] = React.useState<{
+    revision: string;
+    scopeKey: string;
+  } | null>(null);
+  const latestHistoryRevisionRef = React.useRef(latestHistoryRevision);
+  latestHistoryRevisionRef.current = latestHistoryRevision;
+  // Identifies the newest stored revision seen for the current scope. A
+  // loaded history is current when it carries the same key.
+  const historyKey =
+    historyScope && latestHistoryRevision?.scopeKey === historyScope.key
+      ? `${historyScope.key}:${latestHistoryRevision.revision}`
+      : null;
+
+  React.useEffect(() => {
+    if (!historyScope || !repository.isHydrated || !isFocused) {
+      return;
+    }
+
+    let isCancelled = false;
+    const { anchor, key: scopeKey, maximaStart } = historyScope;
 
     // The normalization window always contains the pattern grid, so one
     // revision covers both. It moves with the stored days' own staleness
     // rule, which also counts later sleep records that settle their nights.
-    void getActivityHistoryRevision(maximaStart, shiftISODate(todayAnchor, -1))
+    void getActivityHistoryRevision(maximaStart, shiftISODate(anchor, -1))
       .then((revision) => {
         if (isCancelled) return;
-        const key = `${dataEpoch}:${todayAnchor}:${activityNormalizationWindow}:${revision}`;
-        setHistoryRevision((current) =>
-          current?.key === key
+        setLatestHistoryRevision((current) =>
+          current?.scopeKey === scopeKey && current.revision === revision
             ? current
-            : { anchor: todayAnchor, key, maximaStart },
+            : { revision, scopeKey },
         );
+        historySessionRef.current?.noteRevision(revision);
       })
       .catch(() => {
         if (!isCancelled)
@@ -587,22 +612,18 @@ export default function TodayScreen() {
       isCancelled = true;
     };
   }, [
-    dataEpoch,
-    isDemoMode,
+    historyScope,
     isFocused,
     patternRetry,
     repository.isHydrated,
-    todayAnchor,
-    activityNormalizationWindow,
     repository.todayDataUpdatedAt,
   ]);
 
-  const historyKey = historyRevision?.key ?? null;
-  const historyRevisionRef = React.useRef(historyRevision);
-  historyRevisionRef.current = historyRevision;
-
-  // Past days come from per-day cached hourly samples, not raw events: a warm
-  // open reads a few hundred small cache rows instead of ~28 days of records.
+  // Past days come from per-day stored hourly samples, not raw events. The
+  // session shows what is stored at once, rescores only the days that changed,
+  // and is never restarted by new data: a reconcile after a long absence writes
+  // past days in bursts, and restarting on each one kept the pattern loading
+  // for as long as the writes went on.
   const [loadedHistory, setLoadedHistory] = React.useState<{
     anchor: string;
     epoch: number;
@@ -611,64 +632,69 @@ export default function TodayScreen() {
   } | null>(null);
   const activityHistory =
     loadedHistory?.epoch === dataEpoch ? loadedHistory : null;
-  const loadedHistoryKeyRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    const revision = historyRevisionRef.current;
-    if (isDemoMode || !isFocused || !revision || !historyKey) return;
-    if (loadedHistoryKeyRef.current === historyKey) return;
+    if (!historyScope || !repository.isHydrated || !isFocused) return;
 
-    const { anchor, maximaStart } = revision;
+    const { anchor, key: scopeKey, maximaStart } = historyScope;
     const epoch = repositoryEpoch();
-    const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
-      const stopLoadPattern = startPerfTimer("today.load_pattern_history", {
-        screen: "today",
-        todayAnchor: anchor,
-      });
-      setIsLoadingPatternHistory(true);
-      void loadActivityHistory(
-        maximaStart,
-        shiftISODate(anchor, -1),
-        getMonthlyPatternGrid(anchor)[0],
-        controller.signal,
-        (partial) => {
-          if (!controller.signal.aborted)
-            setLoadedHistory({
-              anchor,
-              epoch,
-              history: partial,
-              key: historyKey,
-            });
-        },
-      )
-        .then((history) => {
-          if (controller.signal.aborted) return;
-          loadedHistoryKeyRef.current = historyKey;
-          setLoadedHistory({ anchor, epoch, history, key: historyKey });
-          setHistoryError(null);
-          stopLoadPattern({
-            days: history.samplesByDate.size,
-            reason: "loaded",
-          });
-        })
-        .catch(() => {
-          // A wipe mid-load is not a failure: the new epoch reloads.
-          const cancelled =
-            controller.signal.aborted || epoch !== repositoryEpoch();
-          stopLoadPattern({ reason: cancelled ? "cancelled" : "error" });
-          if (!cancelled)
-            setHistoryError("Couldn't load your activity history.");
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setIsLoadingPatternHistory(false);
+    const session = startActivityCacheSession({
+      load: (signal, onProgress) => {
+        const stopLoadPattern = startPerfTimer("today.load_pattern_history", {
+          screen: "today",
+          todayAnchor: anchor,
         });
+        return loadActivityHistory(
+          maximaStart,
+          shiftISODate(anchor, -1),
+          getMonthlyPatternGrid(anchor)[0],
+          signal,
+          onProgress,
+        ).then(
+          (history) => {
+            stopLoadPattern({
+              days: history.samplesByDate.size,
+              reason: "loaded",
+            });
+            return history;
+          },
+          (error) => {
+            stopLoadPattern({
+              reason:
+                signal.aborted || epoch !== repositoryEpoch()
+                  ? "cancelled"
+                  : "error",
+            });
+            throw error;
+          },
+        );
+      },
+      onHistory: (history, revision, final) => {
+        setLoadedHistory({
+          anchor,
+          epoch,
+          history,
+          key: `${scopeKey}:${revision}`,
+        });
+        if (final) setHistoryError(null);
+      },
+      onLoading: setIsLoadingPatternHistory,
+      onError: () => {
+        // A wipe mid-load is not a failure: the new epoch starts a new session.
+        if (epoch === repositoryEpoch())
+          setHistoryError("Couldn't load your activity history.");
+      },
     });
+    historySessionRef.current = session;
+    const known = latestHistoryRevisionRef.current;
+    if (known?.scopeKey === scopeKey) session.noteRevision(known.revision);
 
     return () => {
-      controller.abort();
-      interaction.cancel();
+      session.stop();
+      if (historySessionRef.current === session)
+        historySessionRef.current = null;
+      setIsLoadingPatternHistory(false);
     };
-  }, [isDemoMode, isFocused, historyKey, patternRetry]);
+  }, [historyScope, isFocused, patternRetry, repository.isHydrated]);
 
   // Records from yesterday still running at midnight (sleep, long sessions)
   // shape today's cell, as they did when the grid was built from raw events.
@@ -681,16 +707,16 @@ export default function TodayScreen() {
     loadedCarried?.epoch === dataEpoch ? loadedCarried : null;
   const loadedCarriedKeyRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    const revision = historyRevisionRef.current;
-    if (isDemoMode || !isFocused || !revision || !historyKey) return;
+    if (!historyScope || !isFocused || !historyKey) return;
     if (loadedCarriedKeyRef.current === historyKey) return;
     let isCancelled = false;
     const epoch = repositoryEpoch();
-    void getEventsCarriedIntoDay(revision.anchor)
+    const { anchor } = historyScope;
+    void getEventsCarriedIntoDay(anchor)
       .then((events) => {
         if (isCancelled || epoch !== repositoryEpoch()) return;
         loadedCarriedKeyRef.current = historyKey;
-        setLoadedCarried({ anchor: revision.anchor, epoch, events });
+        setLoadedCarried({ anchor, epoch, events });
       })
       .catch(() => {
         if (!isCancelled && epoch === repositoryEpoch())
@@ -699,7 +725,7 @@ export default function TodayScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [isDemoMode, isFocused, historyKey, patternRetry]);
+  }, [historyScope, isFocused, historyKey, patternRetry]);
 
   const [loadedSnapshot, setLoadedSnapshot] = React.useState<{
     epoch: number;
@@ -716,10 +742,10 @@ export default function TodayScreen() {
   }, []);
   const patternSnapshot =
     loadedSnapshot?.epoch === dataEpoch ? loadedSnapshot.snapshot : null;
+  // A grid saved on an earlier day still gives the scale, and the days it
+  // shares with today's grid, until the stored history has loaded.
   const usableSnapshot =
-    !isDemoMode &&
-    patternSnapshot?.anchor === todayAnchor &&
-    patternSnapshot.window === activityNormalizationWindow
+    !isDemoMode && patternSnapshot?.window === activityNormalizationWindow
       ? patternSnapshot
       : null;
 
@@ -1053,10 +1079,20 @@ export default function TodayScreen() {
     ? buildActivityScoreMaxima(todayRawTimeline.buckets)
     : null;
   // Final normalization: the stored window (up to yesterday) plus today.
+  // While days are still being scored, the last saved window is folded in so
+  // the scale does not creep as they land.
   const combinedMaximaCandidate = isDemoMode
     ? demoMaxima
     : activityHistory && todayMaxima
-      ? mergeActivityScoreMaxima(activityHistory.history.maxima, todayMaxima)
+      ? mergeActivityScoreMaxima(
+          !activityHistory.history.complete && usableSnapshot
+            ? mergeActivityScoreMaxima(
+                activityHistory.history.maxima,
+                usableSnapshot.maxima,
+              )
+            : activityHistory.history.maxima,
+          todayMaxima,
+        )
       : null;
   // Provisional normalization so the rhythm paints before history loads: last
   // session's window if this day has one, otherwise today on its own.
@@ -1101,7 +1137,6 @@ export default function TodayScreen() {
   } | null>(null);
   React.useEffect(() => {
     if (!isFocused || !isDemoMode || !combinedMaxima) return;
-    setIsComputingPattern(true);
     const controller = new AbortController();
     const interaction = InteractionManager.runAfterInteractions(() => {
       void buildPatternDayCellsAsync(
@@ -1118,16 +1153,12 @@ export default function TodayScreen() {
         .catch(() => {
           if (!controller.signal.aborted)
             setPatternComputeError("Couldn't calculate the sample pattern.");
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setIsComputingPattern(false);
         });
     });
 
     return () => {
       controller.abort();
       interaction.cancel();
-      setIsComputingPattern(false);
     };
   }, [
     combinedMaxima,
@@ -1146,25 +1177,32 @@ export default function TodayScreen() {
       activityHistory?.anchor !== todayAnchor
     )
       return null;
+    const { pendingDates, samplesByDate } = activityHistory.history;
     const cells = new Map<string, ActivityPatternDayCell>();
     for (const date of getMonthlyPatternGrid(todayAnchor)) {
       if (date >= todayAnchor) break;
+      // A day still waiting for its first score is left out, not drawn empty.
+      if (pendingDates.has(date)) continue;
       cells.set(
         date,
         buildPatternDayCellFromSamples(
           date,
-          activityHistory.history.samplesByDate.get(date) ?? [],
+          samplesByDate.get(date) ?? [],
           combinedMaxima,
         ),
       );
     }
-    return cells;
+    return { cells, pendingDates };
   }, [activityHistory, combinedMaxima, isDemoMode, todayAnchor]);
-  const historicalCells = isDemoMode
-    ? demoHistoricalCells?.anchor === todayAnchor
-      ? demoHistoricalCells.cells
-      : null
-    : liveHistoricalCells;
+  const historicalCells = React.useMemo(
+    () =>
+      !isDemoMode
+        ? liveHistoricalCells
+        : demoHistoricalCells?.anchor === todayAnchor
+          ? { cells: demoHistoricalCells.cells, pendingDates: NO_PENDING_DATES }
+          : null,
+    [demoHistoricalCells, isDemoMode, liveHistoricalCells, todayAnchor],
+  );
 
   const todayCellEvents = React.useMemo(() => {
     if (isDemoMode) return demoPatternEvents;
@@ -1223,21 +1261,62 @@ export default function TodayScreen() {
     todayCellEvents,
   ]);
 
+  const savedDayCells = React.useMemo(
+    () =>
+      usableSnapshot
+        ? patternDayCellsByDate(usableSnapshot.cells, usableSnapshot.anchor)
+        : null,
+    [usableSnapshot],
+  );
   const freshMonthCells = React.useMemo<ActivityPatternCell[] | null>(() => {
     if (!historicalCells || todayCell?.anchor !== todayAnchor) return null;
-    return assembleMonthlyActivityPattern(
-      todayAnchor,
-      new Map([...historicalCells, [todayAnchor, todayCell.cell]]),
-    );
-  }, [historicalCells, todayAnchor, todayCell]);
-  const snapshotCells = usableSnapshot?.cells;
+    const dayCells = new Map(historicalCells.cells);
+    const pendingDates = new Set<string>();
+    // A day not scored yet keeps its last saved cell if there is one.
+    for (const date of historicalCells.pendingDates) {
+      const saved = savedDayCells?.get(date);
+      if (saved) dayCells.set(date, saved);
+      else pendingDates.add(date);
+    }
+    dayCells.set(todayAnchor, todayCell.cell);
+    return assembleMonthlyActivityPattern(todayAnchor, dayCells, pendingDates);
+  }, [historicalCells, savedDayCells, todayAnchor, todayCell]);
+  // Before the stored history arrives: the saved grid as it was, or carried
+  // onto today's grid when it was saved on an earlier day.
+  const snapshotCells = React.useMemo(
+    () =>
+      !usableSnapshot
+        ? null
+        : usableSnapshot.anchor === todayAnchor
+          ? usableSnapshot.cells
+          : carryPatternCellsForward(
+              todayAnchor,
+              usableSnapshot.cells,
+              usableSnapshot.anchor,
+            ),
+    [todayAnchor, usableSnapshot],
+  );
   const monthCells = React.useMemo(
     () => freshMonthCells ?? snapshotCells ?? [],
     [freshMonthCells, snapshotCells],
   );
+  const visibleHistoryCurrent =
+    isDemoMode ||
+    (activityHistory?.anchor === todayAnchor &&
+      activityHistory.history.visibleComplete);
+  // Cells that are all still loading are not "no pattern yet".
+  const patternReady =
+    monthCells.length > 0 &&
+    (visibleHistoryCurrent || monthCells.some((cell) => cell.hasAnyData));
+  // The older days only refine the scale; say so rather than "refreshing".
+  const patternStatus =
+    isDemoMode || !isLoadingPatternHistory
+      ? null
+      : visibleHistoryCurrent
+        ? "Updating the scale from older history..."
+        : "Refreshing pattern...";
 
   const retryPattern = React.useCallback(() => {
-    loadedHistoryKeyRef.current = null;
     loadedCarriedKeyRef.current = null;
     lastTodayTimelineInputRef.current = null;
     setHistoryError(null);
@@ -1252,10 +1331,10 @@ export default function TodayScreen() {
   const rhythmScaleNote = React.useMemo<ActivityStripNote | null>(() => {
     if (isDemoMode || !dailyRhythmBuckets.length) return null;
     if (activityHistory?.history.complete) return null;
-    const basis = activityHistory
-      ? "the last four weeks"
-      : usableSnapshot
-        ? "your last saved baseline"
+    const basis = usableSnapshot
+      ? "your last saved baseline"
+      : activityHistory
+        ? "the days loaded so far"
         : "today only";
     return historyError
       ? {
@@ -1276,21 +1355,25 @@ export default function TodayScreen() {
     usableSnapshot,
   ]);
 
-  // Remember the finished grid so the next open of the same day paints at once.
-  const lastSnapshotSavedAtRef = React.useRef(0);
+  // Remember the grid so the next open paints at once. It is saved as soon as
+  // the days it draws are current, without waiting for the older days that
+  // only refine the scale: that fill can outlast the user's visit.
+  const lastSnapshotSaveRef = React.useRef({ at: 0, complete: false });
   React.useEffect(() => {
     if (
       isDemoMode ||
       !freshMonthCells ||
       !combinedMaxima ||
-      // Only a complete load of the current revision: never re-save a grid
+      // Only current days at the current revision: never re-save a grid
       // computed before the data underneath it changed or was cleared.
-      !activityHistory?.history.complete ||
-      activityHistory.key !== historyKey ||
-      Date.now() - lastSnapshotSavedAtRef.current < 60_000
+      !activityHistory?.history.visibleComplete ||
+      activityHistory.key !== historyKey
     )
       return;
-    lastSnapshotSavedAtRef.current = Date.now();
+    const { complete } = activityHistory.history;
+    const last = lastSnapshotSaveRef.current;
+    if (Date.now() - last.at < 60_000 && !(complete && !last.complete)) return;
+    lastSnapshotSaveRef.current = { at: Date.now(), complete };
     void saveTodayPatternSnapshot(
       {
         anchor: todayAnchor,
@@ -1322,7 +1405,7 @@ export default function TodayScreen() {
     const readyForFirstPaint =
       (isDemoMode || repository.isHydrated) &&
       hasEnabledCollectors &&
-      monthCells.length > 0;
+      patternReady;
 
     if (!readyForFirstPaint || !focusReadyStopRef.current) {
       return;
@@ -1338,7 +1421,7 @@ export default function TodayScreen() {
   }, [
     collectors,
     freshMonthCells,
-    monthCells.length,
+    patternReady,
     isDemoMode,
     isFocused,
     repository.isHydrated,
@@ -1502,11 +1585,9 @@ export default function TodayScreen() {
               activityNormalizationWindow={activityNormalizationWindow}
               cells={monthCells}
               error={patternError}
-              hasLoadedPattern={monthCells.length > 0}
+              hasLoadedPattern={patternReady}
               isDemoMode={isDemoMode}
-              isLoadingPatternHistory={
-                isLoadingPatternHistory || isComputingPattern
-              }
+              statusLabel={patternStatus}
               mutedForeground={palette.mutedForeground}
               onRetry={retryPattern}
               onSelectCell={handleSelectPatternCell}
@@ -1607,8 +1688,8 @@ export default function TodayScreen() {
       handleSelectRecentSignal,
       handleSelectSecondaryMetric,
       isDemoMode,
-      isLoadingPatternHistory,
-      isComputingPattern,
+      patternReady,
+      patternStatus,
       metrics,
       monthCells,
       palette.mutedForeground,

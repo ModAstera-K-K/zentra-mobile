@@ -1,5 +1,5 @@
 import type { ZentraEventRecord } from "@/types/zentra";
-import { toISODate } from "@/utils/dates";
+import { compareTimestamps, toISODate } from "@/utils/dates";
 
 /**
  * Resolving the nights that touch a local day takes sleep records from the day
@@ -31,7 +31,7 @@ export function sleepEventsForWakeDate(
     origins.set(key, group);
   }
   for (const records of origins.values()) {
-    records.sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+    records.sort((a, b) => compareTimestamps(a.timestampStart, b.timestampStart));
     let group: ZentraEventRecord[] = [],
       end = 0;
     for (const event of records) {

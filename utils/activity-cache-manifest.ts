@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { enumerateISODateRange, shiftISODate } from "@/utils/dates";
+import { ACTIVE_TIMING_CHANGE_TYPE } from "@/utils/repository-revision";
 import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
 
 interface ChangeRange {
@@ -17,9 +18,15 @@ export interface ActivityCacheDay {
   key: string;
   revision: number;
   payload?: string;
+  /**
+   * The stored value when its revision is behind the day's. Still the best
+   * thing to show while the day is recomputed, but never treated as current.
+   */
+  stalePayload?: string;
   /** Present from `samplesFrom` onward: the day's cached hourly score inputs. */
   samplesKey?: string;
   samples?: string;
+  staleSamples?: string;
 }
 
 // A stored day is reused for as long as its revision holds, so a change to
@@ -69,6 +76,9 @@ export async function readActivityCacheManifest(
       ...day,
       samplesKey,
       samples: row?.revision === day.revision ? row.payload : undefined,
+      ...(row && row.revision !== day.revision
+        ? { staleSamples: row.payload }
+        : {}),
     };
   });
 }
@@ -87,7 +97,8 @@ async function readMaximaManifest(
         SELECT CASE WHEN data_type='sleep_inferred'
             THEN date(start_date,'-${SLEEP_NIGHT_DAYS_AFTER} days') ELSE start_date END AS start_date,
           end_date,revision
-        FROM event_changes WHERE start_date<=? AND end_date>=?
+        FROM event_changes
+        WHERE start_date<=? AND end_date>=? AND data_type<>'${ACTIVE_TIMING_CHANGE_TYPE}'
       ) GROUP BY start_date,end_date`,
       shiftISODate(end, SLEEP_NIGHT_DAYS_AFTER),
       shiftISODate(start, -1),
@@ -118,7 +129,8 @@ export async function readActivityCacheRevision(
 ): Promise<string> {
   const row = await db.getFirstAsync<{ revision: number }>(
     `SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes
-      WHERE end_date>=? AND (start_date<=? OR (data_type='sleep_inferred' AND start_date<=?))`,
+      WHERE end_date>=? AND data_type<>'${ACTIVE_TIMING_CHANGE_TYPE}'
+        AND (start_date<=? OR (data_type='sleep_inferred' AND start_date<=?))`,
     shiftISODate(start, -1),
     end,
     shiftISODate(end, SLEEP_NIGHT_DAYS_AFTER),
@@ -153,6 +165,9 @@ export function buildActivityCacheManifest(
       key,
       revision,
       payload: row?.revision === revision ? row.payload : undefined,
+      ...(row && row.revision !== revision
+        ? { stalePayload: row.payload }
+        : {}),
     };
   });
 }

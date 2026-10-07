@@ -1,5 +1,5 @@
 import type { ZentraEventRecord } from "@/types/zentra";
-import { toISODate } from "@/utils/dates";
+import { compareTimestamps, toISODate } from "@/utils/dates";
 import { selectSleepForWakeDate } from "@/utils/sleep-selection";
 import { sleepIntervals } from "@/utils/sleep-intervals";
 
@@ -9,7 +9,7 @@ export function sleepTimelineEvents(events: ZentraEventRecord[]): ZentraEventRec
   const dates = new Set(sleep.map((e) => String(e.metadata.rest_wake_date ?? toISODate(new Date(e.timestampEnd)))));
   const result: ZentraEventRecord[] = [];
   for (const date of dates) {
-    const intervals = sleepIntervals(selectSleepForWakeDate(sleep, date)).sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+    const intervals = sleepIntervals(selectSleepForWakeDate(sleep, date)).sort((a, b) => compareTimestamps(a.timestampStart, b.timestampStart));
     let through = -Infinity;
     for (const [index, event] of intervals.entries()) {
       const start = Math.max(through, Date.parse(event.timestampStart)), end = Date.parse(event.timestampEnd);
