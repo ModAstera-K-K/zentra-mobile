@@ -2,6 +2,7 @@ import React from "react";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { Card } from "@/components/ui/Card";
+import { RestAdjustmentControl } from "@/components/zentra/RestAdjustmentControl";
 import { Colors, Fonts, FontSizes, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import type { SleepEstimate } from "@/types/zentra";
@@ -23,7 +24,7 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
         <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
           {sleepEstimate.isImported
             ? "Last night's sleep"
-            : "Last night's inferred rest"}
+            : "Last night's estimated rest"}
         </Text>
         {sleepEstimate.available ? (
           <View
@@ -49,7 +50,7 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
                 },
               ]}
             >
-              {sleepEstimate.isImported ? "Imported" : "Inferred"}
+              {sleepEstimate.isImported ? "Imported" : sleepEstimate.isAdjusted ? "Adjusted" : "Estimated"}
             </Text>
           </View>
         ) : null}
@@ -73,7 +74,7 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
         </View>
         <View style={[styles.stat, fontScale < 1.5 && styles.divided, { borderLeftColor: palette.divider }]}>
           <Text style={[styles.label, { color: palette.mutedForeground }]}>
-            Duration
+            {sleepEstimate.isImported || sleepEstimate.isAdjusted ? "Duration" : "Supported rest"}
           </Text>
           <Text style={[styles.value, { color: palette.primary }]}>
             {sleepEstimate.durationLabel}
@@ -87,9 +88,11 @@ export const SleepEstimateCard = React.memo(function SleepEstimateCard({
         {sleepEstimate.available
           ? sleepEstimate.isImported
             ? sleepEstimate.sourceLabel
-            : `${Math.round(sleepEstimate.confidence * 100)}% confidence estimate · ${sleepEstimate.sourceLabel}`
-          : "No readable records for this night"}
+            : sleepEstimate.qualityLabel ?? `Estimated · ${sleepEstimate.sourceLabel}`
+          : sleepEstimate.qualityLabel ?? "Insufficient evidence"}
       </Text>
+      {sleepEstimate.coverageDetail ? <Text style={[styles.meta, { color: palette.mutedForeground }]}>{sleepEstimate.coverageDetail}</Text> : null}
+      <RestAdjustmentControl estimate={sleepEstimate} />
     </Card>
   );
 });

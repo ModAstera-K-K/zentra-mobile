@@ -14,18 +14,7 @@ import type {
   CollectorHandle,
 } from "@/utils/collectors/types";
 import { getAppUsageUnsupportedMessage } from "@/utils/platform-capabilities";
-
-function getSyncWindowStart(lastSyncedAt: string | null): string {
-  if (lastSyncedAt) {
-    const start = new Date(lastSyncedAt);
-    start.setHours(0, 0, 0, 0);
-    return start.toISOString();
-  }
-
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  return start.toISOString();
-}
+import { appUsageSyncWindowStart } from "@/utils/app-usage-window";
 
 export async function syncAppUsageCollector(
   deps: AppUsageCollectorDeps,
@@ -57,7 +46,7 @@ export async function syncAppUsageCollector(
   }
 
   const endIso = new Date().toISOString();
-  const startIso = getSyncWindowStart(lastSyncedAt);
+  const startIso = appUsageSyncWindowStart(lastSyncedAt);
   const usageEvents = await readUsageEventsAsync(startIso, endIso);
   const { appUsageEvents, deviceStateEvents } =
     createUsageDerivedEvents(usageEvents);

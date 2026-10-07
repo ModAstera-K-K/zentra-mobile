@@ -24,6 +24,7 @@ Zentra is designed to run locally on the device.
 - Local app state such as collector toggles, export timestamp, data mode, onboarding state, and location retention preference is stored in AsyncStorage.
 - Current signal snapshots such as recent location samples and latest step or battery state are stored locally in AsyncStorage.
 - Theme preference is stored locally in AsyncStorage when the user selects a non-system theme.
+- The last computed Today activity pattern (28 daily scores and their normalization maxima) is stored locally in AsyncStorage so the next open of the same day can show it immediately.
 
 ## Export behavior verified against the current code
 
@@ -36,7 +37,8 @@ Zentra is designed to run locally on the device.
 ## Delete-all-data behavior verified against the current code
 
 - The in-app wipe action clears events, aggregates, collector diagnostics, health cursors, resnapshot bookkeeping, revisions and derived caches; late import/cache work is invalidated.
-- It also resets locally persisted app state, including onboarding state, collector toggles, data mode, export history, location retention preference, cached signal snapshots, and theme preference.
+- It also resets locally persisted app state, including onboarding state, collector toggles, data mode, export history, location retention preference, cached signal snapshots, the saved Today activity pattern, and theme preference.
+- The saved Today activity pattern is tied to the stored data it was computed from. If the app stops or storage fails before a wipe removes it, it is never shown again and is removed the next time Today opens; a removal that fails is reported as a failed wipe.
 - It does not revoke OS-level permissions already granted in Android or iOS settings. Those remain under system control.
 
 ## What is not claimed yet

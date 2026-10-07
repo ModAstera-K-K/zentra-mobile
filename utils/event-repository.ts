@@ -7,9 +7,21 @@ import {
   isActiveSummaryCurrent,
 } from "@/utils/active-minutes-cache";
 import { startPerfTimer } from "@/utils/perf";
-import { invalidateRepositorySession } from "@/utils/repository-session";
+import { runCooperatively } from "@/utils/cooperative-work";
+import { readEventPages, type PagedEventRow } from "@/utils/event-pages";
+import {
+  assertRepositoryEpoch,
+  invalidateRepositorySession,
+  repositoryEpoch,
+} from "@/utils/repository-session";
 import { cancelHealthSync } from "@/utils/health-sync-session";
-import { readDataRevision } from "@/utils/repository-revision";
+import {
+  compactEventChangesFrom,
+  markEventChangesCompacted,
+  readDataRevision,
+  readEventChangeCompactionState,
+  readRepositoryGeneration,
+} from "@/utils/repository-revision";
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import type {
@@ -27,6 +39,7 @@ import {
   getRangeBounds,
 } from "@/utils/repository-aggregates";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
 
 export interface EventRow {
   id: string;
@@ -208,8 +221,58 @@ async function getEventsBetweenWithDatabase(
 
   stopQuery({ rows: rows.length });
   const stopMap = startPerfTimer("repository.range_decode");
-  const events = rows.map(mapEventRow);
+  const events = await runCooperatively(decodeEventRowsWork(rows));
   stopMap({ rows: rows.length });
+  return events;
+}
+
+function* decodeEventRowsWork(
+  rows: EventRow[],
+): Generator<void, ZentraEventRecord[]> {
+  const events: ZentraEventRecord[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (i && i % 50 === 0) yield;
+    events.push(mapEventRow(rows[i]));
+  }
+  return events;
+}
+
+/**
+ * Paged, cooperatively decoded read for screens. Each page is its own queued
+ * database operation, so writes and other reads interleave between pages; a
+ * read they changed is repeated as one statement, and one a wipe overtook is
+ * rejected rather than returned.
+ */
+async function readEventRange(
+  start: string,
+  end: string,
+  filter?: { where: string; params: string[] },
+): Promise<ZentraEventRecord[]> {
+  const { startIso, endExclusiveIso } = getRangeBounds(start, end);
+  const stopRead = startPerfTimer("repository.range_read");
+  const epoch = repositoryEpoch();
+  const events = await readEventPages<
+    EventRow & PagedEventRow,
+    ZentraEventRecord
+  >(
+    (sql, params) =>
+      enqueueDatabaseOperation(async () =>
+        (await getLocalDatabase()).getAllAsync<EventRow & PagedEventRow>(
+          sql,
+          ...params,
+        ),
+      ),
+    {
+      start: startIso,
+      endExclusive: endExclusiveIso,
+      where: filter?.where,
+      params: filter?.params,
+    },
+    mapEventRow,
+    { revision: () => getRepositoryRevision(start, end) },
+  );
+  stopRead({ rows: events.length });
+  assertRepositoryEpoch(epoch);
   return events;
 }
 
@@ -915,11 +978,16 @@ export async function clearRepositoryData(): Promise<void> {
   invalidateRepositorySession();
   await cancelNativeActivityHistory().catch(() => undefined);
   await enqueueRetriedWrite(async () => {
+    // Work that began while the native cancel was pending ran ahead of this
+    // delete under the epoch set above; advance it again as the rows go.
+    invalidateRepositorySession();
     const database = await getLocalDatabase();
 
+    // First: this drops the repository generation, so a wipe interrupted at
+    // any later statement has still retired values saved outside the database.
+    await database.runAsync("DELETE FROM derived_cache");
     await database.runAsync("DELETE FROM events");
     await database.runAsync("DELETE FROM daily_aggregates");
-    await database.runAsync("DELETE FROM derived_cache");
     await database.runAsync("DELETE FROM health_sync_state");
     await database.runAsync("DELETE FROM activity_history_state");
     await database.runAsync("DELETE FROM activity_history_records");
@@ -949,9 +1017,52 @@ export async function getEventsForRange(
   start: string,
   end: string,
 ): Promise<ZentraEventRecord[]> {
-  return enqueueDatabaseOperation(async () => {
-    const { startIso, endExclusiveIso } = getRangeBounds(start, end);
-    return getEventsBetween(startIso, endExclusiveIso);
+  return readEventRange(start, end);
+}
+
+/**
+ * Events that touch a local day, including records from the day before that
+ * run past midnight. The overlap filter runs in SQLite so the earlier day's
+ * other rows never cross the bridge.
+ */
+export async function getEventsOverlappingDay(
+  date: string,
+): Promise<ZentraEventRecord[]> {
+  return readEventRange(shiftISODate(date, -1), date, {
+    where: "timestamp_end >= ?",
+    params: [getRangeBounds(date, date).startIso],
+  });
+}
+
+/**
+ * A local day's events for scoring: those of getEventsOverlappingDay plus
+ * every sleep record of the nights around it. Which source counts for a night
+ * is decided over the whole night, so sleep cut at the day's edges would
+ * resolve differently from a read of the full range.
+ */
+export async function getEventsForDayScoring(
+  date: string,
+): Promise<ZentraEventRecord[]> {
+  const day = getRangeBounds(date, date);
+  return readEventRange(
+    shiftISODate(date, -1),
+    shiftISODate(date, SLEEP_NIGHT_DAYS_AFTER),
+    {
+      where:
+        "(data_type = 'sleep_inferred' OR (timestamp_start < ? AND timestamp_end >= ?))",
+      params: [day.endExclusiveIso, day.startIso],
+    },
+  );
+}
+
+/** Records from the previous day that are still running at local midnight. */
+export async function getEventsCarriedIntoDay(
+  date: string,
+): Promise<ZentraEventRecord[]> {
+  const prior = shiftISODate(date, -1);
+  return readEventRange(prior, prior, {
+    where: "timestamp_end > ?",
+    params: [getRangeBounds(date, date).startIso],
   });
 }
 
@@ -1006,6 +1117,58 @@ export async function getRepositoryRevision(
   return enqueueDatabaseOperation(async () =>
     readDataRevision(await getLocalDatabase(), start, end),
   );
+}
+
+export async function getRepositoryGeneration(): Promise<string> {
+  return enqueueDatabaseOperation(async () =>
+    readRepositoryGeneration(await getLocalDatabase()),
+  );
+}
+
+// Collectors add a change row per write; compact once a day's worth piles up.
+const EVENT_CHANGE_COMPACTION_THRESHOLD = 5_000;
+const EVENT_CHANGE_COMPACTION_CHUNK_DAYS = 7;
+
+/**
+ * Compact event_changes in short, separately queued chunks so screens reading
+ * the database are never stuck behind one long delete. Resumes from the start
+ * next time if the budget runs out before the marker is written.
+ */
+export async function compactEventChanges(
+  options: { budgetMs?: number } = {},
+): Promise<"skipped" | "partial" | "complete"> {
+  const startedAtMs = Date.now();
+  const state = await enqueueDatabaseOperation(async () =>
+    readEventChangeCompactionState(await getLocalDatabase()),
+  );
+  if (
+    !state.firstDate ||
+    state.maxRevision - state.compactedRevision <
+      EVENT_CHANGE_COMPACTION_THRESHOLD
+  )
+    return "skipped";
+
+  let cursor: string | null = state.firstDate;
+  while (cursor) {
+    if (
+      options.budgetMs != null &&
+      Date.now() - startedAtMs >= options.budgetMs
+    )
+      return "partial";
+    const from: string = cursor;
+    cursor = await enqueueRetriedWrite(async () =>
+      compactEventChangesFrom(
+        await getLocalDatabase(),
+        from,
+        shiftISODate(from, EVENT_CHANGE_COMPACTION_CHUNK_DAYS),
+      ),
+    );
+  }
+
+  await enqueueRetriedWrite(async () =>
+    markEventChangesCompacted(await getLocalDatabase(), state.maxRevision),
+  );
+  return "complete";
 }
 
 export async function getEventsByIds(

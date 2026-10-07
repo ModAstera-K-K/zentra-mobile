@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { activityMaximaKey } from "@/utils/activity-cache-manifest";
 import { REVISION_SCHEMA } from "@/utils/repository-revision";
 import { enumerateISODateRange } from "@/utils/dates";
 
@@ -16,7 +17,7 @@ export function createActivityCacheFixture(start: string, end: string) {
     db.prepare(
       "INSERT INTO derived_cache(cache_key,revision,payload) VALUES(?,?,?)",
     ).run(
-      `hourly-maxima-v2:${date}:0`,
+      activityMaximaKey(date, 0),
       index + 1,
       JSON.stringify({ steps: index }),
     );

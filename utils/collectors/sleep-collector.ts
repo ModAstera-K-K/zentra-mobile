@@ -1,48 +1,15 @@
-import {
-  appendEventsForCollector,
-  ensureCollectorFailureState,
-} from "@/utils/event-repository";
-import { toISODate } from "@/utils/dates";
-import { getEventsForRange } from "@/utils/event-repository";
-import { inferSleepEvents } from "@/utils/sleep-inference";
-import type {
-  CollectorHandle,
-  SleepCollectorDeps,
-} from "@/utils/collectors/types";
+import { logCollectorSuccess } from "@/utils/event-repository";
+import { reconcileRestEstimates } from "@/utils/rest-repository";
+import type { CollectorHandle, SleepCollectorDeps } from "@/utils/collectors/types";
 
-export async function syncSleepCollector(
-  deps: SleepCollectorDeps,
-): Promise<void> {
-  const today = toISODate(new Date());
-  const start = new Date();
-  start.setDate(start.getDate() - 8);
-  const startIsoDate = toISODate(start);
-  const events = await getEventsForRange(startIsoDate, today);
-  const inferredEvents = inferSleepEvents(events, today);
-
-  if (!inferredEvents.length) {
-    await ensureCollectorFailureState(
-      "sleep",
-      "Sleep inference needs screen-state, unlock, or charging history before it can infer rest windows",
-    );
-    await deps.refreshRepository();
-    return;
-  }
-
-  await appendEventsForCollector(
-    "sleep",
-    inferredEvents,
-    `Sleep inference stored ${inferredEvents.length} night(s)`,
-  );
+export async function syncSleepCollector(deps: SleepCollectorDeps): Promise<void> {
+  const count = await reconcileRestEstimates();
+  await logCollectorSuccess("sleep", count ? `Rest inference reconciled ${count} night(s)`
+    : "No supported phone-rest window yet; imported sleep remains available", count);
   await deps.refreshRepository();
 }
 
-export async function startSleepCollector(
-  deps: SleepCollectorDeps,
-): Promise<CollectorHandle> {
+export async function startSleepCollector(deps: SleepCollectorDeps): Promise<CollectorHandle> {
   await syncSleepCollector(deps);
-
-  return {
-    stop: () => undefined,
-  };
+  return { stop: () => undefined };
 }

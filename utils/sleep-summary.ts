@@ -1,22 +1,14 @@
 import type { ZentraEventRecord } from "@/types/zentra";
-import { sleepEventsForWakeDate } from "@/utils/sleep-wake-date";
+import { selectSleepForWakeDate } from "@/utils/sleep-selection";
 import {
   resolvedSleepMinutes,
-  sourceIdentity,
 } from "@/utils/source-resolution";
 
 export function sleepSummaryEvent(
   events: ZentraEventRecord[],
   wakeDate: string,
 ): ZentraEventRecord | null {
-  const candidates = sleepEventsForWakeDate(events, wakeDate);
-  const imported = candidates.filter((e) => e.source === "health_connect");
-  const origin = [...new Set(imported.map(sourceIdentity))].sort()[0];
-  const selected = (
-    imported.length
-      ? imported.filter((e) => sourceIdentity(e) === origin)
-      : candidates.filter((e) => e.source === "inferred")
-  ).sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+  const selected = selectSleepForWakeDate(events, wakeDate).sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
   if (!selected.length) return null;
   return {
     ...selected[0],

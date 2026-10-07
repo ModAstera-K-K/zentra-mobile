@@ -1,3 +1,4 @@
+import { restPresentation } from "@/utils/rest-presentation";
 import { activeMinutesDetail } from "@/utils/active-minutes-presentation";
 import { stepSourceLabel } from "@/utils/metric-source-label";
 import { selectResolvedStepEvents } from "@/utils/source-resolution";
@@ -448,7 +449,7 @@ function formatEventTitle(event: ZentraEventRecord): string {
     case "charging_state":
       return "Battery state";
     case "sleep_inferred":
-      return "Sleep window";
+      return event.source === "health_connect" ? "Sleep window" : event.metadata.rest_user_adjusted === true ? "User-reported rest" : "Estimated rest";
     case "heart_rate":
       return "Heart rate";
     case "exercise_session":
@@ -485,7 +486,7 @@ function formatEventDetail(event: ZentraEventRecord): string {
     case "sleep_inferred":
       return event.source === "health_connect"
         ? `Imported from ${getHealthPlatformName()}.`
-        : "Inferred from local screen, unlock, and charging patterns.";
+        : `${event.metadata.stale_import === true ? "Superseded estimate. " : ""}${restPresentation(event).detail}`;
     case "screen_state":
       return "Interactive state stored from usage history.";
     case "motion_context":
@@ -1924,7 +1925,9 @@ export function buildRecentSignalDetailPayload(
       { label: "Source", value: getSourceLabel(event) },
       { label: "Provenance", value: getEventProvenanceLabel(event) },
       { label: "Captured", value: formatDateTimeLabel(event.timestampStart) },
-      { label: "Confidence", value: formatPercent(event.confidence * 100) },
+      event.dataType === "sleep_inferred" && event.source === "inferred"
+        ? { label: "Evidence", value: restPresentation(event).qualityLabel ?? "Estimated rest" }
+        : { label: "Confidence", value: formatPercent(event.confidence * 100) },
       ...buildEventSpecificFacts(event),
       ...metadataFacts,
     ],

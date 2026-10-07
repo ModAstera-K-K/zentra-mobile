@@ -1,36 +1,44 @@
-import { sleepEventsForWakeDate } from "@/utils/sleep-wake-date";
+import { sleepTimelineEvents } from "@/utils/sleep-timeline";
 import { sleepIntervals } from "@/utils/sleep-intervals";
 import type { ZentraEventRecord } from "@/types/zentra";
 import { toISODate } from "@/utils/dates";
+import { selectSleepForWakeDate } from "@/utils/sleep-selection";
 
 export function sourceIdentity(event: ZentraEventRecord): string {
   return `${event.source}:${event.metadata.health_platform ?? ""}:${event.metadata.source_app ?? "unknown"}`;
 }
 
 /** Statistics already reconcile overlapping providers. Never add phone counters to them. */
+function selectStepGroup(group: ZentraEventRecord[]): ZentraEventRecord[] {
+  const statistics = group.filter(
+    (event) => event.metadata.platform_aggregate === true,
+  );
+  if (statistics.length) return statistics;
+  const sensor = group.filter((event) => event.source === "sensor");
+  if (sensor.length) return sensor;
+  // Legacy imports have no platform statistics. Keep one origin, never sum providers.
+  const firstSource = [...new Set(group.map(sourceIdentity))].sort()[0];
+  return group.filter((event) => sourceIdentity(event) === firstSource);
+}
+
+function addStepEventToDay(
+  days: Map<string, ZentraEventRecord[]>,
+  event: ZentraEventRecord,
+): void {
+  if (event.dataType !== "steps" || event.metadata.stale_import === true)
+    return;
+  const day = toISODate(new Date(event.timestampStart));
+  const group = days.get(day) ?? [];
+  group.push(event);
+  days.set(day, group);
+}
+
 export function selectResolvedStepEvents(
   events: ZentraEventRecord[],
 ): ZentraEventRecord[] {
   const days = new Map<string, ZentraEventRecord[]>();
-  for (const event of events) {
-    if (event.dataType !== "steps" || event.metadata.stale_import === true)
-      continue;
-    const day = toISODate(new Date(event.timestampStart));
-    const group = days.get(day) ?? [];
-    group.push(event);
-    days.set(day, group);
-  }
-  return [...days.values()].flatMap((group) => {
-    const statistics = group.filter(
-      (event) => event.metadata.platform_aggregate === true,
-    );
-    if (statistics.length) return statistics;
-    const sensor = group.filter((event) => event.source === "sensor");
-    if (sensor.length) return sensor;
-    // Legacy imports have no platform statistics. Keep one origin, never sum providers.
-    const firstSource = [...new Set(group.map(sourceIdentity))].sort()[0];
-    return group.filter((event) => sourceIdentity(event) === firstSource);
-  });
+  for (const event of events) addStepEventToDay(days, event);
+  return [...days.values()].flatMap(selectStepGroup);
 }
 
 export function resolveStepTotal(events: ZentraEventRecord[]): number | null {
@@ -58,14 +66,44 @@ export function resolveStepTotal(events: ZentraEventRecord[]): number | null {
 export function resolvedTimelineEvents(
   events: ZentraEventRecord[],
 ): ZentraEventRecord[] {
-  const selected = new Set(
-    selectResolvedStepEvents(events).map((event) => event.id),
-  );
-  return events.filter(
-    (event) =>
+  const work = resolvedTimelineEventsWork(events);
+  let next = work.next();
+  while (!next.done) next = work.next();
+  return next.value;
+}
+
+/** Resumable form of `resolvedTimelineEvents` for runCooperatively callers. */
+export function* resolvedTimelineEventsWork(
+  events: ZentraEventRecord[],
+): Generator<void, ZentraEventRecord[]> {
+  const days = new Map<string, ZentraEventRecord[]>();
+  const sleep: ZentraEventRecord[] = [];
+  for (let i = 0; i < events.length; i++) {
+    if (i && i % 200 === 0) yield;
+    addStepEventToDay(days, events[i]);
+    if (events[i].dataType === "sleep_inferred") sleep.push(events[i]);
+  }
+
+  const selected = new Set<string>();
+  for (const group of days.values()) {
+    yield;
+    for (const event of selectStepGroup(group)) selected.add(event.id);
+  }
+
+  const kept: ZentraEventRecord[] = [];
+  for (let i = 0; i < events.length; i++) {
+    if (i && i % 500 === 0) yield;
+    const event = events[i];
+    if (
       event.metadata.stale_import !== true &&
-      (event.dataType !== "steps" || selected.has(event.id)),
-  );
+      event.dataType !== "sleep_inferred" &&
+      (event.dataType !== "steps" || selected.has(event.id))
+    )
+      kept.push(event);
+  }
+  yield;
+  // sleepTimelineEvents only reads sleep records, so the subset is equivalent.
+  return [...kept, ...sleepTimelineEvents(sleep)];
 }
 
 export function mergedDurationMinutes(events: ZentraEventRecord[]): number {
@@ -89,12 +127,7 @@ export function resolvedSleepMinutes(
   events: ZentraEventRecord[],
   wakeDate: string,
 ): number | null {
-  const sleep = sleepEventsForWakeDate(events, wakeDate);
-  const imported = sleep.filter((event) => event.source === "health_connect");
-  const source = [...new Set(imported.map(sourceIdentity))].sort()[0];
-  const chosen = imported.length
-    ? imported.filter((event) => sourceIdentity(event) === source)
-    : sleep.filter((event) => event.source === "inferred");
+  const chosen = selectSleepForWakeDate(events, wakeDate);
   return chosen.length
     ? Math.round(mergedDurationMinutes(sleepIntervals(chosen)))
     : null;

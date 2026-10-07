@@ -1,4 +1,4 @@
-import { resolvedTimelineEvents } from "@/utils/source-resolution";
+import { resolvedTimelineEventsWork } from "@/utils/source-resolution";
 import { runCooperatively } from "@/utils/cooperative-work";
 import type {
   ActivityPatternCell,
@@ -16,6 +16,7 @@ import {
   buildBucketCompositeScores,
   buildNormalizedScreenScore,
 } from "@/utils/activity-intensity";
+import type { ActivityScoreInput } from "@/utils/activity-intensity";
 import type { ActivityScoreMaxima } from "@/types/zentra";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
 
@@ -222,23 +223,30 @@ function getScreenStateContribution(event: ZentraEventRecord): {
   return { rest: 0, screen: 0 };
 }
 
-function buildSensorStepDeltaMap(
+function* sensorStepDeltaWork(
   events: ZentraEventRecord[],
-): Map<string, number> {
-  const sensorSteps = events
-    .filter(
-      (event) =>
-        event.dataType === "steps" &&
-        event.source === "sensor" &&
-        typeof event.valueNumeric === "number",
+): Generator<void, Map<string, number>> {
+  const sensorSteps: ZentraEventRecord[] = [];
+  for (let i = 0; i < events.length; i++) {
+    if (i && i % 500 === 0) yield;
+    const event = events[i];
+    if (
+      event.dataType === "steps" &&
+      event.source === "sensor" &&
+      typeof event.valueNumeric === "number"
     )
-    .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
-    );
+      sensorSteps.push(event);
+  }
+  yield;
+  sensorSteps.sort((left, right) =>
+    left.timestampStart.localeCompare(right.timestampStart),
+  );
   const deltas = new Map<string, number>();
   let previousCount: number | null = null;
 
-  sensorSteps.forEach((event) => {
+  for (let i = 0; i < sensorSteps.length; i++) {
+    if (i && i % 500 === 0) yield;
+    const event = sensorSteps[i];
     const currentCount = Math.max(0, Math.round(event.valueNumeric ?? 0));
     const delta =
       typeof event.metadata.step_delta === "number"
@@ -250,7 +258,7 @@ function buildSensorStepDeltaMap(
             : currentCount - previousCount;
     deltas.set(event.id, delta);
     previousCount = currentCount;
-  });
+  }
 
   return deltas;
 }
@@ -510,8 +518,8 @@ function* rawTimelineWork(
   const resolutionMs = getResolutionMinutes(window.resolution) * 60_000;
   const windowStartMs = new Date(window.startTimestamp).getTime();
   const windowEndMs = new Date(window.endTimestamp).getTime();
-  events = resolvedTimelineEvents(events);
-  const sensorStepDeltas = buildSensorStepDeltaMap(events);
+  events = yield* resolvedTimelineEventsWork(events);
+  const sensorStepDeltas = yield* sensorStepDeltaWork(events);
 
   for (const event of events) {
     if (event.metadata.coverage_window === true) continue;
@@ -952,6 +960,17 @@ export async function buildUnifiedTimelineAsync(
   );
 }
 
+/**
+ * Re-normalize buckets from `buildUnifiedTimelineAsync` against new maxima.
+ * Raw bucket fields are untouched by scoring, so this skips the event pass.
+ */
+export function rescoreTimeline(
+  buckets: UnifiedTimelineBucket[],
+  maxima: ActivityScoreMaxima,
+): UnifiedTimelineBucket[] {
+  return applyMaxima(buckets, maxima);
+}
+
 function* scoreTimelineWork(
   buckets: UnifiedTimelineBucket[],
   maxima: ActivityScoreMaxima,
@@ -974,53 +993,53 @@ export async function buildNormalizationMaximaAsync(
   return buildActivityScoreMaxima(buckets);
 }
 
-export async function buildMonthlyActivityPatternAsync(
-  events: ZentraEventRecord[],
-  anchorDate: string,
-  resolution: UnifiedTimelineResolution = "15min",
-  normalizationEvents: ZentraEventRecord[] = events,
-  precomputedMaxima?: ActivityScoreMaxima | null,
-  signal?: AbortSignal,
-): Promise<ActivityPatternCell[]> {
-  const anchor = parseISODate(anchorDate);
-  // Find the Monday of the current week
-  const anchorDay = anchor.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+/** Monday-aligned four-week grid rendered by the Today activity pattern. */
+export function getMonthlyPatternGrid(anchorDate: string): string[] {
+  const anchorDay = parseISODate(anchorDate).getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
   const mondayOffset = anchorDay === 0 ? 6 : anchorDay - 1; // days since Monday
-  const currentWeekMonday = shiftISODate(anchorDate, -mondayOffset);
-  // Start 3 weeks before that Monday = 4 weeks total
-  const gridStart = shiftISODate(currentWeekMonday, -21);
+  // Start 3 weeks before the current week's Monday = 4 weeks total
+  const gridStart = shiftISODate(anchorDate, -mondayOffset - 21);
+  return Array.from({ length: 28 }, (_, offset) =>
+    shiftISODate(gridStart, offset),
+  );
+}
 
-  // Partition events by date once (O(events)) instead of scanning all events per day (O(28 × events))
-  const gridStartMs = parseISODate(gridStart).getTime();
-  const gridEndMs = parseISODate(shiftISODate(gridStart, 28)).getTime();
-  const gridLastDate = shiftISODate(gridStart, 27);
+export type ActivityPatternDayCell = Omit<ActivityPatternCell, "intensity">;
+
+// Partition events by date once (O(events)) instead of scanning all events per day.
+function* partitionEventsByDateWork(
+  events: ZentraEventRecord[],
+  firstDate: string,
+  lastDate: string,
+): Generator<void, Map<string, ZentraEventRecord[]>> {
+  const rangeStartMs = parseISODate(firstDate).getTime();
+  const rangeEndMs = parseISODate(shiftISODate(lastDate, 1)).getTime();
   const eventsByDate = new Map<string, ZentraEventRecord[]>();
 
   let processed = 0;
   for (const event of events) {
-    if (signal?.aborted) throw new Error("Work cancelled");
-    if (++processed % 200 === 0)
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    // Yield points only; runCooperatively decides when a time slice is spent.
+    if (++processed % 200 === 0) yield;
     const startMs = new Date(event.timestampStart).getTime();
     const endMs =
       event.timestampEnd > event.timestampStart
         ? new Date(event.timestampEnd).getTime()
         : startMs;
 
-    if (endMs < gridStartMs || startMs >= gridEndMs) {
+    if (endMs < rangeStartMs || startMs >= rangeEndMs) {
       continue;
     }
 
     // Use local ISO date keys instead of fixed 24h ms offsets so DST days do not shift buckets.
-    const boundedEndMs = Math.min(endMs, gridEndMs - 1);
-    let dateKey = toISODate(new Date(Math.max(startMs, gridStartMs)));
+    const boundedEndMs = Math.min(endMs, rangeEndMs - 1);
+    let dateKey = toISODate(new Date(Math.max(startMs, rangeStartMs)));
     const lastDateKey = toISODate(new Date(boundedEndMs));
 
-    if (dateKey < gridStart) {
-      dateKey = gridStart;
+    if (dateKey < firstDate) {
+      dateKey = firstDate;
     }
 
-    while (dateKey <= lastDateKey && dateKey <= gridLastDate) {
+    while (dateKey <= lastDateKey && dateKey <= lastDate) {
       let bucket = eventsByDate.get(dateKey);
       if (!bucket) {
         bucket = [];
@@ -1031,23 +1050,124 @@ export async function buildMonthlyActivityPatternAsync(
     }
   }
 
-  const cells: Omit<ActivityPatternCell, "intensity">[] = [];
-  const dateFormatter = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+  return eventsByDate;
+}
 
-  for (let offset = 0; offset < 28; offset += 1) {
-    const currentDate = shiftISODate(gridStart, offset);
-    const current = parseISODate(currentDate);
-    const next = parseISODate(shiftISODate(currentDate, 1));
-    const isFuture = currentDate > anchorDate;
+const patternDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
 
-    if (isFuture) {
-      cells.push({
+function createPatternDayCell(
+  date: string,
+  summary: ReturnType<typeof summarizeTimeline>,
+): ActivityPatternDayCell {
+  const current = parseISODate(date);
+  const next = parseISODate(shiftISODate(date, 1));
+  return {
+    ...createPatternCell(
+      "month",
+      current,
+      next,
+      summary,
+      String(current.getDate()),
+      patternDateFormatter.format(current),
+    ),
+    placeholder: false,
+  };
+}
+
+/**
+ * Build un-normalized pattern cells for a contiguous run of dates. Cells for
+ * different date runs (e.g. history vs today) can be computed independently
+ * and combined with `assembleMonthlyActivityPattern`.
+ */
+export async function buildPatternDayCellsAsync(
+  events: ZentraEventRecord[],
+  dates: string[],
+  resolution: UnifiedTimelineResolution,
+  precomputedMaxima?: ActivityScoreMaxima | null,
+  signal?: AbortSignal,
+): Promise<Map<string, ActivityPatternDayCell>> {
+  const cells = new Map<string, ActivityPatternDayCell>();
+  if (!dates.length) return cells;
+
+  const eventsByDate = await runCooperatively(
+    partitionEventsByDateWork(events, dates[0], dates[dates.length - 1]),
+    signal,
+  );
+
+  for (const date of dates) {
+    const timeline = await buildUnifiedTimelineAsync(
+      eventsByDate.get(date) ?? [],
+      {
+        startTimestamp: parseISODate(date).toISOString(),
+        endTimestamp: parseISODate(shiftISODate(date, 1)).toISOString(),
+        resolution,
+      },
+      signal,
+      precomputedMaxima ?? undefined,
+    );
+    cells.set(date, createPatternDayCell(date, summarizeTimeline(timeline)));
+  }
+
+  return cells;
+}
+
+/**
+ * Build a pattern cell from a day's cached hourly score inputs. Matches
+ * `buildPatternDayCellsAsync` for the same day without re-reading its events.
+ */
+export function buildPatternDayCellFromSamples(
+  date: string,
+  samples: ActivityScoreInput[],
+  maxima: ActivityScoreMaxima,
+): ActivityPatternDayCell {
+  const scored = samples
+    .filter((sample) => sample.hasAnyData)
+    .map((sample) => buildBucketCompositeScores(sample, maxima));
+
+  return createPatternDayCell(
+    date,
+    scored.length
+      ? {
+          hasAnyData: true,
+          intensityScore:
+            scored.reduce((total, score) => total + score.intensityScore, 0) /
+            scored.length,
+          restCompositeScore:
+            scored.reduce(
+              (total, score) => total + score.restCompositeScore,
+              0,
+            ) / scored.length,
+        }
+      : { hasAnyData: false, intensityScore: 0, restCompositeScore: 0 },
+  );
+}
+
+/** Lay day cells onto the four-week grid and normalize intensity across it. */
+export function assembleMonthlyActivityPattern(
+  anchorDate: string,
+  dayCells: Map<string, ActivityPatternDayCell>,
+): ActivityPatternCell[] {
+  const cells = getMonthlyPatternGrid(anchorDate).map(
+    (date, offset): ActivityPatternDayCell => {
+      if (date <= anchorDate) {
+        return (
+          dayCells.get(date) ??
+          createPatternDayCell(date, {
+            hasAnyData: false,
+            intensityScore: 0,
+            restCompositeScore: 0,
+          })
+        );
+      }
+
+      const current = parseISODate(date);
+      return {
         detailLabel: "",
         dominantKind: "rest",
-        endTimestamp: next.toISOString(),
+        endTimestamp: parseISODate(shiftISODate(date, 1)).toISOString(),
         granularity: "month",
         hasAnyData: false,
         id: `month-placeholder-${offset}`,
@@ -1059,34 +1179,29 @@ export async function buildMonthlyActivityPatternAsync(
         restScore: 0,
         screenScore: 0,
         startTimestamp: current.toISOString(),
-      });
-    } else {
-      const dayEvents = eventsByDate.get(currentDate) ?? [];
-      const timeline = await buildUnifiedTimelineAsync(
-        dayEvents,
-        {
-          startTimestamp: current.toISOString(),
-          endTimestamp: next.toISOString(),
-          resolution,
-        },
-        signal,
-        precomputedMaxima ?? undefined,
-      );
-      const summary = summarizeTimeline(timeline);
-
-      cells.push({
-        ...createPatternCell(
-          "month",
-          current,
-          next,
-          summary,
-          String(current.getDate()),
-          dateFormatter.format(current),
-        ),
-        placeholder: false,
-      });
-    }
-  }
+      };
+    },
+  );
 
   return normalizePatternIntensity(cells);
+}
+
+export async function buildMonthlyActivityPatternAsync(
+  events: ZentraEventRecord[],
+  anchorDate: string,
+  resolution: UnifiedTimelineResolution = "15min",
+  precomputedMaxima?: ActivityScoreMaxima | null,
+  signal?: AbortSignal,
+): Promise<ActivityPatternCell[]> {
+  const dates = getMonthlyPatternGrid(anchorDate).filter(
+    (date) => date <= anchorDate,
+  );
+  const dayCells = await buildPatternDayCellsAsync(
+    events,
+    dates,
+    resolution,
+    precomputedMaxima,
+    signal,
+  );
+  return assembleMonthlyActivityPattern(anchorDate, dayCells);
 }

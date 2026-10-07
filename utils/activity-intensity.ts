@@ -77,6 +77,16 @@ export function buildActivityScoreMaxima(
   );
 }
 
+export function mergeActivityScoreMaxima(
+  left: ActivityScoreMaxima,
+  right: ActivityScoreMaxima,
+): ActivityScoreMaxima {
+  const merged = { ...left };
+  for (const key of Object.keys(merged) as (keyof ActivityScoreMaxima)[])
+    merged[key] = Math.max(left[key], right[key]);
+  return merged;
+}
+
 export function buildNormalizedScreenScore(
   screenScore: number,
   maxima: ActivityScoreMaxima,
@@ -113,8 +123,22 @@ export function buildDailyRhythmMovementScore(
   return Math.round(average(movementValues) * 100);
 }
 
+/** The bucket fields composite scoring reads; small enough to cache per day. */
+export type ActivityScoreInput = Pick<
+  UnifiedTimelineBucket,
+  | "exerciseSeconds"
+  | "hasAnyData"
+  | "heartRateLoad"
+  | "idleSignals"
+  | "movementSignals"
+  | "nonSedentaryActivityCount"
+  | "sleepMinutes"
+  | "steps"
+  | "unlockCount"
+>;
+
 export function buildBucketCompositeScores(
-  bucket: UnifiedTimelineBucket,
+  bucket: ActivityScoreInput,
   maxima: ActivityScoreMaxima,
 ): { intensityScore: number; restCompositeScore: number } {
   // Missing observations do not establish rest. Consumers use hasAnyData for gaps.
