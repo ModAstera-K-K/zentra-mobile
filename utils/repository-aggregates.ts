@@ -1,3 +1,4 @@
+import type { SQLiteDatabase } from "expo-sqlite";
 import type { ActiveMinutesSummary } from "@/types/active-minutes";
 import { resolveActiveMinutes } from "@/utils/active-minutes";
 import {
@@ -311,4 +312,41 @@ export function getRangeBounds(
     startIso: startDate.toISOString(),
     endExclusiveIso: endExclusiveDate.toISOString(),
   };
+}
+
+/**
+ * Local dates in [start, end] that have a record starting on them, or a sleep
+ * record ending on them. Each date is one probe of the timestamp index;
+ * filtering on date(timestamp_start) instead scanned every stored record.
+ */
+export async function readDatesWithEvents(
+  database: SQLiteDatabase,
+  start: string,
+  end: string,
+): Promise<{ date: string }[]> {
+  const found = new Set<string>();
+  const dates = enumerateISODateRange(start, end);
+  // Three bound values per date; stay well under SQLite's variable limit.
+  for (let index = 0; index < dates.length; index += 250) {
+    const chunk = dates.slice(index, index + 250);
+    const rows = await database.getAllAsync<{ date: string }>(
+      `WITH days(date, start_iso, end_iso) AS (VALUES ${chunk.map(() => "(?,?,?)").join(",")})
+        SELECT date FROM days WHERE EXISTS (
+          SELECT 1 FROM events
+            WHERE timestamp_start >= start_iso AND timestamp_start < end_iso
+        )`,
+      ...chunk.flatMap((date) => {
+        const day = getRangeBounds(date, date);
+        return [date, day.startIso, day.endExclusiveIso];
+      }),
+    );
+    for (const row of rows) found.add(row.date);
+  }
+  const sleep = await database.getAllAsync<{ date: string }>(
+    "SELECT DISTINCT date(timestamp_end,'localtime') AS date FROM events WHERE data_type='sleep_inferred' AND date(timestamp_end,'localtime') BETWEEN ? AND ?",
+    start,
+    end,
+  );
+  for (const row of sleep) found.add(row.date);
+  return [...found].sort().map((date) => ({ date }));
 }

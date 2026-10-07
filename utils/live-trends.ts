@@ -1,18 +1,18 @@
 import { sleepNightSummaries } from "@/utils/sleep-night-summaries";
 import { buildMetricObservation } from "@/utils/metric-observations";
-import { sleepEventsForWakeDate } from "@/utils/sleep-wake-date";
-import { stepSourceLabel } from "@/utils/metric-source-label";
-import { toISODate } from "@/utils/dates";
-import { shiftISODate } from "@/utils/dates";
+import { sleepEventsByWakeDate } from "@/utils/sleep-wake-date";
+import { sleepTimelineEvents } from "@/utils/sleep-timeline";
+import { resolvedSleepMinutes } from "@/utils/source-resolution";
+import type { ActivityScoreInput } from "@/utils/activity-intensity";
 import {
-  resolvedSleepMinutes,
-  resolvedTimelineEvents,
-} from "@/utils/source-resolution";
-import {
-  buildNormalizationMaximaAsync,
-  buildUnifiedTimelineAsync,
-} from "@/utils/unified-timeline";
+  TREND_DAYPARTS,
+  buildTrendDaySummary,
+  type ReadingTotal,
+  type TrendDaySummary,
+} from "@/utils/trend-day-summary";
+import { buildPatternDayCellFromSamples } from "@/utils/unified-timeline";
 import type {
+  ActivityScoreMaxima,
   DailyAggregateRecord,
   HeatmapCell,
   TrendDetailBar,
@@ -22,13 +22,8 @@ import type {
   TrendSurface,
   ZentraEventRecord,
 } from "@/types/zentra";
-import { enumerateISODateRange, parseISODate } from "@/utils/dates";
+import { enumerateISODateRange, parseISODate, toISODate } from "@/utils/dates";
 import { formatMinutes, formatNumber } from "@/utils/format";
-import { buildDailyLocationTrendData } from "@/utils/location-trends";
-import {
-  buildNormalizationMaxima,
-  buildUnifiedDailyTimeline,
-} from "@/utils/unified-timeline";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HEATMAP_HOURS = [
@@ -46,19 +41,26 @@ const HEATMAP_HOURS = [
   "22",
 ];
 
+// Constructing an Intl formatter is costly on Hermes, and a range builds one
+// label per point per series: share two formatters instead.
+let weekdayLabelFormatter: Intl.DateTimeFormat | null = null;
+let dateLabelFormatter: Intl.DateTimeFormat | null = null;
+
 function formatTrendLabel(dateValue: string, totalPoints: number): string {
   const date = parseISODate(dateValue);
 
   if (totalPoints <= 14) {
-    return new Intl.DateTimeFormat("en-US", {
+    weekdayLabelFormatter ??= new Intl.DateTimeFormat("en-US", {
       weekday: "short",
-    }).format(date);
+    });
+    return weekdayLabelFormatter.format(date);
   }
 
-  return new Intl.DateTimeFormat("en-US", {
+  dateLabelFormatter ??= new Intl.DateTimeFormat("en-US", {
     month: "numeric",
     day: "numeric",
-  }).format(date);
+  });
+  return dateLabelFormatter.format(date);
 }
 
 function calculateVariability(values: number[]): number {
@@ -115,7 +117,9 @@ function createTrendSeries(
       value,
     })),
     change:
-      key === "activeMinutes" || ((key === "inferredSleep" || key === "importedSleep") && (values[0] == null || values.at(-1) == null))
+      key === "activeMinutes" ||
+      ((key === "inferredSleep" || key === "importedSleep") &&
+        (values[0] == null || values.at(-1) == null))
         ? null
         : calculateChange(values[0] ?? 0, values.at(-1) ?? 0),
     variability: calculateVariability(
@@ -169,24 +173,6 @@ function getHealthSourceLabel(
   }
 
   return fallback;
-}
-
-function getDaypartLabel(date: Date): string {
-  const hour = date.getHours();
-
-  if (hour < 6) {
-    return "Night";
-  }
-
-  if (hour < 12) {
-    return "Morning";
-  }
-
-  if (hour < 18) {
-    return "Afternoon";
-  }
-
-  return "Evening";
 }
 
 function buildSleepStartHeatmap(
@@ -248,7 +234,8 @@ function buildSleepStartHeatmap(
     sourceLabel,
     visual: {
       type: "heatmap",
-      annotation: "When selected sleep or estimated-rest windows begin across this range.",
+      annotation:
+        "When selected sleep or estimated-rest windows begin across this range.",
       cells: cells.map((cell) => ({
         ...cell,
         value: Math.round((cell.value / maxValue) * 100),
@@ -258,48 +245,32 @@ function buildSleepStartHeatmap(
 }
 
 function buildHeartRateDaypartSurface(
-  events: ZentraEventRecord[],
+  days: TrendDaySummary[],
 ): TrendSurface | null {
-  const heartRateEvents = events.filter(
-    (event) =>
-      event.dataType === "heart_rate" && typeof event.valueNumeric === "number",
-  );
+  const totals = TREND_DAYPARTS.map((): ReadingTotal => [0, 0]);
+  let sourceLabel: string | null = null;
+  for (const day of days) {
+    day.heartRateDayparts.forEach(([sum, count], index) => {
+      totals[index][0] += sum;
+      totals[index][1] += count;
+    });
+    sourceLabel ??= day.heartRatePlatform;
+  }
+  const readings = totals.reduce((total, [, count]) => total + count, 0);
 
-  if (!heartRateEvents.length) {
+  if (!readings) {
     return null;
   }
 
-  const buckets = new Map<string, number[]>();
-  for (const event of heartRateEvents) {
-    const label = getDaypartLabel(new Date(event.timestampStart));
-    buckets.set(label, [
-      ...(buckets.get(label) ?? []),
-      event.valueNumeric ?? 0,
-    ]);
-  }
+  const bars: TrendDetailBar[] = TREND_DAYPARTS.flatMap((label, index) => {
+    const [sum, count] = totals[index];
+    if (!count) {
+      return [];
+    }
 
-  const bars: TrendDetailBar[] = ["Night", "Morning", "Afternoon", "Evening"]
-    .map((label) => {
-      const values = buckets.get(label) ?? [];
-      if (!values.length) {
-        return null;
-      }
-
-      const average = Math.round(
-        values.reduce((total, value) => total + value, 0) / values.length,
-      );
-
-      return {
-        label,
-        value: average,
-        valueLabel: `${average} bpm`,
-      };
-    })
-    .filter((entry): entry is TrendDetailBar => entry !== null);
-
-  if (!bars.length) {
-    return null;
-  }
+    const average = Math.round(sum / count);
+    return [{ label, value: average, valueLabel: `${average} bpm` }];
+  });
 
   const peak = bars.reduce((best, bar) =>
     bar.value > best.value ? bar : best,
@@ -312,9 +283,9 @@ function buildHeartRateDaypartSurface(
     tone: "human",
     group: "health",
     valueLabel: bars[0]?.valueLabel,
-    metaLabel: `${heartRateEvents.length} readings`,
-    coverageLabel: `${heartRateEvents.length} imported reading${heartRateEvents.length === 1 ? "" : "s"} across ${bars.length} dayparts`,
-    sourceLabel: getHealthSourceLabel(heartRateEvents, "Health import"),
+    metaLabel: `${readings} readings`,
+    coverageLabel: `${readings} imported reading${readings === 1 ? "" : "s"} across ${bars.length} dayparts`,
+    sourceLabel: sourceLabel ?? "Health import",
     visual: {
       type: "distribution",
       annotation: "Average imported heart rate by part of day.",
@@ -387,112 +358,102 @@ function buildExerciseMixSurface(
   };
 }
 
-function buildDailyCompositeValues(
-  dates: string[],
-  events: ZentraEventRecord[],
-): {
-  intensityValues: number[];
-  restValues: number[];
-} {
-  const eventsByDate = dates.reduce<Record<string, ZentraEventRecord[]>>(
-    (result, date) => {
-      result[date] = [];
-      return result;
-    },
-    {},
-  );
-
-  for (const event of events) {
-    const startKey = event.timestampStart.slice(0, 10);
-    const endKey = event.timestampEnd.slice(0, 10);
-
-    if (startKey === endKey) {
-      if (eventsByDate[startKey]) {
-        eventsByDate[startKey].push(event);
-      }
-    } else {
-      for (const date of dates) {
-        if (date >= startKey && date <= endKey && eventsByDate[date]) {
-          eventsByDate[date].push(event);
-        }
-      }
-    }
-  }
-
-  // Hoist normalization maxima outside the loop — each date used to recompute
-  // this from all events, making the loop O(N_days × N_events). Now it's O(N_events)
-  // once, then O(n_day_events) per day.
-  const normalizationMaxima = buildNormalizationMaxima(events, "hour");
-
-  return dates.reduce<{
-    intensityValues: number[];
-    restValues: number[];
-  }>(
-    (result, date) => {
-      const dayEvents = eventsByDate[date] ?? [];
-      const timeline = buildUnifiedDailyTimeline(
-        dayEvents,
-        date,
-        "hour",
-        events,
-        normalizationMaxima,
-      );
-      const bucketsWithData = timeline.filter((bucket) => bucket.hasAnyData);
-
-      if (!bucketsWithData.length) {
-        result.intensityValues.push(0);
-        result.restValues.push(0);
-        return result;
-      }
-
-      const averageIntensity =
-        bucketsWithData.reduce(
-          (total, bucket) => total + bucket.intensityScore,
-          0,
-        ) / bucketsWithData.length;
-      const averageRest =
-        bucketsWithData.reduce(
-          (total, bucket) => total + bucket.restCompositeScore,
-          0,
-        ) / bucketsWithData.length;
-
-      result.intensityValues.push(Math.round(averageIntensity));
-      result.restValues.push(Math.round(averageRest));
-      return result;
-    },
-    { intensityValues: [], restValues: [] },
-  );
+/** What a range of Trends is assembled from; none of it is per-record except sleep and exercise. */
+export interface TrendRangeInputs {
+  /**
+   * Day summaries by local date. May hold the day before the range, whose
+   * records count toward the range-wide labels and cards as they always have.
+   */
+  days: Map<string, TrendDaySummary>;
+  /** Stored sleep records starting from the day before the range. */
+  sleepEvents: ZentraEventRecord[];
+  /** Stored exercise sessions starting from the day before the range. */
+  exerciseEvents: ZentraEventRecord[];
 }
 
-function buildDailySleepValues(
+export interface TrendCompositeValues {
+  intensityValues: number[];
+  restValues: number[];
+}
+
+/**
+ * Daily activity intensity and rest from stored hourly samples, normalized
+ * against `maxima` (the selected range's own maxima).
+ */
+export function buildTrendCompositeValues(
   dates: string[],
+  samplesByDate: ReadonlyMap<string, ActivityScoreInput[]>,
+  maxima: ActivityScoreMaxima,
+): TrendCompositeValues {
+  const values: TrendCompositeValues = { intensityValues: [], restValues: [] };
+  for (const date of dates) {
+    const cell = buildPatternDayCellFromSamples(
+      date,
+      samplesByDate.get(date) ?? [],
+      maxima,
+    );
+    values.intensityValues.push(Math.round(cell.intensityScore));
+    values.restValues.push(Math.round(cell.restCompositeScore));
+  }
+  return values;
+}
+
+/**
+ * The inputs a list of raw records gives. Trends itself loads stored day
+ * summaries; this is for callers that already hold a range's records.
+ */
+export function trendInputsFromEvents(
   events: ZentraEventRecord[],
-): {
-  importedSleepValues: (number | null)[];
-  importedSleepSourceLabel: string;
-  inferredSleepValues: (number | null)[];
-} {
-  const imported = events.filter((e) => e.source === "health_connect");
-  const inferred = events.filter((e) => e.source === "inferred");
+): TrendRangeInputs {
+  const byDate = new Map<string, ZentraEventRecord[]>();
+  for (const event of events) {
+    const date = toISODate(new Date(event.timestampStart));
+    const day = byDate.get(date);
+    if (day) day.push(event);
+    else byDate.set(date, [event]);
+  }
   return {
-    importedSleepValues: dates.map(
-      (date) => resolvedSleepMinutes(imported, date),
+    days: new Map(
+      [...byDate]
+        .sort(([left], [right]) => (left < right ? -1 : 1))
+        .map(([date, day]) => [date, buildTrendDaySummary(date, day)]),
     ),
-    inferredSleepValues: dates.map(
-      (date) => resolvedSleepMinutes(inferred, date),
+    sleepEvents: events.filter((event) => event.dataType === "sleep_inferred"),
+    exerciseEvents: events.filter(
+      (event) => event.dataType === "exercise_session",
     ),
-    importedSleepSourceLabel: getHealthSourceLabel(imported, "Health import"),
   };
+}
+
+function orderedDays(inputs: TrendRangeInputs): TrendDaySummary[] {
+  return [...inputs.days]
+    .sort(([left], [right]) => (left < right ? -1 : 1))
+    .map(([, day]) => day);
+}
+
+function averageReading([sum, count]: ReadingTotal): number {
+  return count ? Math.round(sum / count) : 0;
+}
+
+function stepSourceLabel(days: TrendDaySummary[]): string {
+  const platform = days.some((day) => day.steps.platform);
+  const phone = days.some((day) => day.steps.phone);
+  if (platform && phone) return "Platform totals; phone fallback on other days";
+  if (platform) return "Platform-resolved health totals";
+  if (phone) return "Phone sensor fallback";
+  return days.some((day) => day.steps.any)
+    ? "Single-source health records; unresolved estimate"
+    : "No step observations";
 }
 
 export function buildLiveTrendSeries(
   aggregates: DailyAggregateRecord[],
   rangeSelection: { start: string; end: string },
-  events: ZentraEventRecord[] = [],
-  compositeValues?: { intensityValues: number[]; restValues: number[] },
+  inputs: TrendRangeInputs,
+  composite: TrendCompositeValues,
 ): TrendSeries[] {
-  events = resolvedTimelineEvents(events);
   const dates = enumerateISODateRange(rangeSelection.start, rangeSelection.end);
+  const days = orderedDays(inputs);
   const aggregateByDate = new Map(
     aggregates.map((record) => [record.date, record]),
   );
@@ -513,80 +474,49 @@ export function buildLiveTrendSeries(
         computedAt: new Date().toISOString(),
       },
   );
-  const ambientByDate = dates.reduce<Record<string, number[]>>(
-    (result, date) => {
-      result[date] = [];
-      return result;
-    },
-    {},
+
+  const ambientValues = dates.map((date) =>
+    averageReading(inputs.days.get(date)?.ambientLight ?? [0, 0]),
   );
-  const heartRateByDate = dates.reduce<Record<string, number[]>>(
-    (result, date) => {
-      result[date] = [];
-      return result;
-    },
-    {},
+  const heartRateValues = dates.map((date) =>
+    averageReading(inputs.days.get(date)?.heartRate ?? [0, 0]),
   );
-
-  events.forEach((event) => {
-    const dateKey = toISODate(new Date(event.timestampStart));
-
-    if (
-      event.dataType === "ambient_light" &&
-      typeof event.valueNumeric === "number"
-    ) {
-      if (!ambientByDate[dateKey]) {
-        ambientByDate[dateKey] = [];
-      }
-      ambientByDate[dateKey].push(event.valueNumeric);
-    }
-
-    if (
-      event.dataType === "heart_rate" &&
-      typeof event.valueNumeric === "number"
-    ) {
-      if (!heartRateByDate[dateKey]) {
-        heartRateByDate[dateKey] = [];
-      }
-      heartRateByDate[dateKey].push(event.valueNumeric);
-    }
-  });
-
-  const ambientValues = dates.map((date) => {
-    const values = ambientByDate[date] ?? [];
-    if (!values.length) {
-      return 0;
-    }
-
-    return Math.round(
-      values.reduce((total, value) => total + value, 0) / values.length,
-    );
-  });
-
-  const heartRateValues = dates.map((date) => {
-    const values = heartRateByDate[date] ?? [];
-    if (!values.length) {
-      return 0;
-    }
-
-    return Math.round(
-      values.reduce((total, value) => total + value, 0) / values.length,
-    );
-  });
-
   const exerciseValues = dates.map(
-    (date) => buildMetricObservation("exercise", date, events, []).value ?? 0,
+    (date) =>
+      buildMetricObservation("exercise", date, inputs.exerciseEvents, [])
+        .value ?? 0,
   );
-  const {
-    averageSpeedCoveredDays,
-    averageSpeedValues,
-    elevationCoveredDays,
-    elevationGainValues,
-  } = buildDailyLocationTrendData(dates, events);
-  const { intensityValues, restValues } =
-    compositeValues ?? buildDailyCompositeValues(dates, events);
-  const { importedSleepValues, importedSleepSourceLabel, inferredSleepValues } =
-    buildDailySleepValues(dates, events);
+  const speeds = dates.map(
+    (date) => inputs.days.get(date)?.averageSpeedKmh ?? null,
+  );
+  const gains = dates.map(
+    (date) => inputs.days.get(date)?.elevationGainMeters ?? null,
+  );
+  const averageSpeedValues = speeds.map((value) => value ?? 0);
+  const averageSpeedCoveredDays = speeds.filter((v) => v !== null).length;
+  const elevationGainValues = gains.map((value) => value ?? 0);
+  const elevationCoveredDays = gains.filter((v) => v !== null).length;
+  const { intensityValues, restValues } = composite;
+
+  // Source resolution leaves sleep as its expanded, de-overlapped intervals.
+  const sleep = sleepTimelineEvents(inputs.sleepEvents);
+  const importedSleep = sleep.filter((e) => e.source === "health_connect");
+  const inferredSleep = sleep.filter((e) => e.source === "inferred");
+  // Grouped into nights once. A night resolves the same from its own records
+  // as from the whole list, so each date only looks at its own.
+  const importedNights = sleepEventsByWakeDate(importedSleep);
+  const inferredNights = sleepEventsByWakeDate(inferredSleep);
+  const importedSleepValues = dates.map((date) =>
+    resolvedSleepMinutes(importedNights.get(date) ?? [], date),
+  );
+  const inferredSleepValues = dates.map((date) =>
+    resolvedSleepMinutes(inferredNights.get(date) ?? [], date),
+  );
+  // The first imported record of the range names the platform; sleep follows
+  // every other record, as it did when all records were scanned in order.
+  const importedSleepSourceLabel =
+    days.find((day) => day.healthPlatform)?.healthPlatform ??
+    getHealthSourceLabel(importedSleep, "Health import");
   const completenessLabel = buildAverageCompletenessLabel(normalizedAggregates);
 
   const series = [
@@ -599,7 +529,7 @@ export function buildLiveTrendSeries(
       dates,
       "body",
       completenessLabel,
-      stepSourceLabel(events),
+      stepSourceLabel(days),
     ),
     createTrendSeries(
       "activeMinutes",
@@ -798,18 +728,17 @@ export function buildLiveTrendSeries(
   ];
 
   const observed = new Map<string, Set<string>>();
-  for (const event of events) {
-    const date = toISODate(
-      new Date(
-        event.dataType === "sleep_inferred"
-          ? event.timestampEnd
-          : event.timestampStart,
-      ),
-    );
+  for (const [date, day] of inputs.days)
+    if (day.observedTypes.length)
+      observed.set(date, new Set(day.observedTypes));
+  for (const event of sleep) {
+    const date = toISODate(new Date(event.timestampEnd));
     const types = observed.get(date) ?? new Set<string>();
     types.add(event.dataType);
     observed.set(date, types);
   }
+  const hasSleep = (key: string, date: string) =>
+    (key === "importedSleep" ? importedNights : inferredNights).has(date);
   const signalForSeries: Record<string, string[]> = {
     steps: ["steps"],
     activeMinutes: ["activity", "motion_context", "steps"],
@@ -833,16 +762,7 @@ export function buildLiveTrendSeries(
         ...point,
         value:
           entry.key === "importedSleep" || entry.key === "inferredSleep"
-            ? sleepEventsForWakeDate(
-                events.filter(
-                  (event) =>
-                    event.source ===
-                    (entry.key === "importedSleep"
-                      ? "health_connect"
-                      : "inferred"),
-                ),
-                dates[index],
-              ).length
+            ? hasSleep(entry.key, dates[index])
               ? point.value
               : null
             : (signalForSeries[entry.key] ?? []).length
@@ -872,12 +792,12 @@ export function buildLiveTrendSeries(
 }
 
 export function buildLiveTrendSurfaces(
-  events: ZentraEventRecord[] = [],
+  inputs: TrendRangeInputs,
 ): TrendSurface[] {
   return [
-    buildSleepStartHeatmap(events),
-    buildHeartRateDaypartSurface(events),
-    buildExerciseMixSurface(events),
+    buildSleepStartHeatmap(inputs.sleepEvents),
+    buildHeartRateDaypartSurface(orderedDays(inputs)),
+    buildExerciseMixSurface(inputs.exerciseEvents),
   ].filter((entry): entry is TrendSurface => entry !== null);
 }
 
@@ -980,51 +900,4 @@ export function buildLiveHeatmap(events: ZentraEventRecord[]): HeatmapCell[] {
     ...cell,
     value: Math.round((cell.value / maxValue) * 100),
   }));
-}
-
-export async function buildLiveTrendSeriesAsync(
-  aggregates: DailyAggregateRecord[],
-  range: { start: string; end: string },
-  events: ZentraEventRecord[],
-  signal?: AbortSignal,
-): Promise<TrendSeries[]> {
-  const maxima = await buildNormalizationMaximaAsync(events, signal);
-  const values = {
-    intensityValues: [] as number[],
-    restValues: [] as number[],
-  };
-  for (const date of enumerateISODateRange(range.start, range.end)) {
-    if (signal?.aborted) throw new Error("Work cancelled");
-    const startTimestamp = parseISODate(date).toISOString(),
-      endTimestamp = parseISODate(shiftISODate(date, 1)).toISOString();
-    const daily = events.filter(
-      (e) =>
-        e.timestampStart < endTimestamp && e.timestampEnd >= startTimestamp,
-    );
-    const buckets = (
-      await buildUnifiedTimelineAsync(
-        daily,
-        { startTimestamp, endTimestamp, resolution: "hour" },
-        signal,
-        maxima,
-      )
-    ).filter((b) => b.hasAnyData);
-    values.intensityValues.push(
-      buckets.length
-        ? Math.round(
-            buckets.reduce((n, b) => n + b.intensityScore, 0) / buckets.length,
-          )
-        : 0,
-    );
-    values.restValues.push(
-      buckets.length
-        ? Math.round(
-            buckets.reduce((n, b) => n + b.restCompositeScore, 0) /
-              buckets.length,
-          )
-        : 0,
-    );
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-  }
-  return buildLiveTrendSeries(aggregates, range, events, values);
 }

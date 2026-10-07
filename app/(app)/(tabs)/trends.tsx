@@ -4,7 +4,6 @@ import { InsightsSection } from "@/components/zentra/InsightsSection";
 import React from "react";
 import {
   FlatList,
-  InteractionManager,
   Platform,
   Pressable,
   StyleSheet,
@@ -23,30 +22,56 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import { useIsFocused } from "@react-navigation/native";
 import type {
+  ActivityScoreMaxima,
+  DailyAggregateRecord,
   TrendRange,
   TrendSeries,
   TrendSeriesGroup,
   TrendSurface,
+  ZentraEventRecord,
 } from "@/types/zentra";
 import {
+  getActivityHistoryRevision,
+  loadActivityHistory,
+  type ActivityHistory,
+} from "@/utils/activity-cache";
+import {
+  startActivityCacheSession,
+  type ActivityCacheSession,
+} from "@/utils/activity-cache-session";
+import {
+  buildActivityScoreMaxima,
+  mergeActivityScoreMaxima,
+  type ActivityScoreInput,
+} from "@/utils/activity-intensity";
+import {
+  enumerateISODateRange,
   formatDateRangeLabel,
   getDateRangeForTrendRange,
   isValidISODate,
+  parseISODate,
   shiftISODate,
   toISODate,
 } from "@/utils/dates";
 import {
-  getRepositoryRevision,
   getDailyAggregatesForRange,
-  getEventsForRange,
+  getEventsCarriedIntoDay,
+  getEventsOfTypeForRange,
+  getRepositoryRevision,
 } from "@/utils/event-repository";
 import {
   GROUP_LABELS,
   GROUP_ORDER,
-  buildLiveTrendSeriesAsync,
+  buildLiveTrendSeries,
   buildLiveTrendSurfaces,
+  buildTrendCompositeValues,
   groupTrendSeries,
 } from "@/utils/live-trends";
+import {
+  buildTrendDaySummary,
+  type TrendDaySummary,
+} from "@/utils/trend-day-summary";
+import { buildUnifiedTimelineAsync } from "@/utils/unified-timeline";
 import {
   buildDemoTrendSurfaces,
   buildTrendSeries,
@@ -59,6 +84,30 @@ type TrendListItem =
   | { type: "groupHeader"; key: string; group: TrendSeriesGroup }
   | { type: "surface"; key: string; surface: TrendSurface }
   | { type: "chart"; key: string; series: TrendSeries };
+
+/** The few per-record reads a range still needs; everything else is per-day. */
+interface TrendRangeRecords {
+  aggregates: DailyAggregateRecord[];
+  sleepEvents: ZentraEventRecord[];
+  exerciseEvents: ZentraEventRecord[];
+  /** Yesterday's records still running at midnight, when the range includes today. */
+  carriedIntoToday: ZentraEventRecord[];
+}
+
+interface TrendTodayPart {
+  scopeKey: string;
+  summary: TrendDaySummary;
+  samples: ActivityScoreInput[];
+  maxima: ActivityScoreMaxima;
+}
+
+interface LiveTrends {
+  series: TrendSeries[];
+  surfaces: TrendSurface[];
+}
+
+const EMPTY_SERIES: TrendSeries[] = [];
+const EMPTY_SURFACES: TrendSurface[] = [];
 
 const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
   { label: "7D", value: "7d" },
@@ -77,9 +126,11 @@ export default function TrendsScreen() {
     const end = toISODate(new Date());
     return { start: shiftISODate(end, -13), end };
   });
-  const [liveSeries, setLiveSeries] = React.useState<TrendSeries[]>([]);
-  const [liveSurfaces, setLiveSurfaces] = React.useState<TrendSurface[]>([]);
-  const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
+  // The scope whose load failed, so the screen stops saying it is loading.
+  const [failedScopeKey, setFailedScopeKey] = React.useState<string | null>(
+    null,
+  );
   const [hiddenSeriesKeys, setHiddenSeriesKeys] = React.useState<Set<string>>(
     new Set(),
   );
@@ -92,18 +143,14 @@ export default function TrendsScreen() {
       ) => void)
     | null
   >(null);
-  const lastLoadedRangeRef = React.useRef<{
-    start: string;
-    end: string;
-    dataVersion: string | null;
-    rangeRevision: string;
-  } | null>(null);
   const collectors = useAppStore((state) => state.collectors);
   const dataMode = useAppStore((state) => state.dataMode);
   const repository = useRepositoryStore(
     useShallow((state) => ({
+      dataEpoch: state.dataEpoch,
       isHydrated: state.isHydrated,
       todayDataUpdatedAt: state.todayDataUpdatedAt,
+      todayEvents: state.todayEvents,
     })),
   );
   const isDemoMode = dataMode === "demo";
@@ -135,17 +182,283 @@ export default function TrendsScreen() {
         ? toISODate(new Date())
         : rangeSelection.end;
 
+  // Re-derived when the repository refreshes so the date advances at midnight.
+  const today = React.useMemo(
+    () => toISODate(new Date()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [repository.todayDataUpdatedAt],
+  );
+
+  // What is loaded for the selected range. New data inside it does not change
+  // the scope; it only moves a revision, which queues another pass.
+  const scope = React.useMemo(() => {
+    if (isDemoMode) return null;
+    const yesterday = shiftISODate(today, -1);
+    return {
+      key: `${repository.dataEpoch}:${rangeStart}:${rangeEnd}:${today}`,
+      rangeStart,
+      rangeEnd,
+      today,
+      // The day before the range: its records run into the first day and
+      // count toward the range-wide labels and cards, as they always have.
+      loadStart: shiftISODate(rangeStart, -1),
+      // Stored days end yesterday; today is summarized from the live records.
+      historyEnd: rangeEnd < yesterday ? rangeEnd : yesterday,
+      includesToday: rangeStart <= today && rangeEnd >= today,
+    };
+  }, [isDemoMode, rangeEnd, rangeStart, repository.dataEpoch, today]);
+
+  // A range is assembled from stored per-day summaries and hourly samples
+  // (shared with the Today pattern), today's live records, and two small
+  // reads of sleep and exercise records. It used to read every raw record in
+  // the range, and start over whenever one was written.
+  const [loadedHistory, setLoadedHistory] = React.useState<{
+    scopeKey: string;
+    history: ActivityHistory;
+  } | null>(null);
+  const [loadedRecords, setLoadedRecords] = React.useState<{
+    scopeKey: string;
+    records: TrendRangeRecords;
+  } | null>(null);
+  const [todayPart, setTodayPart] = React.useState<TrendTodayPart | null>(null);
+  const history =
+    scope && loadedHistory?.scopeKey === scope.key
+      ? loadedHistory.history
+      : null;
+  const records =
+    scope && loadedRecords?.scopeKey === scope.key
+      ? loadedRecords.records
+      : null;
+  const currentToday =
+    scope?.includesToday && todayPart?.scopeKey === scope.key
+      ? todayPart
+      : null;
+
+  const sessionsRef = React.useRef<{
+    history: ActivityCacheSession;
+    records: ActivityCacheSession;
+  } | null>(null);
+  const revisionsRef = React.useRef<{
+    scopeKey: string;
+    history: string;
+    records: string;
+  } | null>(null);
+  const loadTimerRef = React.useRef<ReturnType<typeof startPerfTimer> | null>(
+    null,
+  );
+
+  React.useEffect(() => {
+    if (!scope || !repository.isHydrated || !isFocused) return;
+    const {
+      key: scopeKey,
+      historyEnd,
+      includesToday,
+      loadStart,
+      rangeEnd: end,
+      rangeStart: start,
+      today: day,
+    } = scope;
+
+    loadTimerRef.current = startPerfTimer("trends.load_live_range", {
+      rangeEnd: end,
+      rangeStart: start,
+      screen: "trends",
+    });
+    // Neither session is cancelled by a write: each pass only redoes what
+    // changed, and a write mid-pass queues one more once writes pause.
+    const sessions = {
+      history: startActivityCacheSession({
+        load: (signal, onProgress) =>
+          loadActivityHistory(
+            loadStart,
+            historyEnd,
+            loadStart,
+            signal,
+            onProgress,
+            // Each report re-renders the charts: once a second is plenty.
+            { trends: true, visibleProgressIntervalMs: 1000 },
+          ),
+        onHistory: (next, _revision, final) => {
+          setLoadedHistory({ scopeKey, history: next });
+          if (final) setFailedScopeKey(null);
+        },
+        onLoading: setIsLoadingHistory,
+        // Keep the last successful range visible; the next change retries.
+        onError: () => setFailedScopeKey(scopeKey),
+      }),
+      records: startActivityCacheSession<TrendRangeRecords>({
+        load: async () => {
+          const [aggregates, sleepEvents, exerciseEvents, carriedIntoToday] =
+            await Promise.all([
+              getDailyAggregatesForRange(start, end),
+              getEventsOfTypeForRange("sleep_inferred", loadStart, end),
+              getEventsOfTypeForRange("exercise_session", loadStart, end),
+              includesToday ? getEventsCarriedIntoDay(day) : [],
+            ]);
+          return { aggregates, sleepEvents, exerciseEvents, carriedIntoToday };
+        },
+        onHistory: (next) => setLoadedRecords({ scopeKey, records: next }),
+        onError: () => setFailedScopeKey(scopeKey),
+      }),
+    };
+    sessionsRef.current = sessions;
+    const known = revisionsRef.current;
+    if (known?.scopeKey === scopeKey) {
+      sessions.history.noteRevision(known.history);
+      sessions.records.noteRevision(known.records);
+    }
+
+    return () => {
+      sessions.history.stop();
+      sessions.records.stop();
+      if (sessionsRef.current === sessions) sessionsRef.current = null;
+      setIsLoadingHistory(false);
+    };
+  }, [isFocused, repository.isHydrated, scope]);
+
+  React.useEffect(() => {
+    if (!scope || !repository.isHydrated || !isFocused) return;
+    let isCancelled = false;
+    const { key: scopeKey, historyEnd, loadStart, rangeEnd: end } = scope;
+    void Promise.all([
+      // Moves when a stored day in the range goes stale.
+      getActivityHistoryRevision(loadStart, historyEnd),
+      // Moves on any write in the range, including today's.
+      getRepositoryRevision(loadStart, end),
+    ])
+      .then(([historyRevision, recordsRevision]) => {
+        if (isCancelled) return;
+        revisionsRef.current = {
+          scopeKey,
+          history: historyRevision,
+          records: recordsRevision,
+        };
+        sessionsRef.current?.history.noteRevision(historyRevision);
+        sessionsRef.current?.records.noteRevision(recordsRevision);
+      })
+      .catch(() => undefined);
+    return () => {
+      isCancelled = true;
+    };
+  }, [isFocused, repository.isHydrated, repository.todayDataUpdatedAt, scope]);
+
+  // Today is not a stored day yet: summarize it from the records the
+  // repository already holds, plus whatever ran in from last night.
+  const carriedIntoToday = records?.carriedIntoToday;
+  React.useEffect(() => {
+    if (!scope?.includesToday || !repository.isHydrated || !isFocused) return;
+    const controller = new AbortController();
+    const { key: scopeKey, today: day } = scope;
+    const events = repository.todayEvents;
+    void buildUnifiedTimelineAsync(
+      carriedIntoToday?.length ? [...carriedIntoToday, ...events] : events,
+      {
+        startTimestamp: parseISODate(day).toISOString(),
+        endTimestamp: parseISODate(shiftISODate(day, 1)).toISOString(),
+        resolution: "hour",
+      },
+      controller.signal,
+      undefined,
+      { labels: false },
+    )
+      .then((buckets) => {
+        if (controller.signal.aborted) return;
+        setTodayPart({
+          scopeKey,
+          summary: buildTrendDaySummary(day, events),
+          samples: buckets,
+          maxima: buildActivityScoreMaxima(buckets),
+        });
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [
+    carriedIntoToday,
+    isFocused,
+    repository.isHydrated,
+    repository.todayEvents,
+    scope,
+  ]);
+
+  const assembled = React.useMemo<LiveTrends | null>(() => {
+    if (!scope || !history || !records) return null;
+    if (scope.includesToday && !currentToday) return null;
+    // Nothing stored for the range yet (the first open): wait for the first
+    // days rather than draw every chart empty.
+    if (!history.visibleComplete && !history.trendsByDate.size) return null;
+    const days = new Map(history.trendsByDate);
+    const samples = new Map(history.samplesByDate);
+    let maxima = history.maxima;
+    if (currentToday) {
+      days.set(scope.today, currentToday.summary);
+      samples.set(scope.today, currentToday.samples);
+      maxima = mergeActivityScoreMaxima(maxima, currentToday.maxima);
+    }
+    const inputs = {
+      days,
+      sleepEvents: records.sleepEvents,
+      exerciseEvents: records.exerciseEvents,
+    };
+    return {
+      series: buildLiveTrendSeries(
+        records.aggregates,
+        { start: scope.rangeStart, end: scope.rangeEnd },
+        inputs,
+        buildTrendCompositeValues(
+          enumerateISODateRange(scope.rangeStart, scope.rangeEnd),
+          samples,
+          maxima,
+        ),
+      ),
+      surfaces: buildLiveTrendSurfaces(inputs),
+    };
+  }, [currentToday, history, records, scope]);
+
+  // The previous range stays on screen until the selected one has its first
+  // result, which is one read of stored days away.
+  const [shownLive, setShownLive] = React.useState<{
+    epoch: number;
+    live: LiveTrends;
+  } | null>(null);
+  React.useEffect(() => {
+    if (assembled)
+      setShownLive({ epoch: repository.dataEpoch, live: assembled });
+  }, [assembled, repository.dataEpoch]);
+  const live =
+    assembled ??
+    (shownLive?.epoch === repository.dataEpoch ? shownLive.live : null);
+  const isLoadingLiveData =
+    !isDemoMode && !assembled && failedScopeKey !== scope?.key;
+  // Days of the range still being scored; their points are gaps until then.
+  // A day or two refreshing after new data is too brief to announce.
+  const pendingDays =
+    history && isLoadingHistory && history.visibleRemaining > 2
+      ? history.visibleRemaining
+      : 0;
+
+  React.useEffect(() => {
+    if (!assembled || !loadTimerRef.current) return;
+    loadTimerRef.current({
+      cancelled: false,
+      seriesCount: assembled.series.length,
+      surfaceCount: assembled.surfaces.length,
+    });
+    loadTimerRef.current = null;
+  }, [assembled]);
+
   const series = React.useMemo(
     () =>
-      isDemoMode ? buildTrendSeries(range, demoCollectors, true) : liveSeries,
-    [isDemoMode, range, demoCollectors, liveSeries],
+      isDemoMode
+        ? buildTrendSeries(range, demoCollectors, true)
+        : (live?.series ?? EMPTY_SERIES),
+    [isDemoMode, range, demoCollectors, live],
   );
   const surfaces = React.useMemo(
     () =>
       isDemoMode
         ? buildDemoTrendSurfaces(range, demoCollectors, true)
-        : liveSurfaces,
-    [isDemoMode, range, demoCollectors, liveSurfaces],
+        : (live?.surfaces ?? EMPTY_SURFACES),
+    [isDemoMode, range, demoCollectors, live],
   );
   const hasCollectors = Object.values(collectors).some(
     (collector) => collector.enabled,
@@ -227,117 +540,6 @@ export default function TrendsScreen() {
     surfaces.length,
   ]);
 
-  React.useEffect(() => {
-    if (isDemoMode || !repository.isHydrated || !isFocused) {
-      return;
-    }
-
-    // Skip reload if range and data version are unchanged (e.g. simple re-focus)
-    const prev = lastLoadedRangeRef.current;
-    if (
-      prev &&
-      prev.start === rangeStart &&
-      prev.end === rangeEnd &&
-      prev.dataVersion === repository.todayDataUpdatedAt
-    ) {
-      return;
-    }
-
-    let isCancelled = false;
-
-    const controller = new AbortController();
-    async function loadLiveTrends(): Promise<void> {
-      setIsLoadingLiveData(true);
-      const stopLoad = startPerfTimer("trends.load_live_range", {
-        rangeEnd,
-        rangeStart,
-        screen: "trends",
-      });
-      let nextSeriesCount = 0;
-      let nextSurfaceCount = 0;
-
-      try {
-        const rangeRevision = await getRepositoryRevision(
-          shiftISODate(rangeStart, -1),
-          rangeEnd,
-        );
-        if (isCancelled) return;
-        if (
-          prev?.start === rangeStart &&
-          prev.end === rangeEnd &&
-          prev.rangeRevision === rangeRevision
-        ) {
-          lastLoadedRangeRef.current = {
-            ...prev,
-            dataVersion: repository.todayDataUpdatedAt,
-          };
-          return;
-        }
-        const [aggregates, trendEvents] = await Promise.all([
-          getDailyAggregatesForRange(rangeStart, rangeEnd),
-          getEventsForRange(shiftISODate(rangeStart, -1), rangeEnd),
-        ]);
-        // Guard before CPU-intensive computation — switching tabs sets isCancelled
-        // but the check used to sit after buildLiveTrendSeries, which is O(N_days × N_events).
-        if (isCancelled) {
-          return;
-        }
-
-        const nextSeries = await buildLiveTrendSeriesAsync(
-          aggregates,
-          { start: rangeStart, end: rangeEnd },
-          trendEvents,
-          controller.signal,
-        );
-        const nextSurfaces = buildLiveTrendSurfaces(trendEvents);
-        nextSeriesCount = nextSeries.length;
-        nextSurfaceCount = nextSurfaces.length;
-
-        if (isCancelled) {
-          return;
-        }
-
-        setLiveSeries(nextSeries);
-        setLiveSurfaces(nextSurfaces);
-        lastLoadedRangeRef.current = {
-          start: rangeStart,
-          end: rangeEnd,
-          dataVersion: repository.todayDataUpdatedAt,
-          rangeRevision,
-        };
-      } catch {
-        // Keep the last successful range visible; a later refresh can retry.
-      } finally {
-        stopLoad({
-          cancelled: isCancelled,
-          seriesCount: nextSeriesCount,
-          surfaceCount: nextSurfaceCount,
-        });
-
-        if (!isCancelled) {
-          setIsLoadingLiveData(false);
-        }
-      }
-    }
-
-    const interaction = InteractionManager.runAfterInteractions(() => {
-      void loadLiveTrends();
-    });
-
-    return () => {
-      isCancelled = true;
-      controller.abort();
-      interaction.cancel();
-    };
-  }, [
-    isDemoMode,
-    isFocused,
-    rangeEnd,
-    rangeStart,
-    repository.isHydrated,
-    repository.todayDataUpdatedAt,
-  ]);
-
   const flatItems: TrendListItem[] = React.useMemo(() => {
     const items: TrendListItem[] = [];
     for (const group of groups) {
@@ -377,7 +579,9 @@ export default function TrendsScreen() {
                     key={entry.key}
                     accessibilityRole="button"
                     accessibilityLabel={`${entry.label} chart`}
-                    accessibilityState={{ selected: !hiddenSeriesKeys.has(entry.key) }}
+                    accessibilityState={{
+                      selected: !hiddenSeriesKeys.has(entry.key),
+                    }}
                     onPress={() =>
                       setHiddenSeriesKeys((current) => {
                         const next = new Set(current);
@@ -448,6 +652,14 @@ export default function TrendsScreen() {
         <Text style={[styles.helper, { color: palette.mutedForeground }]}>
           {formatDateRangeLabel(rangeStart, rangeEnd)}
         </Text>
+        {pendingDays > 0 ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[styles.helper, { color: palette.mutedForeground }]}
+          >
+            {`Loading ${pendingDays} more day${pendingDays === 1 ? "" : "s"} of this range...`}
+          </Text>
+        ) : null}
 
         {range === "custom" ? (
           <DateRangePickerRow
@@ -458,7 +670,7 @@ export default function TrendsScreen() {
         ) : null}
       </>
     ),
-    [range, palette, rangeStart, rangeEnd, customRange],
+    [range, palette, rangeStart, rangeEnd, customRange, pendingDays],
   );
 
   return (

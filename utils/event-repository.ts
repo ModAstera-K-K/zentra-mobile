@@ -37,8 +37,9 @@ import {
   buildTodaySnapshot,
   getLocalDatesForEvents,
   getRangeBounds,
+  readDatesWithEvents,
 } from "@/utils/repository-aggregates";
-import { compareTimestamps, parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import { compareTimestamps, shiftISODate, toISODate } from "@/utils/dates";
 import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
 import { ACTIVITY_MAXIMA_EVENT_TYPES } from "@/utils/activity-intensity";
 
@@ -838,13 +839,7 @@ export async function getDailyAggregatesForRange(
 ): Promise<DailyAggregateRecord[]> {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
-    const dates = await database.getAllAsync<{ date: string }>(
-      `SELECT DISTINCT date(timestamp_start,'localtime') AS date FROM events WHERE date(timestamp_start,'localtime') BETWEEN ? AND ? UNION SELECT DISTINCT date(timestamp_end,'localtime') AS date FROM events WHERE data_type='sleep_inferred' AND date(timestamp_end,'localtime') BETWEEN ? AND ?`,
-      start,
-      end,
-      start,
-      end,
-    );
+    const dates = await readDatesWithEvents(database, start, end);
     const cached = await database.getAllAsync<{
       date: string;
       active_summary: string | null;
@@ -1055,6 +1050,31 @@ export async function getEventsForDayScoring(
     },
     options.validate !== false,
   );
+}
+
+/**
+ * Every stored record of one sparse type (sleep, exercise) starting in a local
+ * date range, straight from the type index.
+ */
+export async function getEventsOfTypeForRange(
+  dataType: ZentraEventRecord["dataType"],
+  start: string,
+  end: string,
+): Promise<ZentraEventRecord[]> {
+  const { startIso, endExclusiveIso } = getRangeBounds(start, end);
+  const epoch = repositoryEpoch();
+  const rows = await enqueueDatabaseOperation(async () =>
+    (await getLocalDatabase()).getAllAsync<EventRow>(
+      `SELECT * FROM events
+        WHERE data_type = ? AND timestamp_start >= ? AND timestamp_start < ?
+        ORDER BY timestamp_start ASC, rowid ASC`,
+      dataType,
+      startIso,
+      endExclusiveIso,
+    ),
+  );
+  assertRepositoryEpoch(epoch);
+  return runCooperatively(decodeEventRowsWork(rows));
 }
 
 /** Imported step records in a local date range, without the other event types. */

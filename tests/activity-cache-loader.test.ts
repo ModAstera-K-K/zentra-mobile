@@ -6,9 +6,12 @@ import {
   loadActivityHistoryFrom,
   type ActivityCacheStore,
   type ActivityHistory,
+  type ActivityHistoryOptions,
 } from "@/utils/activity-cache-loader";
+import { emptyTrendDaySummary } from "@/utils/trend-day-summary";
 import {
   activitySamplesKey,
+  activityTrendKey,
   readActivityCacheManifest,
   readActivityCacheRevision,
 } from "@/utils/activity-cache-manifest";
@@ -44,6 +47,7 @@ function createStore(firstDate: string | null = START) {
   const writes = new Map<string, number>();
   const scored: { date: string; withSamples: boolean }[] = [];
   let active = true;
+  let saveTrends = true;
   let beforeScore: ((date: string) => void) | null = null;
 
   const store: ActivityCacheStore = {
@@ -51,8 +55,15 @@ function createStore(firstDate: string | null = START) {
       if (!active) throw new Error("Repository was cleared");
     },
     firstDate: async () => firstDate,
-    manifest: (first, last, samplesFrom) =>
-      readActivityCacheManifest(adapter, first, last, 0, samplesFrom),
+    manifest: (first, last, samplesFrom, withTrends) =>
+      readActivityCacheManifest(
+        adapter,
+        first,
+        last,
+        0,
+        samplesFrom,
+        withTrends,
+      ),
     async scoreDay(date, withSamples) {
       beforeScore?.(date);
       scored.push({ date, withSamples });
@@ -65,9 +76,12 @@ function createStore(firstDate: string | null = START) {
       return {
         maxima: { ...buildActivityScoreMaxima([]), steps },
         samples: withSamples ? encodeActivityHourSamples([bucket]) : null,
+        trend: withSamples
+          ? JSON.stringify({ ...emptyTrendDaySummary(), heartRate: [steps, 1] })
+          : null,
       };
     },
-    async saveDay(day, maxima, samples) {
+    async saveDay(day, { maxima, samples, trend }) {
       const save = db.prepare(
         "INSERT OR REPLACE INTO derived_cache(cache_key,revision,payload) VALUES(?,?,?)",
       );
@@ -77,6 +91,12 @@ function createStore(firstDate: string | null = START) {
           day.samplesKey ?? activitySamplesKey(day.date, 0),
           day.revision,
           samples,
+        );
+      if (trend !== null && saveTrends)
+        save.run(
+          day.trendKey ?? activityTrendKey(day.date, 0),
+          day.revision,
+          trend,
         );
     },
   };
@@ -95,6 +115,13 @@ function createStore(firstDate: string | null = START) {
     wipe() {
       active = false;
     },
+    /** Days stored before Trends summaries existed have none. */
+    withoutTrendRows() {
+      saveTrends = false;
+    },
+    withTrendRows() {
+      saveTrends = true;
+    },
     onScore(hook: ((date: string) => void) | null) {
       beforeScore = hook;
     },
@@ -102,6 +129,7 @@ function createStore(firstDate: string | null = START) {
     load(
       signal = new AbortController().signal,
       onProgress?: (history: ActivityHistory) => void,
+      options?: ActivityHistoryOptions,
     ) {
       scored.length = 0;
       return loadActivityHistoryFrom(
@@ -111,6 +139,7 @@ function createStore(firstDate: string | null = START) {
         SAMPLES_FROM,
         signal,
         onProgress,
+        options,
       );
     },
   };
@@ -132,6 +161,7 @@ test("a cold window reports at once, then scores drawn days newest first before 
     assert.deepEqual([...reports[0].pendingDates].sort(), visibleDates);
     assert.equal(reports[0].samplesByDate.size, 0);
     assert.equal(reports[0].visibleComplete, false);
+    assert.equal(reports[0].visibleRemaining, visibleDates.length);
 
     assert.deepEqual(
       fixture.scored.map((day) => day.date),
@@ -149,6 +179,7 @@ test("a cold window reports at once, then scores drawn days newest first before 
     assert.equal(drawn.pendingDates.size, 0);
 
     assert.equal(history.complete, true);
+    assert.equal(history.visibleRemaining, 0);
     assert.equal(history.samplesByDate.size, visibleDates.length);
     assert.equal(history.maxima.steps, 1);
   } finally {
@@ -272,6 +303,52 @@ test("rebuilt step-timing evidence does not make a stored day stale", async () =
     assert.equal(await fixture.revision(), before);
     await fixture.load();
     assert.deepEqual(fixture.scored, []);
+  } finally {
+    fixture.db.close();
+  }
+});
+
+test("Trends summaries are stored with a drawn day and only missing ones are scored for", async () => {
+  const fixture = createStore();
+  try {
+    for (const date of enumerateISODateRange(START, END)) fixture.write(date);
+
+    // Stored by an older build: samples but no Trends summaries.
+    fixture.withoutTrendRows();
+    await fixture.load();
+    fixture.withTrendRows();
+    // The Today pattern does not need them, so nothing is rescored for it.
+    await fixture.load();
+    assert.equal(fixture.scored.length, 0);
+
+    // Trends does: each drawn day is scored once more, and only those.
+    const reports: ActivityHistory[] = [];
+    const history = await fixture.load(
+      undefined,
+      (report) => reports.push(report),
+      { trends: true },
+    );
+    assert.deepEqual(
+      fixture.scored.map((day) => day.date),
+      [...visibleDates].reverse(),
+    );
+    // The stored samples stay on screen while the summaries are filled in.
+    assert.equal(reports[0].samplesByDate.size, visibleDates.length);
+    assert.equal(reports[0].trendsByDate.size, 0);
+    assert.equal(history.trendsByDate.size, visibleDates.length);
+    assert.deepEqual(history.trendsByDate.get("2026-09-20")?.heartRate, [1, 1]);
+
+    // Now either screen finds the days current.
+    await fixture.load(undefined, undefined, { trends: true });
+    assert.equal(fixture.scored.length, 0);
+
+    // A day the Today pattern rescores gets its summary in the same read.
+    fixture.write("2026-09-20");
+    await fixture.load();
+    assert.equal(fixture.scored.length, 2);
+    const again = await fixture.load(undefined, undefined, { trends: true });
+    assert.equal(fixture.scored.length, 0);
+    assert.deepEqual(again.trendsByDate.get("2026-09-20")?.heartRate, [2, 1]);
   } finally {
     fixture.db.close();
   }
