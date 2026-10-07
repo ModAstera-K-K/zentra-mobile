@@ -59,6 +59,25 @@ const MIN_TODAY_REFRESH_INTERVAL_MS = 1_500;
 let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
 
+/**
+ * For refreshes that read and then publish. A wipe that overtakes one rejects
+ * its event read or leaves `isCurrent` false; either way the refresh ends
+ * quietly, because the wipe publishes the cleared state itself.
+ */
+function unlessWiped(
+  refresh: (isCurrent: () => boolean) => Promise<void>,
+): () => Promise<void> {
+  return async () => {
+    const epoch = repositoryEpoch();
+    const isCurrent = () => epoch === repositoryEpoch();
+    try {
+      await refresh(isCurrent);
+    } catch (error) {
+      if (isCurrent()) throw error;
+    }
+  };
+}
+
 interface DrainBufferedActivityOptions {
   budgetMs?: number;
   batchSize?: number;
@@ -204,7 +223,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   diagnostics: [],
   diagnosticsHistory: [],
 
-  bootstrap: async () => {
+  bootstrap: unlessWiped(async (isCurrent) => {
     if (get().isHydrated) {
       return;
     }
@@ -235,6 +254,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     const updatedAt = new Date().toISOString();
 
+    if (!isCurrent()) return;
     set({
       backgroundCollectionServiceCheckedAt:
         persistedMeta?.backgroundCollectionServiceCheckedAt ?? null,
@@ -286,9 +306,9 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       diagnostics,
       diagnosticsHistory,
     });
-  },
+  }),
 
-  refreshAll: async () => {
+  refreshAll: unlessWiped(async (isCurrent) => {
     await initializeEventRepository();
     const bufferedActivityQueueDepth =
       await getBufferedActivityTransitionCountAsync();
@@ -314,6 +334,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     const updatedAt = new Date().toISOString();
 
+    if (!isCurrent()) return;
     set({
       isHydrated: true,
       backgroundCollectionServiceCheckedAt: new Date().toISOString(),
@@ -330,11 +351,14 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       diagnostics,
       diagnosticsHistory,
     });
-  },
+  }),
 
   refreshTodayData: async (force = false) => {
     if (refreshTodayDataInFlight) {
-      return refreshTodayDataInFlight;
+      if (!force) return refreshTodayDataInFlight;
+      // A forced refresh follows a write the read in flight may have missed.
+      await refreshTodayDataInFlight.catch(() => undefined);
+      return get().refreshTodayData(true);
     }
 
     if (
@@ -344,7 +368,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       return;
     }
 
-    refreshTodayDataInFlight = (async () => {
+    refreshTodayDataInFlight = unlessWiped(async (isCurrent) => {
       const dataRevision = await getRepositoryRevision();
       const todayDate = toISODate(new Date());
       if (
@@ -362,6 +386,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       const updatedAt = new Date().toISOString();
       const stableTodayEvents = stableEvents(get().todayEvents, todayEvents);
 
+      if (!isCurrent()) return;
       set({
         lastUpdatedAt: updatedAt,
         todayDataUpdatedAt: dataRevision,
@@ -592,7 +617,13 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
   clearRepositoryData: async () => {
     await clearRepositoryDataFromDb();
-    await clearTodayPatternSnapshot();
+    // The wipe retired the saved pattern's generation, so it can never be
+    // shown again; a removal that fails still fails the wipe, once the store
+    // reflects the cleared repository.
+    const snapshotFailure = await clearTodayPatternSnapshot().then(
+      () => null,
+      (error: unknown) => ({ error }),
+    );
     const updatedAt = new Date().toISOString();
 
     set({
@@ -634,5 +665,6 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       diagnosticsHistory: [],
     });
     await persistRepositoryMeta(get());
+    if (snapshotFailure) throw snapshotFailure.error;
   },
 }));

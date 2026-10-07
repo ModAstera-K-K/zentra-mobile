@@ -21,7 +21,7 @@ export function RestAdjustmentSheet({ estimate, onClose }: { estimate: SleepEsti
     try {
       if (reset) await resetRestAdjustment(estimate.wakeDate);
       else await saveRestAdjustment(estimate.wakeDate, start, end);
-      await useRepositoryStore.getState().refreshTodayData();
+      await useRepositoryStore.getState().refreshTodayData(true);
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save your rest window. Try again."); }
     finally { setSaving(false); }

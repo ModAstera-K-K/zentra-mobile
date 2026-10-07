@@ -8,7 +8,10 @@ import {
   markEventChangesCompacted,
   readEventChangeCompactionState,
 } from "@/utils/repository-revision";
-import { readActivityCacheManifest } from "@/utils/activity-cache-manifest";
+import {
+  activitySamplesKey,
+  readActivityCacheManifest,
+} from "@/utils/activity-cache-manifest";
 import { enumerateISODateRange, shiftISODate } from "@/utils/dates";
 
 function createDatabase() {
@@ -150,7 +153,7 @@ test("the manifest returns cached hourly samples only for current revisions from
       db.prepare(
         "INSERT INTO derived_cache(cache_key,revision,payload) VALUES(?,?,?)",
       ).run(
-        `hourly-samples-v1:${day.date}:0`,
+        activitySamplesKey(day.date, 0),
         // One stale entry: written before a later change to that day.
         day.date === "2026-09-28" ? day.revision - 1 : day.revision,
         `[${day.revision}]`,

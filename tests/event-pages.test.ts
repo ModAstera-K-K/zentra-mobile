@@ -146,3 +146,102 @@ test("a record rewritten between pages keeps only its latest copy", async () => 
     db.close();
   }
 });
+
+// A read wired as the repository wires it: the revision moves on every write.
+function consistentRead(
+  db: ReturnType<typeof createEvents>["db"],
+  betweenPages: (page: number) => void,
+) {
+  const calls = { pages: 0, unpaged: 0 };
+  const events = readEventPages(
+    async (sql, params) => {
+      if (/LIMIT 4\s*$/.test(sql)) betweenPages(calls.pages++);
+      else calls.unpaged++;
+      return db.prepare(sql).all(...params) as unknown as Row[];
+    },
+    {
+      start: "2026-09-30T00:00:00.000Z",
+      endExclusive: "2026-10-01T00:00:00.000Z",
+    },
+    decode,
+    {
+      pageSize: 4,
+      revision: async () =>
+        String(db.prepare("SELECT total_changes() AS n").get()!.n),
+    },
+  );
+  return { calls, events };
+}
+
+const storedRange = (db: ReturnType<typeof createEvents>["db"]) =>
+  (
+    db
+      .prepare("SELECT * FROM events ORDER BY timestamp_start, rowid")
+      .all() as unknown as Row[]
+  ).map(decode);
+
+test("a record that moves behind the cursor mid-read is not lost", async () => {
+  const { db } = createEvents(12);
+  try {
+    const { calls, events } = consistentRead(db, (page) => {
+      if (page === 2)
+        // Still unread, and now earlier than everything already returned.
+        db.prepare(
+          "UPDATE events SET timestamp_start='2026-09-30T00:00:00.000Z', value=999 WHERE rowid=12",
+        ).run();
+    });
+    assert.deepEqual(await events, storedRange(db));
+    assert.equal((await events).length, 12);
+    assert.equal(calls.unpaged, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("a record deleted or moved back after it was read leaves no stale copy", async () => {
+  const { db } = createEvents(12);
+  try {
+    const { events } = consistentRead(db, (page) => {
+      if (page !== 2) return;
+      db.prepare("DELETE FROM events WHERE rowid=1").run();
+      db.prepare(
+        "UPDATE events SET timestamp_start='2026-09-30T00:00:00.000Z', value=999 WHERE rowid=6",
+      ).run();
+    });
+    assert.deepEqual(await events, storedRange(db));
+    assert.equal((await events).length, 11);
+  } finally {
+    db.close();
+  }
+});
+
+test("an undisturbed read is not repeated, and one page needs no second check", async () => {
+  const { db } = createEvents(12);
+  try {
+    const paged = consistentRead(db, () => {});
+    assert.deepEqual(await paged.events, storedRange(db));
+    assert.deepEqual(paged.calls, { pages: 4, unpaged: 0 });
+
+    let queries = 0;
+    let revisionReads = 0;
+    const single = await readEventPages(
+      async (sql, params) => {
+        queries++;
+        // A write right after the only statement cannot have split the read.
+        const rows = db.prepare(sql).all(...params) as unknown as Row[];
+        db.prepare("UPDATE events SET value=1 WHERE rowid=1").run();
+        return rows;
+      },
+      {
+        start: "2026-09-30T00:00:00.000Z",
+        endExclusive: "2026-10-01T00:00:00.000Z",
+      },
+      decode,
+      { revision: async () => String(revisionReads++) },
+    );
+    assert.equal(single.length, 12);
+    assert.deepEqual({ queries, revisionReads }, { queries: 1, revisionReads: 1 });
+  } finally {
+    db.close();
+  }
+});

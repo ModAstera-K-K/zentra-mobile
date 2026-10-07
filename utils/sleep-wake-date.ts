@@ -1,6 +1,13 @@
 import type { ZentraEventRecord } from "@/types/zentra";
 import { toISODate } from "@/utils/dates";
 
+/**
+ * Resolving the nights that touch a local day takes sleep records from the day
+ * before it through this many days after: the night that begins that evening
+ * ends the next day, and only a record past that shows it did not run on.
+ */
+export const SLEEP_NIGHT_DAYS_AFTER = 2;
+
 /** Join adjacent stages from one origin into a night; attribute it to the final wake date. */
 export function sleepEventsForWakeDate(
   events: ZentraEventRecord[],

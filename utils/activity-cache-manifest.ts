@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { enumerateISODateRange, shiftISODate } from "@/utils/dates";
+import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
 
 interface ChangeRange {
   start_date: string;
@@ -21,11 +22,23 @@ export interface ActivityCacheDay {
   samples?: string;
 }
 
+// A stored day is reused for as long as its revision holds, so a change to
+// what scoring would compute for the same events needs a new version here.
+const MAXIMA_PREFIX = "hourly-maxima-v3";
+const SAMPLES_PREFIX = "hourly-samples-v2";
+
+export function activityMaximaKey(
+  date: string,
+  timezoneOffset: number,
+): string {
+  return `${MAXIMA_PREFIX}:${date}:${timezoneOffset}`;
+}
+
 export function activitySamplesKey(
   date: string,
   timezoneOffset: number,
 ): string {
-  return `hourly-samples-v1:${date}:${timezoneOffset}`;
+  return `${SAMPLES_PREFIX}:${date}:${timezoneOffset}`;
 }
 
 /** Two reads for the entire window instead of two bridge calls per day. */
@@ -44,8 +57,8 @@ export async function readActivityCacheManifest(
       ? []
       : await db.getAllAsync<CachedDay>(
           "SELECT cache_key,revision,payload FROM derived_cache WHERE cache_key>=? AND cache_key<?",
-          `hourly-samples-v1:${first}:`,
-          `hourly-samples-v1:${shiftISODate(end, 1)}:`,
+          `${SAMPLES_PREFIX}:${first}:`,
+          `${SAMPLES_PREFIX}:${shiftISODate(end, 1)}:`,
         );
   const byKey = new Map(samples.map((row) => [row.cache_key, row]));
   return manifest.map((day) => {
@@ -67,15 +80,22 @@ async function readMaximaManifest(
   timezoneOffset: number,
 ): Promise<ActivityCacheDay[]> {
   const [changes, cached] = await Promise.all([
+    // A day is scored with the sleep records of the nights after it in view
+    // (see getEventsForDayScoring), so a sleep change reaches back that far.
     db.getAllAsync<ChangeRange>(
-      "SELECT start_date,end_date,MAX(revision) AS revision FROM event_changes WHERE start_date<=? AND end_date>=? GROUP BY start_date,end_date",
-      end,
+      `SELECT start_date,end_date,MAX(revision) AS revision FROM (
+        SELECT CASE WHEN data_type='sleep_inferred'
+            THEN date(start_date,'-${SLEEP_NIGHT_DAYS_AFTER} days') ELSE start_date END AS start_date,
+          end_date,revision
+        FROM event_changes WHERE start_date<=? AND end_date>=?
+      ) GROUP BY start_date,end_date`,
+      shiftISODate(end, SLEEP_NIGHT_DAYS_AFTER),
       shiftISODate(start, -1),
     ),
     db.getAllAsync<CachedDay>(
       "SELECT cache_key,revision,payload FROM derived_cache WHERE cache_key>=? AND cache_key<?",
-      `hourly-maxima-v2:${start}:`,
-      `hourly-maxima-v2:${shiftISODate(end, 1)}:`,
+      `${MAXIMA_PREFIX}:${start}:`,
+      `${MAXIMA_PREFIX}:${shiftISODate(end, 1)}:`,
     ),
   ]);
   return buildActivityCacheManifest(
@@ -85,6 +105,25 @@ async function readMaximaManifest(
     changes,
     cached,
   );
+}
+
+/**
+ * One revision for the stored days in [start, end]: it moves whenever the
+ * manifest would report any of them stale.
+ */
+export async function readActivityCacheRevision(
+  db: SQLiteDatabase,
+  start: string,
+  end: string,
+): Promise<string> {
+  const row = await db.getFirstAsync<{ revision: number }>(
+    `SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes
+      WHERE end_date>=? AND (start_date<=? OR (data_type='sleep_inferred' AND start_date<=?))`,
+    shiftISODate(start, -1),
+    end,
+    shiftISODate(end, SLEEP_NIGHT_DAYS_AFTER),
+  );
+  return String(row?.revision ?? 0);
 }
 
 export function buildActivityCacheManifest(
@@ -107,7 +146,7 @@ export function buildActivityCacheManifest(
   }
   const byKey = new Map(cached.map((row) => [row.cache_key, row]));
   return [...revisions].map(([date, revision]) => {
-    const key = `hourly-maxima-v2:${date}:${timezoneOffset}`,
+    const key = activityMaximaKey(date, timezoneOffset),
       row = byKey.get(key);
     return {
       date,

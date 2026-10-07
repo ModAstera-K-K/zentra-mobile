@@ -25,6 +25,7 @@ import {
   selectResolvedStepEvents,
 } from "@/utils/source-resolution";
 import { sleepTimelineEvents } from "@/utils/sleep-timeline";
+import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
 import type { ZentraEventRecord } from "@/types/zentra";
 
 const anchor = "2026-10-01";
@@ -196,6 +197,108 @@ test("a day's cell from cached hourly samples matches the raw-event cell", async
     buildPatternDayCellFromSamples(date, [], maxima).hasAnyData,
     false,
   );
+});
+
+test("a day scored with its nights in view matches the full range", async () => {
+  const at = (date: string, time: string) =>
+    new Date(`${date}T${time}:00`).toISOString();
+  const sleep = (
+    id: string,
+    start: string,
+    end: string,
+    extra: Partial<ZentraEventRecord>,
+  ): ZentraEventRecord => ({
+    id,
+    timestampStart: start,
+    timestampEnd: end,
+    dataType: "sleep_inferred",
+    source: "inferred",
+    valueNumeric: (Date.parse(end) - Date.parse(start)) / 60_000,
+    unit: "minutes",
+    confidence: 1,
+    metadata: {},
+    schemaVersion: 1,
+    createdAt: end,
+    ...extra,
+  });
+  const rest = (wakeDate: string) =>
+    sleep(
+      `rest-${wakeDate}`,
+      at(shiftISODate(wakeDate, -1), "23:00"),
+      at(wakeDate, "07:00"),
+      {
+        metadata: {
+          rest_wake_date: wakeDate,
+          rest_algorithm_version: 2,
+          sleep_estimated: true,
+        },
+      },
+    );
+  const wearable = {
+    source: "health_connect" as const,
+    metadata: { health_platform: "healthkit", source_app: "watch" },
+  };
+  const imported = shiftISODate(anchor, -1);
+  const unworn = shiftISODate(anchor, -4);
+  const events = [
+    ...syntheticEvents(6, 40),
+    // The wearable has this night starting at 01:00, so the import counts for
+    // it and the rest inferred from 23:00 does not.
+    rest(anchor),
+    sleep("import", at(anchor, "01:00"), at(anchor, "06:00"), wearable),
+    // No import for this night, so its estimate counts. The wearable's next
+    // night begins before midnight; only the stage after it shows that those
+    // stages belong to the following wake date and do not outrank the estimate.
+    rest(shiftISODate(unworn, 1)),
+    sleep(
+      "stage-1",
+      at(shiftISODate(unworn, 1), "22:30"),
+      at(shiftISODate(unworn, 1), "23:40"),
+      wearable,
+    ),
+    sleep(
+      "stage-2",
+      at(shiftISODate(unworn, 2), "00:10"),
+      at(shiftISODate(unworn, 2), "06:30"),
+      wearable,
+    ),
+  ];
+  const window = (date: string) => ({
+    startTimestamp: parseISODate(date).toISOString(),
+    endTimestamp: parseISODate(shiftISODate(date, 1)).toISOString(),
+    resolution: "hour" as const,
+  });
+  // Mirrors getEventsForDayScoring, with the sleep context as a parameter.
+  const forScoring = (date: string, daysAfter = SLEEP_NIGHT_DAYS_AFTER) => {
+    const from = parseISODate(shiftISODate(date, -1)).toISOString();
+    const to = parseISODate(shiftISODate(date, daysAfter + 1)).toISOString();
+    const { startTimestamp, endTimestamp } = window(date);
+    return events.filter(
+      (event) =>
+        event.timestampStart >= from &&
+        event.timestampStart < to &&
+        (event.dataType === "sleep_inferred" ||
+          (event.timestampStart < endTimestamp &&
+            event.timestampEnd >= startTimestamp)),
+    );
+  };
+  const sleepAt23 = async (source: ZentraEventRecord[], date: string) =>
+    (await buildUnifiedTimelineAsync(source, window(date)))[23].sleepMinutes;
+
+  for (let offset = -5; offset <= 0; offset++) {
+    const date = shiftISODate(anchor, offset);
+    assert.deepEqual(
+      await buildUnifiedTimelineAsync(forScoring(date), window(date)),
+      await buildUnifiedTimelineAsync(events, window(date)),
+      date,
+    );
+  }
+
+  assert.equal(await sleepAt23(events, imported), 0);
+  assert.equal(await sleepAt23(events, unworn), 60);
+  // Sleep cut at the day's own edges, or one night short, resolves differently.
+  assert.equal(await sleepAt23(forScoring(imported, 0), imported), 60);
+  assert.equal(await sleepAt23(forScoring(unworn, 1), unworn), 0);
 });
 
 // The pre-cooperative implementation, kept as the reference behaviour.

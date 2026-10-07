@@ -2,6 +2,7 @@ import { activeEvidenceRows } from "@/utils/active-evidence";
 import { useActiveMinutesRefresh } from "@/hooks/use-active-minutes-refresh";
 import { useSleepSummary } from "@/hooks/use-sleep-summary";
 import {
+  getActivityHistoryRevision,
   loadActivityHistory,
   type ActivityHistory,
 } from "@/utils/activity-cache";
@@ -79,7 +80,6 @@ import { buildDemoTimelineEvents } from "@/utils/demo-timeline-events";
 import {
   getEventsCarriedIntoDay,
   getEventsOverlappingDay,
-  getRepositoryRevision,
 } from "@/utils/event-repository";
 import { useIsFocused } from "@react-navigation/native";
 import {
@@ -566,12 +566,9 @@ export default function TodayScreen() {
           ).start;
 
     // The normalization window always contains the pattern grid, so one
-    // revision covers both. Overnight records from the day before the window
-    // affect its first day.
-    void getRepositoryRevision(
-      shiftISODate(maximaStart, -1),
-      shiftISODate(todayAnchor, -1),
-    )
+    // revision covers both. It moves with the stored days' own staleness
+    // rule, which also counts later sleep records that settle their nights.
+    void getActivityHistoryRevision(maximaStart, shiftISODate(todayAnchor, -1))
       .then((revision) => {
         if (isCancelled) return;
         const key = `${dataEpoch}:${todayAnchor}:${activityNormalizationWindow}:${revision}`;
@@ -989,12 +986,18 @@ export default function TodayScreen() {
     () => (isDemoMode ? demoPatternEvents : (repository.todayEvents ?? [])),
     [isDemoMode, demoPatternEvents, repository.todayEvents],
   );
-  const [todayRawTimeline, setTodayRawTimeline] = React.useState<{
+  // Today's values carry the epoch of the events they were computed from, so
+  // one computed before a wipe is neither shown nor saved after it.
+  const [loadedRawTimeline, setLoadedRawTimeline] = React.useState<{
     anchor: string;
     buckets: UnifiedTimelineBucket[];
+    epoch: number;
   } | null>(null);
+  const todayRawTimeline =
+    loadedRawTimeline?.epoch === dataEpoch ? loadedRawTimeline : null;
   const lastTodayTimelineInputRef = React.useRef<{
     anchor: string;
+    epoch: number;
     events: ZentraEventRecord[];
   } | null>(null);
   React.useEffect(() => {
@@ -1002,6 +1005,7 @@ export default function TodayScreen() {
     const lastInput = lastTodayTimelineInputRef.current;
     if (
       lastInput?.anchor === todayAnchor &&
+      lastInput.epoch === dataEpoch &&
       lastInput.events === todayTimelineEvents
     )
       return;
@@ -1023,9 +1027,14 @@ export default function TodayScreen() {
           if (controller.signal.aborted) return;
           lastTodayTimelineInputRef.current = {
             anchor: todayAnchor,
+            epoch: dataEpoch,
             events: todayTimelineEvents,
           };
-          setTodayRawTimeline({ anchor: todayAnchor, buckets });
+          setLoadedRawTimeline({
+            anchor: todayAnchor,
+            buckets,
+            epoch: dataEpoch,
+          });
           setRhythmError(null);
         })
         .catch(() => {
@@ -1038,7 +1047,7 @@ export default function TodayScreen() {
       controller.abort();
       interaction.cancel();
     };
-  }, [isFocused, patternRetry, todayAnchor, todayTimelineEvents]);
+  }, [dataEpoch, isFocused, patternRetry, todayAnchor, todayTimelineEvents]);
 
   const todayMaxima = todayRawTimeline
     ? buildActivityScoreMaxima(todayRawTimeline.buckets)
@@ -1171,10 +1180,13 @@ export default function TodayScreen() {
     todayAnchor,
     todayTimelineEvents,
   ]);
-  const [todayCell, setTodayCell] = React.useState<{
+  const [loadedTodayCell, setLoadedTodayCell] = React.useState<{
     anchor: string;
     cell: ActivityPatternDayCell;
+    epoch: number;
   } | null>(null);
+  const todayCell =
+    loadedTodayCell?.epoch === dataEpoch ? loadedTodayCell : null;
   React.useEffect(() => {
     if (!isFocused || !combinedMaxima) return;
     const controller = new AbortController();
@@ -1189,7 +1201,7 @@ export default function TodayScreen() {
         .then((cells) => {
           const cell = cells.get(todayAnchor);
           if (controller.signal.aborted || !cell) return;
-          setTodayCell({ anchor: todayAnchor, cell });
+          setLoadedTodayCell({ anchor: todayAnchor, cell, epoch: dataEpoch });
           setPatternComputeError(null);
         })
         .catch(() => {
@@ -1202,7 +1214,14 @@ export default function TodayScreen() {
       controller.abort();
       interaction.cancel();
     };
-  }, [combinedMaxima, isFocused, patternRetry, todayAnchor, todayCellEvents]);
+  }, [
+    combinedMaxima,
+    dataEpoch,
+    isFocused,
+    patternRetry,
+    todayAnchor,
+    todayCellEvents,
+  ]);
 
   const freshMonthCells = React.useMemo<ActivityPatternCell[] | null>(() => {
     if (!historicalCells || todayCell?.anchor !== todayAnchor) return null;

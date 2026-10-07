@@ -23,15 +23,27 @@ export interface SnapshotStorage {
   setItem(key: string, value: string): Promise<void>;
 }
 
+interface StoredSnapshot {
+  generation: string;
+  snapshot: TodayPatternSnapshot;
+}
+
 const TODAY_PATTERN_SNAPSHOT_KEY = "zentra-today-pattern-v1";
 
 /**
- * Every read and write is bound to the repository epoch, which a data wipe
- * advances before deleting anything: a value read across a wipe is dropped,
- * a grid computed before a wipe is never written after it, and a write that
- * a wipe overtook removes itself.
+ * A snapshot is bound to the repository twice over. Within a session, every
+ * read and write checks the repository epoch, which a data wipe advances
+ * before deleting anything: a value read across a wipe is dropped, a grid
+ * computed before a wipe is never written after it, and a write that a wipe
+ * overtook removes itself. Across sessions, where the epoch starts over, the
+ * value carries the repository generation it was saved under; a wipe retires
+ * that generation with its first statement, so a value whose removal never
+ * ran or failed is refused, and removed, the next time it is loaded.
  */
-export function createTodayPatternSnapshotStore(storage: SnapshotStorage) {
+export function createTodayPatternSnapshotStore(
+  storage: SnapshotStorage,
+  readGeneration: () => Promise<string>,
+) {
   return {
     async load(): Promise<{
       epoch: number;
@@ -39,9 +51,16 @@ export function createTodayPatternSnapshotStore(storage: SnapshotStorage) {
     } | null> {
       const epoch = repositoryEpoch();
       try {
-        const raw = await storage.getItem(TODAY_PATTERN_SNAPSHOT_KEY);
+        const [raw, generation] = await Promise.all([
+          storage.getItem(TODAY_PATTERN_SNAPSHOT_KEY),
+          readGeneration(),
+        ]);
         if (!raw || epoch !== repositoryEpoch()) return null;
-        return { epoch, snapshot: JSON.parse(raw) as TodayPatternSnapshot };
+        const stored = JSON.parse(raw) as Partial<StoredSnapshot>;
+        if (stored.generation === generation && stored.snapshot)
+          return { epoch, snapshot: stored.snapshot };
+        await storage.removeItem(TODAY_PATTERN_SNAPSHOT_KEY);
+        return null;
       } catch {
         return null;
       }
@@ -54,9 +73,13 @@ export function createTodayPatternSnapshotStore(storage: SnapshotStorage) {
     ): Promise<boolean> {
       if (epoch !== repositoryEpoch()) return false;
       try {
+        const generation = await readGeneration();
+        // A wipe that began during that read has already advanced the epoch.
+        if (epoch !== repositoryEpoch()) return false;
+        const stored: StoredSnapshot = { generation, snapshot };
         await storage.setItem(
           TODAY_PATTERN_SNAPSHOT_KEY,
-          JSON.stringify(snapshot),
+          JSON.stringify(stored),
         );
       } catch {
         // A missing snapshot only costs the instant first paint.
@@ -67,12 +90,9 @@ export function createTodayPatternSnapshotStore(storage: SnapshotStorage) {
       return false;
     },
 
+    /** Rejects when the value could not be removed; `load` still refuses it. */
     async clear(): Promise<void> {
-      try {
-        await storage.removeItem(TODAY_PATTERN_SNAPSHOT_KEY);
-      } catch {
-        // Nothing to recover; a stale value is still rejected by its epoch.
-      }
+      await storage.removeItem(TODAY_PATTERN_SNAPSHOT_KEY);
     },
   };
 }

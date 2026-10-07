@@ -1,6 +1,7 @@
 import {
   activitySamplesKey,
   readActivityCacheManifest,
+  readActivityCacheRevision,
 } from "@/utils/activity-cache-manifest";
 import type { ActivityCacheDay } from "@/utils/activity-cache-manifest";
 import {
@@ -13,7 +14,7 @@ import {
 } from "@/utils/repository-session";
 import {
   enqueueDatabaseOperation,
-  getEventsOverlappingDay,
+  getEventsForDayScoring,
   getRepositoryDateBounds,
 } from "@/utils/event-repository";
 import { getLocalDatabase } from "@/utils/local-database";
@@ -33,6 +34,16 @@ export interface ActivityHistory {
   maxima: ActivityScoreMaxima;
   /** Hourly score inputs for each stored day from `samplesFrom` onward. */
   samplesByDate: Map<string, ActivityScoreInput[]>;
+}
+
+/** Changes whenever `loadActivityHistory` would recompute a day in [start, end]. */
+export function getActivityHistoryRevision(
+  start: string,
+  end: string,
+): Promise<string> {
+  return enqueueDatabaseOperation(async () =>
+    readActivityCacheRevision(await getLocalDatabase(), start, end),
+  );
 }
 
 /**
@@ -106,7 +117,7 @@ async function loadDay(
     if (day.samples) samples = decodeActivityHourSamples(day.samples);
   } else {
     const buckets = await buildUnifiedTimelineAsync(
-      await getEventsOverlappingDay(day.date),
+      await getEventsForDayScoring(day.date),
       {
         startTimestamp: parseISODate(day.date).toISOString(),
         endTimestamp: parseISODate(shiftISODate(day.date, 1)).toISOString(),

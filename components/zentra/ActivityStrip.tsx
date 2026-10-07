@@ -27,8 +27,7 @@ export const ActivityStrip = React.memo(function ActivityStrip({ buckets, error,
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const series = React.useMemo(() => RHYTHM_MODES.map(mode => ({ ...mode, points: rhythmSeries(buckets, mode.key) })), [buckets]);
   React.useEffect(() => { setSelectedIndex(initialRhythmIndex(buckets)); }, [buckets]);
-  if (!buckets.length && error) return <DailyRhythmStatus error={error} loading={false} onRetry={onRetry} />;
-  if (!buckets.length || !buckets.some(bucket => bucket.hasAnyData)) return <DailyRhythmStatus loading={!buckets.length} />;
+  if (!buckets.length || !buckets.some(bucket => bucket.hasAnyData)) return <DailyRhythmStatus error={error} loading={!buckets.length && !error} onRetry={onRetry} />;
   const index = Math.min(selectedIndex, buckets.length - 1);
   return (
     <Card variant="open">

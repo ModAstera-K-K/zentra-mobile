@@ -42,6 +42,31 @@ export async function readDataRevision(
   return String(row?.revision ?? 0);
 }
 
+const GENERATION_KEY = "repository-generation";
+
+/**
+ * Identifies the stored data that values kept outside the database were
+ * computed from. It lives in derived_cache, so a wipe deletes it and the next
+ * read mints a different one: nothing saved before a wipe matches after it,
+ * even across a restart.
+ */
+export async function readRepositoryGeneration(
+  db: SQLiteDatabase,
+): Promise<string> {
+  const read = () =>
+    db.getFirstAsync<{ payload: string }>(
+      "SELECT payload FROM derived_cache WHERE cache_key=?",
+      GENERATION_KEY,
+    );
+  const existing = await read();
+  if (existing) return existing.payload;
+  await db.runAsync(
+    "INSERT OR IGNORE INTO derived_cache(cache_key,revision,payload) VALUES(?,0,lower(hex(randomblob(16))))",
+    GENERATION_KEY,
+  );
+  return (await read())!.payload;
+}
+
 const COMPACTION_MARKER_KEY = "event-changes-compacted";
 
 export interface EventChangeCompactionState {

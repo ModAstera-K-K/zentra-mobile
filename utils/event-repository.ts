@@ -9,13 +9,18 @@ import {
 import { startPerfTimer } from "@/utils/perf";
 import { runCooperatively } from "@/utils/cooperative-work";
 import { readEventPages, type PagedEventRow } from "@/utils/event-pages";
-import { invalidateRepositorySession } from "@/utils/repository-session";
+import {
+  assertRepositoryEpoch,
+  invalidateRepositorySession,
+  repositoryEpoch,
+} from "@/utils/repository-session";
 import { cancelHealthSync } from "@/utils/health-sync-session";
 import {
   compactEventChangesFrom,
   markEventChangesCompacted,
   readDataRevision,
   readEventChangeCompactionState,
+  readRepositoryGeneration,
 } from "@/utils/repository-revision";
 import type { SQLiteDatabase } from "expo-sqlite";
 
@@ -34,6 +39,7 @@ import {
   getRangeBounds,
 } from "@/utils/repository-aggregates";
 import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
 
 export interface EventRow {
   id: string;
@@ -233,7 +239,9 @@ function* decodeEventRowsWork(
 
 /**
  * Paged, cooperatively decoded read for screens. Each page is its own queued
- * database operation, so writes and other reads interleave between pages.
+ * database operation, so writes and other reads interleave between pages; a
+ * read they changed is repeated as one statement, and one a wipe overtook is
+ * rejected rather than returned.
  */
 async function readEventRange(
   start: string,
@@ -242,6 +250,7 @@ async function readEventRange(
 ): Promise<ZentraEventRecord[]> {
   const { startIso, endExclusiveIso } = getRangeBounds(start, end);
   const stopRead = startPerfTimer("repository.range_read");
+  const epoch = repositoryEpoch();
   const events = await readEventPages<
     EventRow & PagedEventRow,
     ZentraEventRecord
@@ -260,8 +269,10 @@ async function readEventRange(
       params: filter?.params,
     },
     mapEventRow,
+    { revision: () => getRepositoryRevision(start, end) },
   );
   stopRead({ rows: events.length });
+  assertRepositoryEpoch(epoch);
   return events;
 }
 
@@ -967,11 +978,16 @@ export async function clearRepositoryData(): Promise<void> {
   invalidateRepositorySession();
   await cancelNativeActivityHistory().catch(() => undefined);
   await enqueueRetriedWrite(async () => {
+    // Work that began while the native cancel was pending ran ahead of this
+    // delete under the epoch set above; advance it again as the rows go.
+    invalidateRepositorySession();
     const database = await getLocalDatabase();
 
+    // First: this drops the repository generation, so a wipe interrupted at
+    // any later statement has still retired values saved outside the database.
+    await database.runAsync("DELETE FROM derived_cache");
     await database.runAsync("DELETE FROM events");
     await database.runAsync("DELETE FROM daily_aggregates");
-    await database.runAsync("DELETE FROM derived_cache");
     await database.runAsync("DELETE FROM health_sync_state");
     await database.runAsync("DELETE FROM activity_history_state");
     await database.runAsync("DELETE FROM activity_history_records");
@@ -1016,6 +1032,27 @@ export async function getEventsOverlappingDay(
     where: "timestamp_end >= ?",
     params: [getRangeBounds(date, date).startIso],
   });
+}
+
+/**
+ * A local day's events for scoring: those of getEventsOverlappingDay plus
+ * every sleep record of the nights around it. Which source counts for a night
+ * is decided over the whole night, so sleep cut at the day's edges would
+ * resolve differently from a read of the full range.
+ */
+export async function getEventsForDayScoring(
+  date: string,
+): Promise<ZentraEventRecord[]> {
+  const day = getRangeBounds(date, date);
+  return readEventRange(
+    shiftISODate(date, -1),
+    shiftISODate(date, SLEEP_NIGHT_DAYS_AFTER),
+    {
+      where:
+        "(data_type = 'sleep_inferred' OR (timestamp_start < ? AND timestamp_end >= ?))",
+      params: [day.endExclusiveIso, day.startIso],
+    },
+  );
 }
 
 /** Records from the previous day that are still running at local midnight. */
@@ -1079,6 +1116,12 @@ export async function getRepositoryRevision(
 ): Promise<string> {
   return enqueueDatabaseOperation(async () =>
     readDataRevision(await getLocalDatabase(), start, end),
+  );
+}
+
+export async function getRepositoryGeneration(): Promise<string> {
+  return enqueueDatabaseOperation(async () =>
+    readRepositoryGeneration(await getLocalDatabase()),
   );
 }
 
