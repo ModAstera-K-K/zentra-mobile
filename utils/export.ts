@@ -1,3 +1,4 @@
+import { compareTimestamps } from "@/utils/dates";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import JSZip from "jszip";
@@ -151,7 +152,7 @@ function flattenEvents(
     .flat()
     .slice()
     .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
+      compareTimestamps(left.timestampStart, right.timestampStart),
     );
 }
 

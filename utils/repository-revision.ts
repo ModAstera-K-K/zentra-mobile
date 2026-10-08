@@ -24,6 +24,13 @@ CREATE TABLE IF NOT EXISTS health_snapshot_records(record_type TEXT NOT NULL,eve
 PRAGMA user_version = 2;
 `;
 
+/**
+ * Change rows written when derived step-timing evidence is rebuilt for a day.
+ * The day's events did not change, so anything computed from events alone
+ * (the stored activity days) must not count these as a change to the day.
+ */
+export const ACTIVE_TIMING_CHANGE_TYPE = "active_timing";
+
 export async function readDataRevision(
   db: SQLiteDatabase,
   start?: string,

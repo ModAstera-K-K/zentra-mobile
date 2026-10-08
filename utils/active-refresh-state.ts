@@ -10,7 +10,7 @@ export async function activeRangeRevision(
     const row = await (
       await getLocalDatabase()
     ).getFirstAsync<{ revision: number }>(
-      "SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes WHERE data_type IN ('steps','activity','exercise_session','motion_context') AND start_date <= ? AND end_date >= ?",
+      "SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes WHERE data_type IN ('steps','activity','exercise_session','motion_context','active_timing') AND start_date <= ? AND end_date >= ?",
       end,
       shiftISODate(start, -1),
     );

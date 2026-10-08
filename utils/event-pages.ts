@@ -1,4 +1,5 @@
 import { runCooperatively } from "@/utils/cooperative-work";
+import { compareTimestamps } from "@/utils/dates";
 
 type BindValue = string | number | null;
 
@@ -105,7 +106,7 @@ async function readPages<
 
   if (rewritten)
     events.sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
+      compareTimestamps(left.timestampStart, right.timestampStart),
     );
   return { events, pages };
 }

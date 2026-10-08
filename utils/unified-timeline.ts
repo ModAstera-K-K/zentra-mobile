@@ -18,7 +18,13 @@ import {
 } from "@/utils/activity-intensity";
 import type { ActivityScoreInput } from "@/utils/activity-intensity";
 import type { ActivityScoreMaxima } from "@/types/zentra";
-import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import {
+  compareTimestamps,
+  localDateFormatter,
+  parseISODate,
+  shiftISODate,
+  toISODate,
+} from "@/utils/dates";
 
 const TRACKED_TIMELINE_TYPES: EventDataType[] = [
   "steps",
@@ -45,24 +51,18 @@ function getResolutionMinutes(resolution: UnifiedTimelineResolution): number {
   }
 }
 
-function addMinutes(date: Date, minutes: number): Date {
-  return new Date(date.getTime() + minutes * 60_000);
-}
-
 function formatBucketLabel(
   date: Date,
   resolution: UnifiedTimelineResolution,
 ): string {
-  if (resolution === "hour") {
-    return new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-    }).format(date);
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  return (
+    resolution === "hour"
+      ? localDateFormatter("bucket-hour", { hour: "numeric" })
+      : localDateFormatter("bucket-minute", {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+  ).format(date);
 }
 
 function createCoverageRecord<T extends string>(): Partial<Record<T, number>> {
@@ -73,6 +73,7 @@ function createEmptyBucket(
   start: Date,
   end: Date,
   resolution: UnifiedTimelineResolution,
+  withLabel: boolean,
 ): UnifiedTimelineBucket {
   return {
     activityEvents: 0,
@@ -89,7 +90,7 @@ function createEmptyBucket(
     heartRateAverageBpm: null,
     idleSignals: 0,
     intensityScore: 0,
-    label: formatBucketLabel(start, resolution),
+    label: withLabel ? formatBucketLabel(start, resolution) : "",
     locationSamples: 0,
     movementSignals: 0,
     movementScore: 0,
@@ -109,45 +110,6 @@ function createEmptyBucket(
   };
 }
 
-function enumerateBuckets(
-  window: UnifiedTimelineWindow,
-): UnifiedTimelineBucket[] {
-  const resolutionMinutes = getResolutionMinutes(window.resolution);
-  const buckets: UnifiedTimelineBucket[] = [];
-  let cursor = new Date(window.startTimestamp);
-  const endDate = new Date(window.endTimestamp);
-
-  while (cursor < endDate) {
-    const next = addMinutes(cursor, resolutionMinutes);
-    buckets.push(createEmptyBucket(cursor, next, window.resolution));
-    cursor = next;
-  }
-
-  return buckets;
-}
-
-function getBucketDurationMs(bucket: UnifiedTimelineBucket): number {
-  return (
-    new Date(bucket.timestampEnd).getTime() -
-    new Date(bucket.timestampStart).getTime()
-  );
-}
-
-function getOverlapMs(
-  eventStartIso: string,
-  eventEndIso: string,
-  bucket: UnifiedTimelineBucket,
-): number {
-  const eventStart = new Date(eventStartIso).getTime();
-  const eventEnd = new Date(eventEndIso).getTime();
-  const bucketStart = new Date(bucket.timestampStart).getTime();
-  const bucketEnd = new Date(bucket.timestampEnd).getTime();
-  const start = Math.max(eventStart, bucketStart);
-  const end = Math.min(eventEnd, bucketEnd);
-
-  return Math.max(0, end - start);
-}
-
 function incrementCoverage<T extends string>(
   coverage: Partial<Record<T, number>>,
   key: T,
@@ -164,27 +126,23 @@ function markBucketCoverage(
   bucket.hasAnyData = true;
 }
 
-function toOverlapWeight(
-  event: ZentraEventRecord,
-  bucket: UnifiedTimelineBucket,
+// Share of an event that falls in a bucket; a point event counts whole in the
+// bucket that contains it. Callers pass timestamps already parsed once.
+function overlapWeight(
+  eventStartMs: number,
+  eventEndMs: number,
+  bucketStartMs: number,
+  bucketEndMs: number,
 ): number {
-  const eventStart = event.timestampStart;
-  const eventEnd =
-    event.timestampEnd > event.timestampStart
-      ? event.timestampEnd
-      : event.timestampStart;
-  const eventStartMs = new Date(eventStart).getTime();
-  const eventEndMs = new Date(eventEnd).getTime();
   const durationMs = eventEndMs - eventStartMs;
-
-  // Point-in-time events (start === end): return 1 if the point falls inside the bucket
   if (durationMs <= 0) {
-    const bucketStartMs = new Date(bucket.timestampStart).getTime();
-    const bucketEndMs = new Date(bucket.timestampEnd).getTime();
     return eventStartMs >= bucketStartMs && eventStartMs < bucketEndMs ? 1 : 0;
   }
 
-  const overlapMs = getOverlapMs(eventStart, eventEnd, bucket);
+  const overlapMs = Math.max(
+    0,
+    Math.min(eventEndMs, bucketEndMs) - Math.max(eventStartMs, bucketStartMs),
+  );
   return overlapMs / durationMs;
 }
 
@@ -239,7 +197,7 @@ function* sensorStepDeltaWork(
   }
   yield;
   sensorSteps.sort((left, right) =>
-    left.timestampStart.localeCompare(right.timestampStart),
+    compareTimestamps(left.timestampStart, right.timestampStart),
   );
   const deltas = new Map<string, number>();
   let previousCount: number | null = null;
@@ -406,8 +364,8 @@ function applyEventToBucket(
   bucket: UnifiedTimelineBucket,
   event: ZentraEventRecord,
   sensorStepDeltas: Map<string, number>,
+  weight: number,
 ): void {
-  const weight = toOverlapWeight(event, bucket);
   if (weight <= 0) {
     return;
   }
@@ -485,29 +443,43 @@ function finalizeBucket(bucket: UnifiedTimelineBucket): UnifiedTimelineBucket {
   };
 }
 
+interface RawTimelineOptions {
+  /** Skip hour labels when only the bucket values are kept, as for stored days. */
+  labels?: boolean;
+}
+
+// Applications between yield points: fine-grained enough for an 8 ms slice
+// without paying a generator resume and a clock read for every event.
+const EVENTS_PER_YIELD = 64;
+
 function* rawTimelineWork(
   events: ZentraEventRecord[],
   window: UnifiedTimelineWindow,
+  options: RawTimelineOptions = {},
 ): Generator<void, UnifiedTimelineBucket[]> {
+  const withLabels = options.labels !== false;
   const buckets: UnifiedTimelineBucket[] = [];
-  const resolutionMinutes = getResolutionMinutes(window.resolution);
+  const bucketStartMs: number[] = [];
+  const bucketEndMs: number[] = [];
+  const resolutionMs = getResolutionMinutes(window.resolution) * 60_000;
+  const windowStartMs = new Date(window.startTimestamp).getTime();
+  const windowEndMs = new Date(window.endTimestamp).getTime();
   for (
-    let cursor = new Date(window.startTimestamp);
-    cursor < new Date(window.endTimestamp);
-    cursor = addMinutes(cursor, resolutionMinutes)
+    let startMs = windowStartMs;
+    startMs < windowEndMs;
+    startMs += resolutionMs
   ) {
+    const endMs = Math.min(startMs + resolutionMs, windowEndMs);
     buckets.push(
       createEmptyBucket(
-        cursor,
-        new Date(
-          Math.min(
-            addMinutes(cursor, resolutionMinutes).getTime(),
-            new Date(window.endTimestamp).getTime(),
-          ),
-        ),
+        new Date(startMs),
+        new Date(endMs),
         window.resolution,
+        withLabels,
       ),
     );
+    bucketStartMs.push(startMs);
+    bucketEndMs.push(endMs);
     yield;
   }
 
@@ -515,12 +487,10 @@ function* rawTimelineWork(
     return buckets;
   }
 
-  const resolutionMs = getResolutionMinutes(window.resolution) * 60_000;
-  const windowStartMs = new Date(window.startTimestamp).getTime();
-  const windowEndMs = new Date(window.endTimestamp).getTime();
   events = yield* resolvedTimelineEventsWork(events);
   const sensorStepDeltas = yield* sensorStepDeltaWork(events);
 
+  let applied = 0;
   for (const event of events) {
     if (event.metadata.coverage_window === true) continue;
     const eventStartMs = new Date(event.timestampStart).getTime();
@@ -545,8 +515,18 @@ function* rawTimelineWork(
     );
 
     for (let i = firstBucket; i <= lastBucket; i++) {
-      applyEventToBucket(buckets[i], event, sensorStepDeltas);
-      yield;
+      applyEventToBucket(
+        buckets[i],
+        event,
+        sensorStepDeltas,
+        overlapWeight(
+          eventStartMs,
+          eventEndMs,
+          bucketStartMs[i],
+          bucketEndMs[i],
+        ),
+      );
+      if (++applied % EVENTS_PER_YIELD === 0) yield;
     }
   }
 
@@ -949,9 +929,10 @@ export async function buildUnifiedTimelineAsync(
   window: UnifiedTimelineWindow,
   signal?: AbortSignal,
   maxima?: ActivityScoreMaxima,
+  options?: RawTimelineOptions,
 ): Promise<UnifiedTimelineBucket[]> {
   const buckets = await runCooperatively(
-    rawTimelineWork(events, window),
+    rawTimelineWork(events, window, options),
     signal,
   );
   return runCooperatively(
@@ -1053,11 +1034,6 @@ function* partitionEventsByDateWork(
   return eventsByDate;
 }
 
-const patternDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-});
-
 function createPatternDayCell(
   date: string,
   summary: ReturnType<typeof summarizeTimeline>,
@@ -1071,7 +1047,10 @@ function createPatternDayCell(
       next,
       summary,
       String(current.getDate()),
-      patternDateFormatter.format(current),
+      localDateFormatter("pattern-day", {
+        month: "short",
+        day: "numeric",
+      }).format(current),
     ),
     placeholder: false,
   };
@@ -1145,21 +1124,28 @@ export function buildPatternDayCellFromSamples(
   );
 }
 
-/** Lay day cells onto the four-week grid and normalize intensity across it. */
+/**
+ * Lay day cells onto the four-week grid and normalize intensity across it.
+ * A past day in `pendingDates` is still being loaded: it is drawn as a
+ * placeholder, like a future day, rather than as a day with no records.
+ */
 export function assembleMonthlyActivityPattern(
   anchorDate: string,
   dayCells: Map<string, ActivityPatternDayCell>,
+  pendingDates?: ReadonlySet<string>,
 ): ActivityPatternCell[] {
   const cells = getMonthlyPatternGrid(anchorDate).map(
     (date, offset): ActivityPatternDayCell => {
       if (date <= anchorDate) {
-        return (
-          dayCells.get(date) ??
+        const empty = () =>
           createPatternDayCell(date, {
             hasAnyData: false,
             intensityScore: 0,
             restCompositeScore: 0,
-          })
+          });
+        return (
+          dayCells.get(date) ??
+          (pendingDates?.has(date) ? { ...empty(), placeholder: true } : empty())
         );
       }
 
@@ -1184,6 +1170,77 @@ export function assembleMonthlyActivityPattern(
   );
 
   return normalizePatternIntensity(cells);
+}
+
+/**
+ * A grid saved on `savedOn`, as [date, cell] pairs in grid order.
+ *
+ * A saved grid is one cell per grid date, so a cell's date is its position.
+ * Its timestamps cannot say: they are local midnight where the grid was
+ * saved, which is another date once the device is in another time zone. Each
+ * cell is therefore re-anchored to its date here and now, so what is drawn,
+ * and what a tap looks up, is that calendar day.
+ */
+function savedPatternGrid(
+  cells: ActivityPatternCell[],
+  savedOn: string,
+): [string, ActivityPatternCell][] {
+  const grid = getMonthlyPatternGrid(savedOn);
+  if (cells.length !== grid.length) return [];
+  return cells.map((cell, index) => {
+    const date = grid[index];
+    const start = parseISODate(date).toISOString();
+    return [
+      date,
+      {
+        ...cell,
+        // A future day's placeholder is identified by its position instead.
+        id: date > savedOn ? cell.id : `month-${start}`,
+        startTimestamp: start,
+        endTimestamp: parseISODate(shiftISODate(date, 1)).toISOString(),
+      },
+    ];
+  });
+}
+
+/** A grid saved earlier today, as it should be drawn now. */
+export function restoreSavedPattern(
+  cells: ActivityPatternCell[],
+  savedOn: string,
+): ActivityPatternCell[] {
+  return savedPatternGrid(cells, savedOn).map(([, cell]) => cell);
+}
+
+/**
+ * The full days of a grid saved on `savedOn`, by local date. The cell for
+ * `savedOn` itself is left out: it only held the part of that day so far.
+ */
+export function patternDayCellsByDate(
+  cells: ActivityPatternCell[],
+  savedOn: string,
+): Map<string, ActivityPatternDayCell> {
+  const byDate = new Map<string, ActivityPatternDayCell>();
+  for (const [date, cell] of savedPatternGrid(cells, savedOn))
+    if (!cell.placeholder && date < savedOn) byDate.set(date, cell);
+  return byDate;
+}
+
+/**
+ * A grid saved on an earlier day, laid onto the grid for `anchorDate`. Days
+ * it has no full cell for are pending until their history loads.
+ */
+export function carryPatternCellsForward(
+  anchorDate: string,
+  savedCells: ActivityPatternCell[],
+  savedOn: string,
+): ActivityPatternCell[] {
+  const dayCells = patternDayCellsByDate(savedCells, savedOn);
+  const pending = new Set(
+    getMonthlyPatternGrid(anchorDate).filter(
+      (date) => date <= anchorDate && !dayCells.has(date),
+    ),
+  );
+  return assembleMonthlyActivityPattern(anchorDate, dayCells, pending);
 }
 
 export async function buildMonthlyActivityPatternAsync(

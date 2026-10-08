@@ -38,8 +38,9 @@ import {
   getLocalDatesForEvents,
   getRangeBounds,
 } from "@/utils/repository-aggregates";
-import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import { compareTimestamps, parseISODate, shiftISODate, toISODate } from "@/utils/dates";
 import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
+import { ACTIVITY_MAXIMA_EVENT_TYPES } from "@/utils/activity-intensity";
 
 export interface EventRow {
   id: string;
@@ -226,7 +227,7 @@ async function getEventsBetweenWithDatabase(
   return events;
 }
 
-function* decodeEventRowsWork(
+export function* decodeEventRowsWork(
   rows: EventRow[],
 ): Generator<void, ZentraEventRecord[]> {
   const events: ZentraEventRecord[] = [];
@@ -247,6 +248,8 @@ async function readEventRange(
   start: string,
   end: string,
   filter?: { where: string; params: string[] },
+  // Only for a caller that already discards a result a write landed in.
+  validate = true,
 ): Promise<ZentraEventRecord[]> {
   const { startIso, endExclusiveIso } = getRangeBounds(start, end);
   const stopRead = startPerfTimer("repository.range_read");
@@ -269,7 +272,7 @@ async function readEventRange(
       params: filter?.params,
     },
     mapEventRow,
-    { revision: () => getRepositoryRevision(start, end) },
+    validate ? { revision: () => getRepositoryRevision(start, end) } : {},
   );
   stopRead({ rows: events.length });
   assertRepositoryEpoch(epoch);
@@ -311,7 +314,7 @@ async function getAggregateEventsForDateWithDatabase(
   });
 
   return Array.from(eventsById.values()).sort((left, right) =>
-    left.timestampStart.localeCompare(right.timestampStart),
+    compareTimestamps(left.timestampStart, right.timestampStart),
   );
 }
 
@@ -437,30 +440,17 @@ export async function getStoredEventCount(): Promise<number> {
   });
 }
 
-export async function getRepositoryDateBounds(): Promise<{
-  end: string;
-  start: string;
-} | null> {
+/**
+ * Local date of the earliest stored event. Reads one entry of the timestamp
+ * index; the latest end time has no index and would scan the whole table.
+ */
+export async function getRepositoryFirstDate(): Promise<string | null> {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
-    const row = await database.getFirstAsync<{
-      max_timestamp_end: string | null;
-      min_timestamp_start: string | null;
-    }>(
-      `SELECT
-        MIN(timestamp_start) AS min_timestamp_start,
-        MAX(timestamp_end) AS max_timestamp_end
-        FROM events`,
+    const row = await database.getFirstAsync<{ first: string | null }>(
+      "SELECT MIN(timestamp_start) AS first FROM events",
     );
-
-    if (!row?.min_timestamp_start || !row.max_timestamp_end) {
-      return null;
-    }
-
-    return {
-      end: toISODate(new Date(row.max_timestamp_end)),
-      start: toISODate(new Date(row.min_timestamp_start)),
-    };
+    return row?.first ? toISODate(new Date(row.first)) : null;
   });
 }
 
@@ -1042,17 +1032,40 @@ export async function getEventsOverlappingDay(
  */
 export async function getEventsForDayScoring(
   date: string,
+  options: {
+    /** Only the event types that feed the normalization maxima. */
+    maximaOnly?: boolean;
+    /**
+     * False for the stored-day cache: it files a day under the revision it
+     * read before the events, so a day a write landed in is already recomputed.
+     */
+    validate?: boolean;
+  } = {},
 ): Promise<ZentraEventRecord[]> {
   const day = getRangeBounds(date, date);
+  const types = options.maximaOnly
+    ? ` AND data_type IN (${ACTIVITY_MAXIMA_EVENT_TYPES.map((type) => `'${type}'`).join(",")})`
+    : "";
   return readEventRange(
     shiftISODate(date, -1),
     shiftISODate(date, SLEEP_NIGHT_DAYS_AFTER),
     {
-      where:
-        "(data_type = 'sleep_inferred' OR (timestamp_start < ? AND timestamp_end >= ?))",
+      where: `(data_type = 'sleep_inferred' OR (timestamp_start < ? AND timestamp_end >= ?${types}))`,
       params: [day.endExclusiveIso, day.startIso],
     },
+    options.validate !== false,
   );
+}
+
+/** Imported step records in a local date range, without the other event types. */
+export async function getHealthStepEventsForRange(
+  start: string,
+  end: string,
+): Promise<ZentraEventRecord[]> {
+  return readEventRange(start, end, {
+    where: "data_type = 'steps' AND source = 'health_connect'",
+    params: [],
+  });
 }
 
 /** Records from the previous day that are still running at local midnight. */

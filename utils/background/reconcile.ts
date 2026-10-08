@@ -118,8 +118,10 @@ export async function runImportantCollectorReconcile(
     if (!boundedReason && activityHistoryRemaining)
       boundedReason = "activity_history_remaining";
 
-    // Housekeeping only: a failure here must not fail the reconcile.
-    if (!boundedReason && !budgetExceeded(startedAtMs, options.budgetMs))
+    // Housekeeping only: a failure here must not fail the reconcile. It runs
+    // whenever time remains, even after a bounded reconcile: an uncompacted
+    // change table is what makes the stored-day checks slow.
+    if (!budgetExceeded(startedAtMs, options.budgetMs))
       await compactEventChanges({
         budgetMs:
           options.budgetMs == null

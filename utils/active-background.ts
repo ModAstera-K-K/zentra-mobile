@@ -1,9 +1,10 @@
 import {
   enqueueDatabaseOperation,
-  getEventsForRange,
+  getHealthStepEventsForRange,
   getDailyAggregateForDate,
 } from "@/utils/event-repository";
 import { getLocalDatabase } from "@/utils/local-database";
+import { ACTIVE_TIMING_CHANGE_TYPE } from "@/utils/repository-revision";
 import { parseISODate, shiftISODate } from "@/utils/dates";
 import { readHealthStepTiming } from "@/utils/native/zentra-native-signals";
 import { timingProfileEventsAsync } from "@/utils/active-timing-profile";
@@ -55,16 +56,10 @@ async function refreshProfile(
     ),
   );
   if (cached && String(cached.revision) === revision) return;
-  const raw = await getEventsForRange(shiftISODate(date, -1), date);
-  if (
-    !raw.some(
-      (e) =>
-        e.dataType === "steps" &&
-        e.source === "health_connect" &&
-        e.metadata.stale_import !== true,
-    )
-  )
-    return;
+  // The profile is built from imported step records alone; reading every
+  // event type here cost two full days of rows per refreshed day.
+  const raw = await getHealthStepEventsForRange(shiftISODate(date, -1), date);
+  if (!raw.some((e) => e.metadata.stale_import !== true)) return;
   const start = parseISODate(date).toISOString(),
     end = parseISODate(shiftISODate(date, 1)).toISOString();
   assertActive();
@@ -84,9 +79,10 @@ async function refreshProfile(
       );
       // Committed derived evidence also invalidates subscribed views without changing raw step totals.
       await db.runAsync(
-        "INSERT INTO event_changes(start_date,end_date,data_type) VALUES(?,?,'activity')",
+        "INSERT INTO event_changes(start_date,end_date,data_type) VALUES(?,?,?)",
         date,
         date,
+        ACTIVE_TIMING_CHANGE_TYPE,
       );
     });
   });

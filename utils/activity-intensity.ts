@@ -1,9 +1,27 @@
 import type {
   ActivityNormalizationWindow,
   ActivityScoreMaxima,
+  EventDataType,
   UnifiedTimelineBucket,
 } from "@/types/zentra";
 import { shiftISODate } from "@/utils/dates";
+
+/**
+ * The only event types that feed the normalization maxima. A day scored for
+ * its maxima alone can skip every other type (the high-rate motion, light and
+ * battery samples), which is most of what a cold window would otherwise read.
+ */
+export const ACTIVITY_MAXIMA_EVENT_TYPES: EventDataType[] = [
+  "steps",
+  "activity",
+  "location",
+  "heart_rate",
+  "exercise_session",
+  "sleep_inferred",
+  "screen_state",
+  "app_usage",
+  "unlock_event",
+];
 
 export function getActivityNormalizationRange(
   anchorDate: string,

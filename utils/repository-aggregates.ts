@@ -11,6 +11,7 @@ import type {
   ZentraEventRecord,
 } from "@/types/zentra";
 import {
+  compareTimestamps,
   enumerateISODateRange,
   parseISODate,
   shiftISODate,
@@ -42,7 +43,7 @@ export function computeCumulativeSteps(events: ZentraEventRecord[]): number {
         typeof event.valueNumeric === "number",
     )
     .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
+      compareTimestamps(left.timestampStart, right.timestampStart),
     );
 
   if (!sensorSteps.length) {
@@ -108,7 +109,7 @@ function extractLocationSamples(events: ZentraEventRecord[]): LocationSample[] {
     });
 
   return samples.sort((left, right) =>
-    left.timestamp.localeCompare(right.timestamp),
+    compareTimestamps(left.timestamp, right.timestamp),
   );
 }
 
@@ -252,12 +253,12 @@ export function buildTodaySnapshot(
         event.dataType === "steps" && typeof event.valueNumeric === "number",
     )
     .sort((left, right) =>
-      right.timestampStart.localeCompare(left.timestampStart),
+      compareTimestamps(right.timestampStart, left.timestampStart),
     );
   const batteryEvents = events
     .filter((event) => event.dataType === "charging_state")
     .sort((left, right) =>
-      right.timestampStart.localeCompare(left.timestampStart),
+      compareTimestamps(right.timestampStart, left.timestampStart),
     );
   const latestBatteryEvent = batteryEvents[0];
   const latestBatteryLevelEvent = batteryEvents.find(

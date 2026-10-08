@@ -31,6 +31,7 @@ import {
   getHealthPlatformName,
 } from "@/utils/platform-capabilities";
 import { parseLocationPayload } from "./location-trends";
+import { compareTimestamps } from "@/utils/dates";
 
 const CORE_SIGNAL_TYPES: EventDataType[] = [
   "steps",
@@ -506,7 +507,7 @@ function sortEventsDescending(
   return events
     .slice()
     .sort((left, right) =>
-      right.timestampStart.localeCompare(left.timestampStart),
+      compareTimestamps(right.timestampStart, left.timestampStart),
     );
 }
 
@@ -514,7 +515,7 @@ function sortEventsAscending(events: ZentraEventRecord[]): ZentraEventRecord[] {
   return events
     .slice()
     .sort((left, right) =>
-      left.timestampStart.localeCompare(right.timestampStart),
+      compareTimestamps(left.timestampStart, right.timestampStart),
     );
 }
 
@@ -608,7 +609,7 @@ function buildStepsVisual(
   // Compute deltas for sensor-sourced step events (cumulative counters)
   const sensorEvents = stepEvents
     .filter((e) => e.source === "sensor")
-    .sort((a, b) => a.timestampStart.localeCompare(b.timestampStart));
+    .sort((a, b) => compareTimestamps(a.timestampStart, b.timestampStart));
   const sensorDeltas = new Map<string, number>();
   let prevCount: number | null = null;
   for (const event of sensorEvents) {

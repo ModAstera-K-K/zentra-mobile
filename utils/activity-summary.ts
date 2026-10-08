@@ -1,4 +1,5 @@
 import type { ZentraEventRecord } from "@/types/zentra";
+import { compareTimestamps } from "@/utils/dates";
 
 export interface ActivityCountSummary {
   count: number;
@@ -33,7 +34,7 @@ export function getLatestActivityEvent(
   const latest = getActivityEvents(events)
     .slice()
     .sort((left, right) =>
-      right.timestampStart.localeCompare(left.timestampStart),
+      compareTimestamps(right.timestampStart, left.timestampStart),
     )[0];
 
   return latest ?? null;

@@ -8,6 +8,50 @@ export function toISODate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/**
+ * Order stored UTC timestamps. For these strings a plain comparison gives the
+ * same order as localeCompare and as SQLite's ORDER BY, without the collator
+ * call that makes localeCompare many times slower on Hermes.
+ */
+export function compareTimestamps(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+// Two fixed instants, one in each half of the year. Their UTC offsets change
+// whenever the device moves to a time zone with a different clock, and reading
+// them is two Date calls.
+const TIME_ZONE_PROBES = [
+  new Date(Date.UTC(2026, 0, 1)),
+  new Date(Date.UTC(2026, 6, 1)),
+];
+let formatterClock = "";
+const localFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * A shared `en-US` formatter for local dates and times. Constructing one is
+ * costly on Hermes, so callers that format in a loop share it by `name`.
+ *
+ * A formatter keeps the time zone it was constructed in, so the shared ones
+ * are dropped when the device's clock changes: otherwise a label would keep
+ * showing the old zone's time, or the old zone's date for a local midnight.
+ */
+export function localDateFormatter(
+  name: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const clock = `${TIME_ZONE_PROBES[0].getTimezoneOffset()}:${TIME_ZONE_PROBES[1].getTimezoneOffset()}`;
+  if (clock !== formatterClock) {
+    localFormatters.clear();
+    formatterClock = clock;
+  }
+  let formatter = localFormatters.get(name);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", options);
+    localFormatters.set(name, formatter);
+  }
+  return formatter;
+}
+
 export function parseISODate(value: string): Date {
   return new Date(`${value}T00:00:00`);
 }

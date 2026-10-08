@@ -18,7 +18,7 @@ export async function activityRevision(
   date: string,
 ): Promise<string> {
   const row = await db.getFirstAsync<{ revision: number }>(
-    `SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session') AND start_date <= ? AND end_date >= ?`,
+    `SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session','active_timing') AND start_date <= ? AND end_date >= ?`,
     shiftISODate(date, 1),
     shiftISODate(date, -1),
   );
@@ -77,7 +77,7 @@ export async function cachedActiveMinutes(
   }
   // A single bounded read; no history reconstruction or native queries on this path.
   const history = await db.getAllAsync<{ payload: string; cache_key: string }>(
-    `SELECT c.payload,c.cache_key FROM derived_cache c WHERE c.cache_key >= ? AND c.cache_key < ? AND CAST(c.revision AS INTEGER) = (SELECT COALESCE(MAX(revision),0) FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session') AND start_date <= date(json_extract(c.payload,'$.date'),'+1 day') AND end_date >= date(json_extract(c.payload,'$.date'),'-1 day'))`,
+    `SELECT c.payload,c.cache_key FROM derived_cache c WHERE c.cache_key >= ? AND c.cache_key < ? AND CAST(c.revision AS INTEGER) = (SELECT COALESCE(MAX(revision),0) FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session','active_timing') AND start_date <= date(json_extract(c.payload,'$.date'),'+1 day') AND end_date >= date(json_extract(c.payload,'$.date'),'-1 day'))`,
     `active-minutes-v3:${shiftISODate(date, -30)}:`,
     `active-minutes-v3:${date}:`,
   );
@@ -108,7 +108,7 @@ export async function summaryRevision(
   date: string,
 ): Promise<string> {
   const row = await db.getFirstAsync<{ revision: number }>(
-    "SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session') AND start_date <= ? AND end_date >= ?",
+    "SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session','active_timing') AND start_date <= ? AND end_date >= ?",
     shiftISODate(date, 1),
     shiftISODate(date, -31),
   );

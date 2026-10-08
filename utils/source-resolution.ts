@@ -1,7 +1,7 @@
 import { sleepTimelineEvents } from "@/utils/sleep-timeline";
 import { sleepIntervals } from "@/utils/sleep-intervals";
 import type { ZentraEventRecord } from "@/types/zentra";
-import { toISODate } from "@/utils/dates";
+import { compareTimestamps, toISODate } from "@/utils/dates";
 import { selectSleepForWakeDate } from "@/utils/sleep-selection";
 
 export function sourceIdentity(event: ZentraEventRecord): string {
@@ -43,7 +43,7 @@ export function selectResolvedStepEvents(
 
 export function resolveStepTotal(events: ZentraEventRecord[]): number | null {
   const selected = selectResolvedStepEvents(events).sort((a, b) =>
-    a.timestampStart.localeCompare(b.timestampStart),
+    compareTimestamps(a.timestampStart, b.timestampStart),
   );
   if (!selected.length) return null;
   let total = 0;
@@ -137,8 +137,8 @@ export function resolvedSleepMinutes(
 export function recordedDurationMinutes(events: ZentraEventRecord[]): number {
   const sorted = [...events].sort(
     (a, b) =>
-      a.timestampStart.localeCompare(b.timestampStart) ||
-      b.timestampEnd.localeCompare(a.timestampEnd),
+      compareTimestamps(a.timestampStart, b.timestampStart) ||
+      compareTimestamps(b.timestampEnd, a.timestampEnd),
   );
   let previousEnd = -Infinity,
     total = 0;

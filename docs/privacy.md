@@ -24,7 +24,7 @@ Zentra is designed to run locally on the device.
 - Local app state such as collector toggles, export timestamp, data mode, onboarding state, and location retention preference is stored in AsyncStorage.
 - Current signal snapshots such as recent location samples and latest step or battery state are stored locally in AsyncStorage.
 - Theme preference is stored locally in AsyncStorage when the user selects a non-system theme.
-- The last computed Today activity pattern (28 daily scores and their normalization maxima) is stored locally in AsyncStorage so the next open of the same day can show it immediately.
+- The last computed Today activity pattern (28 daily scores and their normalization maxima) is stored locally in AsyncStorage so the next open can show it immediately; a grid saved on an earlier day is reused for the days it shares with the current one.
 
 ## Export behavior verified against the current code
 
