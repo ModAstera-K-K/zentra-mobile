@@ -3,7 +3,11 @@ import { buildMetricObservation } from "@/utils/metric-observations";
 import { sleepEventsByWakeDate } from "@/utils/sleep-wake-date";
 import { sleepTimelineEvents } from "@/utils/sleep-timeline";
 import { resolvedSleepMinutes } from "@/utils/source-resolution";
-import type { ActivityScoreInput } from "@/utils/activity-intensity";
+import {
+  buildActivityScoreInputMaxima,
+  mergeActivityScoreMaxima,
+  type ActivityScoreInput,
+} from "@/utils/activity-intensity";
 import {
   TREND_DAYPARTS,
   buildTrendDaySummary,
@@ -12,7 +16,6 @@ import {
 } from "@/utils/trend-day-summary";
 import { buildPatternDayCellFromSamples } from "@/utils/unified-timeline";
 import type {
-  ActivityScoreMaxima,
   DailyAggregateRecord,
   HeatmapCell,
   TrendDetailBar,
@@ -22,7 +25,12 @@ import type {
   TrendSurface,
   ZentraEventRecord,
 } from "@/types/zentra";
-import { enumerateISODateRange, parseISODate, toISODate } from "@/utils/dates";
+import {
+  enumerateISODateRange,
+  localDateFormatter,
+  parseISODate,
+  toISODate,
+} from "@/utils/dates";
 import { formatMinutes, formatNumber } from "@/utils/format";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -41,26 +49,21 @@ const HEATMAP_HOURS = [
   "22",
 ];
 
-// Constructing an Intl formatter is costly on Hermes, and a range builds one
-// label per point per series: share two formatters instead.
-let weekdayLabelFormatter: Intl.DateTimeFormat | null = null;
-let dateLabelFormatter: Intl.DateTimeFormat | null = null;
-
+// A range builds one label per point per series, so the formatters are the
+// shared ones, which also follow the device into a new time zone.
 function formatTrendLabel(dateValue: string, totalPoints: number): string {
   const date = parseISODate(dateValue);
 
   if (totalPoints <= 14) {
-    weekdayLabelFormatter ??= new Intl.DateTimeFormat("en-US", {
-      weekday: "short",
-    });
-    return weekdayLabelFormatter.format(date);
+    return localDateFormatter("trend-weekday", { weekday: "short" }).format(
+      date,
+    );
   }
 
-  dateLabelFormatter ??= new Intl.DateTimeFormat("en-US", {
+  return localDateFormatter("trend-date", {
     month: "numeric",
     day: "numeric",
-  });
-  return dateLabelFormatter.format(date);
+  }).format(date);
 }
 
 function calculateVariability(values: number[]): number {
@@ -378,13 +381,20 @@ export interface TrendCompositeValues {
 
 /**
  * Daily activity intensity and rest from stored hourly samples, normalized
- * against `maxima` (the selected range's own maxima).
+ * against the maxima of `dates` themselves. `samplesByDate` may hold other
+ * days (the day before the range is loaded for the range-wide cards); a day
+ * outside `dates` never sets the scale.
  */
 export function buildTrendCompositeValues(
   dates: string[],
   samplesByDate: ReadonlyMap<string, ActivityScoreInput[]>,
-  maxima: ActivityScoreMaxima,
 ): TrendCompositeValues {
+  let maxima = buildActivityScoreInputMaxima([]);
+  for (const date of dates)
+    maxima = mergeActivityScoreMaxima(
+      maxima,
+      buildActivityScoreInputMaxima(samplesByDate.get(date) ?? []),
+    );
   const values: TrendCompositeValues = { intensityValues: [], restValues: [] };
   for (const date of dates) {
     const cell = buildPatternDayCellFromSamples(

@@ -15,6 +15,11 @@ import {
   buildTrendCompositeValues,
   trendInputsFromEvents,
 } from "@/utils/live-trends";
+import {
+  hasLoadFailure,
+  noteLoadResult,
+  type LoadFailures,
+} from "@/utils/load-failures";
 import { readDatesWithEvents } from "@/utils/repository-aggregates";
 import { sleepNightSummaries } from "@/utils/sleep-night-summaries";
 import { selectSleepForWakeDate } from "@/utils/sleep-selection";
@@ -258,23 +263,62 @@ test("a day whose summary has not loaded yet is a gap, not a zero", () => {
   assert.deepEqual(values(series, "inferredSleep"), [null, null, 360]);
 });
 
-test("daily composite scores come from stored hourly samples and the range maxima", () => {
+test("daily composite scores are scaled by the selected days alone", () => {
   const hour = (steps: number) => ({
     ...buildActivityScoreMaxima([]),
     hasAnyData: true,
     steps,
   });
-  const composite = buildTrendCompositeValues(
-    ["2026-09-18", "2026-09-19", "2026-09-20"],
-    new Map([
-      ["2026-09-18", [hour(500), hour(1000)]],
-      ["2026-09-20", [{ ...hour(0), hasAnyData: false }, hour(250)]],
-    ]),
-    { ...buildActivityScoreMaxima([]), steps: 1000 },
-  );
-  // Mean hourly intensity over the hours that have data; a day without samples is 0.
+  const range = ["2026-09-18", "2026-09-19", "2026-09-20"];
+  const samples = new Map([
+    ["2026-09-18", [hour(500), hour(1000)]],
+    ["2026-09-20", [{ ...hour(0), hasAnyData: false }, hour(250)]],
+  ]);
+  const composite = buildTrendCompositeValues(range, samples);
+  // The range's busiest hour is 1000 steps. Each day is the mean hourly
+  // intensity over its hours with data; a day without samples is 0.
   assert.deepEqual(composite.intensityValues, [75, 0, 25]);
   assert.deepEqual(composite.restValues, [25, 0, 75]);
+
+  // The day before the range is loaded for the range-wide cards. However
+  // large its values, it is not one of the selected days and sets no scale.
+  samples.set("2026-09-17", [hour(50_000)]);
+  assert.deepEqual(buildTrendCompositeValues(range, samples), composite);
+  // Selected, it does.
+  assert.deepEqual(
+    buildTrendCompositeValues(["2026-09-17", ...range], samples)
+      .intensityValues,
+    [100, 2, 0, 1],
+  );
+});
+
+test("one load failing is not cleared by the other succeeding", () => {
+  type Load = "history" | "records";
+  let failures: LoadFailures<Load> | null = null;
+  const note = (scope: string, load: Load, failed: boolean) =>
+    (failures = noteLoadResult(failures, scope, load, failed));
+
+  note("30d", "records", true);
+  // The order from the review: records fails, then history finishes.
+  note("30d", "history", false);
+  assert.equal(hasLoadFailure(failures, "30d"), true);
+  note("30d", "history", true);
+  note("30d", "records", false);
+  assert.equal(hasLoadFailure(failures, "30d"), true, "history still failed");
+  note("30d", "history", false);
+  assert.equal(hasLoadFailure(failures, "30d"), false);
+
+  // A failure belongs to the range it happened in.
+  note("30d", "records", true);
+  assert.equal(hasLoadFailure(failures, "90d"), false);
+  assert.equal(hasLoadFailure(failures, undefined), false);
+  note("90d", "history", false);
+  assert.equal(hasLoadFailure(failures, "30d"), false);
+
+  // Nothing changed: the same value, so a state update is a no-op.
+  note("90d", "history", true);
+  const before = failures;
+  assert.equal(note("90d", "history", true), before);
 });
 
 // The per-date grouping this replaced, kept as the reference behaviour.

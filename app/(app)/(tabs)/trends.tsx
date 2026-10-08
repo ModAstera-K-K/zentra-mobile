@@ -22,7 +22,6 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import { useIsFocused } from "@react-navigation/native";
 import type {
-  ActivityScoreMaxima,
   DailyAggregateRecord,
   TrendRange,
   TrendSeries,
@@ -39,11 +38,7 @@ import {
   startActivityCacheSession,
   type ActivityCacheSession,
 } from "@/utils/activity-cache-session";
-import {
-  buildActivityScoreMaxima,
-  mergeActivityScoreMaxima,
-  type ActivityScoreInput,
-} from "@/utils/activity-intensity";
+import type { ActivityScoreInput } from "@/utils/activity-intensity";
 import {
   enumerateISODateRange,
   formatDateRangeLabel,
@@ -77,6 +72,11 @@ import {
   buildTrendSeries,
   createDemoCollectors,
 } from "@/utils/mock-data";
+import {
+  hasLoadFailure,
+  noteLoadResult,
+  type LoadFailures,
+} from "@/utils/load-failures";
 import { startPerfTimer } from "@/utils/perf";
 import { useShallow } from "zustand/react/shallow";
 
@@ -98,7 +98,6 @@ interface TrendTodayPart {
   scopeKey: string;
   summary: TrendDaySummary;
   samples: ActivityScoreInput[];
-  maxima: ActivityScoreMaxima;
 }
 
 interface LiveTrends {
@@ -127,10 +126,11 @@ export default function TrendsScreen() {
     return { start: shiftISODate(end, -13), end };
   });
   const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
-  // The scope whose load failed, so the screen stops saying it is loading.
-  const [failedScopeKey, setFailedScopeKey] = React.useState<string | null>(
-    null,
-  );
+  // Which of the range's two loads failed, so the screen stops saying it is
+  // loading. Each is cleared only by its own success.
+  const [loadFailures, setLoadFailures] = React.useState<LoadFailures<
+    "history" | "records"
+  > | null>(null);
   const [hiddenSeriesKeys, setHiddenSeriesKeys] = React.useState<Set<string>>(
     new Set(),
   );
@@ -280,11 +280,17 @@ export default function TrendsScreen() {
           ),
         onHistory: (next, _revision, final) => {
           setLoadedHistory({ scopeKey, history: next });
-          if (final) setFailedScopeKey(null);
+          if (final)
+            setLoadFailures((current) =>
+              noteLoadResult(current, scopeKey, "history", false),
+            );
         },
         onLoading: setIsLoadingHistory,
         // Keep the last successful range visible; the next change retries.
-        onError: () => setFailedScopeKey(scopeKey),
+        onError: () =>
+          setLoadFailures((current) =>
+            noteLoadResult(current, scopeKey, "history", true),
+          ),
       }),
       records: startActivityCacheSession<TrendRangeRecords>({
         load: async () => {
@@ -297,8 +303,16 @@ export default function TrendsScreen() {
             ]);
           return { aggregates, sleepEvents, exerciseEvents, carriedIntoToday };
         },
-        onHistory: (next) => setLoadedRecords({ scopeKey, records: next }),
-        onError: () => setFailedScopeKey(scopeKey),
+        onHistory: (next) => {
+          setLoadedRecords({ scopeKey, records: next });
+          setLoadFailures((current) =>
+            noteLoadResult(current, scopeKey, "records", false),
+          );
+        },
+        onError: () =>
+          setLoadFailures((current) =>
+            noteLoadResult(current, scopeKey, "records", true),
+          ),
       }),
     };
     sessionsRef.current = sessions;
@@ -367,7 +381,6 @@ export default function TrendsScreen() {
           scopeKey,
           summary: buildTrendDaySummary(day, events),
           samples: buckets,
-          maxima: buildActivityScoreMaxima(buckets),
         });
       })
       .catch(() => undefined);
@@ -388,11 +401,9 @@ export default function TrendsScreen() {
     if (!history.visibleComplete && !history.trendsByDate.size) return null;
     const days = new Map(history.trendsByDate);
     const samples = new Map(history.samplesByDate);
-    let maxima = history.maxima;
     if (currentToday) {
       days.set(scope.today, currentToday.summary);
       samples.set(scope.today, currentToday.samples);
-      maxima = mergeActivityScoreMaxima(maxima, currentToday.maxima);
     }
     const inputs = {
       days,
@@ -404,10 +415,11 @@ export default function TrendsScreen() {
         records.aggregates,
         { start: scope.rangeStart, end: scope.rangeEnd },
         inputs,
+        // Scaled by the selected days alone. The loaded window also holds the
+        // day before the range, which must not set the scale.
         buildTrendCompositeValues(
           enumerateISODateRange(scope.rangeStart, scope.rangeEnd),
           samples,
-          maxima,
         ),
       ),
       surfaces: buildLiveTrendSurfaces(inputs),
@@ -428,7 +440,7 @@ export default function TrendsScreen() {
     assembled ??
     (shownLive?.epoch === repository.dataEpoch ? shownLive.live : null);
   const isLoadingLiveData =
-    !isDemoMode && !assembled && failedScopeKey !== scope?.key;
+    !isDemoMode && !assembled && !hasLoadFailure(loadFailures, scope?.key);
   // Days of the range still being scored; their points are gaps until then.
   // A day or two refreshing after new data is too brief to announce.
   const pendingDays =
