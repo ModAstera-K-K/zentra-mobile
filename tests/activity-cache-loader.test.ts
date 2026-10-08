@@ -122,6 +122,15 @@ function createStore(firstDate: string | null = START) {
     withTrendRows() {
       saveTrends = true;
     },
+    /** A wipe that lands once the stored days have been read. */
+    wipeAfterManifest() {
+      const manifest = store.manifest;
+      store.manifest = async (...range) => {
+        const days = await manifest(...range);
+        active = false;
+        return days;
+      };
+    },
     onScore(hook: ((date: string) => void) | null) {
       beforeScore = hook;
     },
@@ -351,6 +360,38 @@ test("Trends summaries are stored with a drawn day and only missing ones are sco
     assert.deepEqual(again.trendsByDate.get("2026-09-20")?.heartRate, [2, 1]);
   } finally {
     fixture.db.close();
+  }
+});
+
+test("stored days read before a wipe are never reported after it", async () => {
+  const warm = createStore();
+  const stale = createStore();
+  try {
+    // Every day stored and current: the load would return without scoring.
+    for (const date of enumerateISODateRange(START, END)) warm.write(date);
+    await warm.load();
+    warm.wipeAfterManifest();
+    let reports = 0;
+    await assert.rejects(
+      warm.load(undefined, () => reports++),
+      /cleared/,
+    );
+    assert.equal(reports, 0);
+
+    // A day to rescore: the stored values would be reported first.
+    for (const date of enumerateISODateRange(START, END)) stale.write(date);
+    await stale.load();
+    stale.write("2026-09-20");
+    stale.wipeAfterManifest();
+    await assert.rejects(
+      stale.load(undefined, () => reports++),
+      /cleared/,
+    );
+    assert.equal(reports, 0);
+    assert.equal(stale.scored.length, 0);
+  } finally {
+    warm.db.close();
+    stale.db.close();
   }
 });
 

@@ -141,6 +141,9 @@ export async function loadActivityHistoryFrom(
   let visibleRemaining = visibleTodo.length;
   let remaining = visibleTodo.length + olderTodo.length;
   const report = (): ActivityHistory => {
+    // Every report, including the one a fully stored window returns without
+    // scoring anything: stored values read before a wipe must not outlive it.
+    store.assertActive();
     let maxima = buildActivityScoreMaxima([]);
     for (const dayMaxima of maximaByDate.values())
       maxima = mergeActivityScoreMaxima(maxima, dayMaxima);

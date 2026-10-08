@@ -96,6 +96,7 @@ import {
   getMonthlyPatternGrid,
   patternDayCellsByDate,
   rescoreTimeline,
+  restoreSavedPattern,
   type ActivityPatternDayCell,
 } from "@/utils/unified-timeline";
 import { getActivityRecognitionPermissionStatusAsync } from "@/utils/native/zentra-native-signals";
@@ -1288,7 +1289,7 @@ export default function TodayScreen() {
       !usableSnapshot
         ? null
         : usableSnapshot.anchor === todayAnchor
-          ? usableSnapshot.cells
+          ? restoreSavedPattern(usableSnapshot.cells, usableSnapshot.anchor)
           : carryPatternCellsForward(
               todayAnchor,
               usableSnapshot.cells,
