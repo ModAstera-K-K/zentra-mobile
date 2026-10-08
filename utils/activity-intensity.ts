@@ -95,6 +95,36 @@ export function buildActivityScoreMaxima(
   );
 }
 
+/**
+ * Maxima over stored score inputs: every field composite scoring normalizes
+ * against. `screenScore` is not a score input, so it stays 0.
+ */
+export function buildActivityScoreInputMaxima(
+  samples: ActivityScoreInput[],
+): ActivityScoreMaxima {
+  const maxima = buildActivityScoreMaxima([]);
+  for (const sample of samples) {
+    maxima.exerciseSeconds = Math.max(
+      maxima.exerciseSeconds,
+      sample.exerciseSeconds,
+    );
+    maxima.heartRateLoad = Math.max(maxima.heartRateLoad, sample.heartRateLoad);
+    maxima.idleSignals = Math.max(maxima.idleSignals, sample.idleSignals);
+    maxima.movementSignals = Math.max(
+      maxima.movementSignals,
+      sample.movementSignals,
+    );
+    maxima.nonSedentaryActivityCount = Math.max(
+      maxima.nonSedentaryActivityCount,
+      sample.nonSedentaryActivityCount,
+    );
+    maxima.sleepMinutes = Math.max(maxima.sleepMinutes, sample.sleepMinutes);
+    maxima.steps = Math.max(maxima.steps, sample.steps);
+    maxima.unlockCount = Math.max(maxima.unlockCount, sample.unlockCount);
+  }
+  return maxima;
+}
+
 export function mergeActivityScoreMaxima(
   left: ActivityScoreMaxima,
   right: ActivityScoreMaxima,

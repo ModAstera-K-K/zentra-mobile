@@ -6,6 +6,7 @@ import {
   type ActivityScoreInput,
 } from "@/utils/activity-intensity";
 import { createCooperativeYield } from "@/utils/cooperative-work";
+import type { TrendDaySummary } from "@/utils/trend-day-summary";
 import type { ActivityScoreMaxima } from "@/types/zentra";
 
 export interface ActivityHistory {
@@ -13,11 +14,15 @@ export interface ActivityHistory {
   complete: boolean;
   /** False while a day the pattern draws is still stale or not yet scored. */
   visibleComplete: boolean;
+  /** How many drawn days this load still has to score. */
+  visibleRemaining: number;
   maxima: ActivityScoreMaxima;
   /** Hourly score inputs for each stored day from `samplesFrom` onward. */
   samplesByDate: Map<string, ActivityScoreInput[]>;
   /** Days from `samplesFrom` onward with nothing stored yet, not even a stale value. */
   pendingDates: Set<string>;
+  /** Trends summaries for the same days, when the load asked for them. */
+  trendsByDate: Map<string, TrendDaySummary>;
 }
 
 /** Where stored days come from and go to; the device binding is in activity-cache.ts. */
@@ -29,18 +34,32 @@ export interface ActivityCacheStore {
     first: string,
     last: string,
     samplesFrom: string,
+    withTrends: boolean,
   ): Promise<ActivityCacheDay[]>;
-  /** Score one day from its events; `samples` is encoded and null unless asked for. */
+  /**
+   * Score one day from its events. `samples` and `trend` are encoded, and
+   * null unless the day is scored `withSamples`: one read of a drawn day
+   * yields both, whichever screen asked first.
+   */
   scoreDay(
     date: string,
     withSamples: boolean,
     signal: AbortSignal,
-  ): Promise<{ maxima: ActivityScoreMaxima; samples: string | null }>;
-  saveDay(
-    day: ActivityCacheDay,
-    maxima: ActivityScoreMaxima,
-    samples: string | null,
-  ): Promise<void>;
+  ): Promise<ScoredActivityDay>;
+  saveDay(day: ActivityCacheDay, scored: ScoredActivityDay): Promise<void>;
+}
+
+export interface ScoredActivityDay {
+  maxima: ActivityScoreMaxima;
+  samples: string | null;
+  trend: string | null;
+}
+
+export interface ActivityHistoryOptions {
+  /** Also load each drawn day's Trends summary, and score a day that lacks one. */
+  trends?: boolean;
+  /** Least time between progress reports while drawn days land. */
+  visibleProgressIntervalMs?: number;
 }
 
 // A grid day lands every few hundred ms on a phone; older days only move the scale.
@@ -51,9 +70,11 @@ export function emptyActivityHistory(): ActivityHistory {
   return {
     complete: true,
     visibleComplete: true,
+    visibleRemaining: 0,
     maxima: buildActivityScoreMaxima([]),
     samplesByDate: new Map(),
     pendingDates: new Set(),
+    trendsByDate: new Map(),
   };
 }
 
@@ -79,18 +100,21 @@ export async function loadActivityHistoryFrom(
   samplesFrom: string,
   signal: AbortSignal,
   onProgress?: (history: ActivityHistory) => void,
+  options: ActivityHistoryOptions = {},
 ): Promise<ActivityHistory> {
+  const withTrends = options.trends === true;
   const firstDate = await store.firstDate();
   if (!firstDate) return emptyActivityHistory();
   const first = start < firstDate ? firstDate : start;
   if (first > end) return emptyActivityHistory();
 
-  const manifest = await store.manifest(first, end, samplesFrom);
+  const manifest = await store.manifest(first, end, samplesFrom, withTrends);
   // A warm year is ~365 small parses: slice them rather than block the thread.
   const yieldIfSliceSpent = createCooperativeYield();
   const maximaByDate = new Map<string, ActivityScoreMaxima>();
   const samplesByDate = new Map<string, ActivityScoreInput[]>();
   const pendingDates = new Set<string>();
+  const trendsByDate = new Map<string, TrendDaySummary>();
   const visibleTodo: ActivityCacheDay[] = [];
   const olderTodo: ActivityCacheDay[] = [];
 
@@ -103,8 +127,13 @@ export async function loadActivityHistoryFrom(
       if (samples)
         samplesByDate.set(day.date, decodeActivityHourSamples(samples));
       else pendingDates.add(day.date);
+      const trend = day.trend ?? day.staleTrend;
+      if (trend) trendsByDate.set(day.date, JSON.parse(trend));
     }
-    if (!day.payload || (visible && !day.samples))
+    if (
+      !day.payload ||
+      (visible && (!day.samples || (withTrends && !day.trend)))
+    )
       (visible ? visibleTodo : olderTodo).push(day);
     await yieldIfSliceSpent();
   }
@@ -121,10 +150,12 @@ export async function loadActivityHistoryFrom(
     return {
       complete: remaining === 0,
       visibleComplete: visibleRemaining === 0,
+      visibleRemaining,
       maxima,
       // Copies: the caller keeps a report while later days are still landing.
       samplesByDate: new Map(samplesByDate),
       pendingDates: new Set(pendingDates),
+      trendsByDate: new Map(trendsByDate),
     };
   };
   if (!remaining) return report();
@@ -137,7 +168,7 @@ export async function loadActivityHistoryFrom(
     if (signal.aborted) throw new Error("Work cancelled");
     const visible = Boolean(day.samplesKey);
     const scored = await store.scoreDay(day.date, visible, signal);
-    await store.saveDay(day, scored.maxima, scored.samples);
+    await store.saveDay(day, scored);
     maximaByDate.set(day.date, scored.maxima);
     if (visible) {
       samplesByDate.set(
@@ -145,12 +176,13 @@ export async function loadActivityHistoryFrom(
         scored.samples ? decodeActivityHourSamples(scored.samples) : [],
       );
       pendingDates.delete(day.date);
+      if (scored.trend) trendsByDate.set(day.date, JSON.parse(scored.trend));
       visibleRemaining--;
     }
     remaining--;
 
     const interval = visible
-      ? VISIBLE_PROGRESS_INTERVAL_MS
+      ? (options.visibleProgressIntervalMs ?? VISIBLE_PROGRESS_INTERVAL_MS)
       : OLDER_PROGRESS_INTERVAL_MS;
     if (
       onProgress &&

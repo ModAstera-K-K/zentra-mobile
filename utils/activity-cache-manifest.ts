@@ -27,12 +27,17 @@ export interface ActivityCacheDay {
   samplesKey?: string;
   samples?: string;
   staleSamples?: string;
+  /** Present from `samplesFrom` onward when asked for: the day's Trends summary. */
+  trendKey?: string;
+  trend?: string;
+  staleTrend?: string;
 }
 
 // A stored day is reused for as long as its revision holds, so a change to
 // what scoring would compute for the same events needs a new version here.
 const MAXIMA_PREFIX = "hourly-maxima-v3";
 const SAMPLES_PREFIX = "hourly-samples-v2";
+const TREND_PREFIX = "trend-day-v1";
 
 export function activityMaximaKey(
   date: string,
@@ -48,36 +53,60 @@ export function activitySamplesKey(
   return `${SAMPLES_PREFIX}:${date}:${timezoneOffset}`;
 }
 
-/** Two reads for the entire window instead of two bridge calls per day. */
+export function activityTrendKey(date: string, timezoneOffset: number): string {
+  return `${TREND_PREFIX}:${date}:${timezoneOffset}`;
+}
+
+/**
+ * A few reads for the entire window instead of several bridge calls per day:
+ * the change revisions and stored maxima, plus the stored samples (and, with
+ * `withTrends`, the stored Trends summaries) for the days from `samplesFrom`.
+ */
 export async function readActivityCacheManifest(
   db: SQLiteDatabase,
   start: string,
   end: string,
   timezoneOffset: number,
   samplesFrom?: string,
+  withTrends = false,
 ): Promise<ActivityCacheDay[]> {
   const manifest = await readMaximaManifest(db, start, end, timezoneOffset);
   if (samplesFrom === undefined) return manifest;
   const first = samplesFrom < start ? start : samplesFrom;
-  const samples =
-    first > end
-      ? []
-      : await db.getAllAsync<CachedDay>(
-          "SELECT cache_key,revision,payload FROM derived_cache WHERE cache_key>=? AND cache_key<?",
-          `${SAMPLES_PREFIX}:${first}:`,
-          `${SAMPLES_PREFIX}:${shiftISODate(end, 1)}:`,
-        );
-  const byKey = new Map(samples.map((row) => [row.cache_key, row]));
+  const stored = async (prefix: string) =>
+    new Map(
+      (first > end
+        ? []
+        : await db.getAllAsync<CachedDay>(
+            "SELECT cache_key,revision,payload FROM derived_cache WHERE cache_key>=? AND cache_key<?",
+            `${prefix}:${first}:`,
+            `${prefix}:${shiftISODate(end, 1)}:`,
+          )
+      ).map((row) => [row.cache_key, row]),
+    );
+  const samples = await stored(SAMPLES_PREFIX);
+  const trends = withTrends ? await stored(TREND_PREFIX) : null;
   return manifest.map((day) => {
     if (day.date < first) return day;
     const samplesKey = activitySamplesKey(day.date, timezoneOffset),
-      row = byKey.get(samplesKey);
-    return {
+      row = samples.get(samplesKey);
+    const withSamples: ActivityCacheDay = {
       ...day,
       samplesKey,
       samples: row?.revision === day.revision ? row.payload : undefined,
       ...(row && row.revision !== day.revision
         ? { staleSamples: row.payload }
+        : {}),
+    };
+    if (!trends) return withSamples;
+    const trendKey = activityTrendKey(day.date, timezoneOffset),
+      trend = trends.get(trendKey);
+    return {
+      ...withSamples,
+      trendKey,
+      trend: trend?.revision === day.revision ? trend.payload : undefined,
+      ...(trend && trend.revision !== day.revision
+        ? { staleTrend: trend.payload }
         : {}),
     };
   });

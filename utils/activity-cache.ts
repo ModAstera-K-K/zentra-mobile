@@ -1,12 +1,15 @@
 import {
   activitySamplesKey,
+  activityTrendKey,
   readActivityCacheManifest,
   readActivityCacheRevision,
 } from "@/utils/activity-cache-manifest";
 import {
   loadActivityHistoryFrom,
   type ActivityHistory,
+  type ActivityHistoryOptions,
 } from "@/utils/activity-cache-loader";
+import { buildTrendDaySummary } from "@/utils/trend-day-summary";
 import { encodeActivityHourSamples } from "@/utils/activity-hour-samples";
 import {
   assertRepositoryEpoch,
@@ -41,6 +44,7 @@ export function loadActivityHistory(
   samplesFrom: string,
   signal: AbortSignal,
   onProgress?: (history: ActivityHistory) => void,
+  options?: ActivityHistoryOptions,
 ): Promise<ActivityHistory> {
   const epoch = repositoryEpoch();
   const timezoneOffset = new Date().getTimezoneOffset();
@@ -48,7 +52,7 @@ export function loadActivityHistory(
     {
       assertActive: () => assertRepositoryEpoch(epoch),
       firstDate: getRepositoryFirstDate,
-      manifest: (first, last, from) =>
+      manifest: (first, last, from, withTrends) =>
         enqueueDatabaseOperation(async () =>
           readActivityCacheManifest(
             await getLocalDatabase(),
@@ -56,16 +60,18 @@ export function loadActivityHistory(
             last,
             timezoneOffset,
             from,
+            withTrends,
           ),
         ),
       scoreDay: async (date, withSamples, daySignal) => {
+        // A day outside the drawn range only contributes maxima, so it skips
+        // the event types that cannot move them.
+        const events = await getEventsForDayScoring(date, {
+          maximaOnly: !withSamples,
+          validate: false,
+        });
         const buckets = await buildUnifiedTimelineAsync(
-          // A day outside the pattern only contributes maxima, so it skips the
-          // event types that cannot move them.
-          await getEventsForDayScoring(date, {
-            maximaOnly: !withSamples,
-            validate: false,
-          }),
+          events,
           {
             startTimestamp: parseISODate(date).toISOString(),
             endTimestamp: parseISODate(shiftISODate(date, 1)).toISOString(),
@@ -78,31 +84,38 @@ export function loadActivityHistory(
         return {
           maxima: buildActivityScoreMaxima(buckets),
           samples: withSamples ? encodeActivityHourSamples(buckets) : null,
+          // The same read serves Trends, so its range is warm too.
+          trend: withSamples
+            ? JSON.stringify(buildTrendDaySummary(date, events))
+            : null,
         };
       },
-      saveDay: (day, maxima, samples) =>
+      saveDay: (day, { maxima, samples, trend }) =>
         enqueueDatabaseOperation(async () => {
           assertRepositoryEpoch(epoch);
           const db = await getLocalDatabase();
-          const saveMaxima = () =>
+          const save = (key: string, payload: string) =>
             db.runAsync(
               "INSERT OR REPLACE INTO derived_cache(cache_key,revision,payload) VALUES(?,?,?)",
-              day.key,
+              key,
               day.revision,
-              JSON.stringify(maxima),
+              payload,
             );
           if (samples === null) {
-            await saveMaxima();
+            await save(day.key, JSON.stringify(maxima));
             return;
           }
           await db.withTransactionAsync(async () => {
-            await saveMaxima();
-            await db.runAsync(
-              "INSERT OR REPLACE INTO derived_cache(cache_key,revision,payload) VALUES(?,?,?)",
+            await save(day.key, JSON.stringify(maxima));
+            await save(
               day.samplesKey ?? activitySamplesKey(day.date, timezoneOffset),
-              day.revision,
               samples,
             );
+            if (trend !== null)
+              await save(
+                day.trendKey ?? activityTrendKey(day.date, timezoneOffset),
+                trend,
+              );
           });
         }),
     },
@@ -111,5 +124,6 @@ export function loadActivityHistory(
     samplesFrom,
     signal,
     onProgress,
+    options,
   );
 }
