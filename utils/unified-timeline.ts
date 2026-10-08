@@ -18,7 +18,13 @@ import {
 } from "@/utils/activity-intensity";
 import type { ActivityScoreInput } from "@/utils/activity-intensity";
 import type { ActivityScoreMaxima } from "@/types/zentra";
-import { compareTimestamps, parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import {
+  compareTimestamps,
+  localDateFormatter,
+  parseISODate,
+  shiftISODate,
+  toISODate,
+} from "@/utils/dates";
 
 const TRACKED_TIMELINE_TYPES: EventDataType[] = [
   "steps",
@@ -45,27 +51,18 @@ function getResolutionMinutes(resolution: UnifiedTimelineResolution): number {
   }
 }
 
-// Constructing an Intl formatter is costly on Hermes; one per resolution is enough.
-const bucketLabelFormatters = new Map<
-  UnifiedTimelineResolution,
-  Intl.DateTimeFormat
->();
-
 function formatBucketLabel(
   date: Date,
   resolution: UnifiedTimelineResolution,
 ): string {
-  let formatter = bucketLabelFormatters.get(resolution);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat(
-      "en-US",
-      resolution === "hour"
-        ? { hour: "numeric" }
-        : { hour: "numeric", minute: "2-digit" },
-    );
-    bucketLabelFormatters.set(resolution, formatter);
-  }
-  return formatter.format(date);
+  return (
+    resolution === "hour"
+      ? localDateFormatter("bucket-hour", { hour: "numeric" })
+      : localDateFormatter("bucket-minute", {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+  ).format(date);
 }
 
 function createCoverageRecord<T extends string>(): Partial<Record<T, number>> {
@@ -1037,11 +1034,6 @@ function* partitionEventsByDateWork(
   return eventsByDate;
 }
 
-const patternDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-});
-
 function createPatternDayCell(
   date: string,
   summary: ReturnType<typeof summarizeTimeline>,
@@ -1055,7 +1047,10 @@ function createPatternDayCell(
       next,
       summary,
       String(current.getDate()),
-      patternDateFormatter.format(current),
+      localDateFormatter("pattern-day", {
+        month: "short",
+        day: "numeric",
+      }).format(current),
     ),
     placeholder: false,
   };
@@ -1178,6 +1173,45 @@ export function assembleMonthlyActivityPattern(
 }
 
 /**
+ * A grid saved on `savedOn`, as [date, cell] pairs in grid order.
+ *
+ * A saved grid is one cell per grid date, so a cell's date is its position.
+ * Its timestamps cannot say: they are local midnight where the grid was
+ * saved, which is another date once the device is in another time zone. Each
+ * cell is therefore re-anchored to its date here and now, so what is drawn,
+ * and what a tap looks up, is that calendar day.
+ */
+function savedPatternGrid(
+  cells: ActivityPatternCell[],
+  savedOn: string,
+): [string, ActivityPatternCell][] {
+  const grid = getMonthlyPatternGrid(savedOn);
+  if (cells.length !== grid.length) return [];
+  return cells.map((cell, index) => {
+    const date = grid[index];
+    const start = parseISODate(date).toISOString();
+    return [
+      date,
+      {
+        ...cell,
+        // A future day's placeholder is identified by its position instead.
+        id: date > savedOn ? cell.id : `month-${start}`,
+        startTimestamp: start,
+        endTimestamp: parseISODate(shiftISODate(date, 1)).toISOString(),
+      },
+    ];
+  });
+}
+
+/** A grid saved earlier today, as it should be drawn now. */
+export function restoreSavedPattern(
+  cells: ActivityPatternCell[],
+  savedOn: string,
+): ActivityPatternCell[] {
+  return savedPatternGrid(cells, savedOn).map(([, cell]) => cell);
+}
+
+/**
  * The full days of a grid saved on `savedOn`, by local date. The cell for
  * `savedOn` itself is left out: it only held the part of that day so far.
  */
@@ -1186,11 +1220,8 @@ export function patternDayCellsByDate(
   savedOn: string,
 ): Map<string, ActivityPatternDayCell> {
   const byDate = new Map<string, ActivityPatternDayCell>();
-  for (const cell of cells) {
-    if (cell.placeholder) continue;
-    const date = toISODate(new Date(cell.startTimestamp));
-    if (date < savedOn) byDate.set(date, cell);
-  }
+  for (const [date, cell] of savedPatternGrid(cells, savedOn))
+    if (!cell.placeholder && date < savedOn) byDate.set(date, cell);
   return byDate;
 }
 
