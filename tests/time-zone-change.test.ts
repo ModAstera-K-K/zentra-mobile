@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildActivityScoreMaxima } from "@/utils/activity-intensity";
-import { localDateFormatter, parseISODate, toISODate } from "@/utils/dates";
+import {
+  enumerateISODateRange,
+  localDateFormatter,
+  parseISODate,
+  toISODate,
+} from "@/utils/dates";
+import { buildLiveTrendSeries } from "@/utils/live-trends";
 import {
   assembleMonthlyActivityPattern,
   buildPatternDayCellFromSamples,
@@ -73,6 +79,48 @@ test("hour labels and day labels are in the current time zone after it changes",
     // The day label is formatted from that day's local midnight.
     assert.equal(scoredCell("2026-09-20", 500).detailLabel, "Sep 20", zone);
     assert.equal(scoredCell("2026-10-01", 500).detailLabel, "Oct 1", zone);
+  }
+});
+
+test("Trends point labels are the range's own dates after the time zone changes", () => {
+  const range = { start: "2026-09-01", end: "2026-09-20" };
+  const dates = enumerateISODateRange(range.start, range.end);
+  const week = { start: "2026-09-14", end: "2026-09-20" };
+  const labels = (selection: { start: string; end: string }) => {
+    const days = enumerateISODateRange(selection.start, selection.end);
+    const [steps] = buildLiveTrendSeries(
+      days.map((date) => ({
+        date,
+        stepsTotal: 1000,
+        activeMinutes: 0,
+        distanceMeters: 0,
+        screenTimeSeconds: 0,
+        unlockCount: 0,
+        sleepEstimateMinutes: null,
+        mobilityRadiusMeters: null,
+        topActivity: null,
+        dataCompleteness: 1,
+        computedAt: "",
+      })),
+      selection,
+      { days: new Map(), sleepEvents: [], exerciseEvents: [] },
+      { intensityValues: days.map(() => 0), restValues: days.map(() => 0) },
+    );
+    return steps.points.map((point) => point.label);
+  };
+  // Moving east is the direction a stale formatter gets the date wrong.
+  for (const zone of ["America/Los_Angeles", "Asia/Tokyo", "Europe/London"]) {
+    moveTo(zone);
+    assert.deepEqual(
+      labels(range),
+      dates.map((date) => `9/${Number(date.slice(8))}`),
+      zone,
+    );
+    assert.deepEqual(
+      labels(week),
+      ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      zone,
+    );
   }
 });
 

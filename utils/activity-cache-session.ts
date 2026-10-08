@@ -1,15 +1,15 @@
 import type { ActivityHistory } from "@/utils/activity-cache-loader";
 
-export interface ActivityCacheSessionOptions {
+export interface ActivityCacheSessionOptions<Result = ActivityHistory> {
   load(
     signal: AbortSignal,
-    onProgress: (history: ActivityHistory) => void,
-  ): Promise<ActivityHistory>;
+    onProgress: (history: Result) => void,
+  ): Promise<Result>;
   /**
    * Each report of a pass, then its result. `revision` is the one the pass
    * started from; its content is at least that new.
    */
-  onHistory(history: ActivityHistory, revision: string, final: boolean): void;
+  onHistory(history: Result, revision: string, final: boolean): void;
   onLoading?(loading: boolean): void;
   onError(error: unknown): void;
   /** Quiet time required before a follow-up pass, so a burst of writes costs one pass. */
@@ -41,15 +41,16 @@ function waitFor(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Keeps one history load going for a screen. A pass is never cancelled because
+ * Keeps one load going for a screen: stored activity days by default, or any
+ * other result that is rebuilt when a revision moves. A pass is never cancelled because
  * the data moved: a collector reconcile writes past days in bursts, and
  * restarting on each one starved the load for as long as the writes lasted.
  * Passes are cheap to repeat instead, because each one only scores the days
  * whose revision moved, so a revision that arrives mid-pass just queues one
  * more pass once the writes pause (or after `maxSettleMs` if they never do).
  */
-export function startActivityCacheSession(
-  options: ActivityCacheSessionOptions,
+export function startActivityCacheSession<Result = ActivityHistory>(
+  options: ActivityCacheSessionOptions<Result>,
 ): ActivityCacheSession {
   const controller = new AbortController();
   const { signal } = controller;
