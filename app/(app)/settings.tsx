@@ -178,6 +178,9 @@ export default function SettingsScreen() {
   const diagnosticsHistory = useRepositoryStore(
     (state) => state.diagnosticsHistory,
   );
+  const refreshDiagnostics = useRepositoryStore(
+    (state) => state.refreshDiagnostics,
+  );
   const bufferedActivityQueueDepth = useRepositoryStore(
     (state) => state.bufferedActivityQueueDepth,
   );
@@ -299,6 +302,11 @@ export default function SettingsScreen() {
     collectors.activity.enabled,
     collectors.healthConnect.enabled,
   ]);
+
+  // Only this screen shows recent diagnostics, so it loads them itself.
+  React.useEffect(() => {
+    void refreshDiagnostics().catch(() => undefined);
+  }, [refreshDiagnostics]);
 
   React.useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {

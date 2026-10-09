@@ -24,7 +24,7 @@ const NOW = new Date(2026, 8, 15, 15, 0, 0).getTime();
  * as a regression to explain.
  */
 const BUDGET = {
-  bootstrap: { statements: 19, rows: 1825 },
+  bootstrap: { statements: 18, rows: 1825 },
   batteryWrite: { statements: 11, rows: 771 },
   refreshAfterWrite: { statements: 7, rows: 773 },
   refreshUnchanged: { statements: 1, rows: 1 },

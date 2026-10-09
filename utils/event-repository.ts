@@ -795,21 +795,91 @@ export async function getTodayLiveSnapshot(): Promise<TodayLiveSnapshot> {
   });
 }
 
+// Each collector key, found by stepping through the index one key at a time.
+// GROUP BY or DISTINCT would read an index entry for every diagnostics row.
+const COLLECTOR_KEYS_CTE = `WITH RECURSIVE keys(collector_key) AS (
+  SELECT MIN(collector_key) FROM collector_diagnostics
+  UNION ALL
+  SELECT (
+    SELECT MIN(collector_key) FROM collector_diagnostics
+    WHERE collector_key > keys.collector_key
+  ) FROM keys WHERE keys.collector_key IS NOT NULL
+)`;
+
+// Every stored sample adds a diagnostics row, and only the newest are read.
+const DIAGNOSTICS_KEPT_PER_COLLECTOR = 200;
+const DIAGNOSTICS_PRUNE_CHUNK_ROWS = 5_000;
+
+/**
+ * Drop each collector's diagnostics beyond its newest rows, in separately
+ * queued chunks. Its latest success is kept however old it is: that row is
+ * the collector's sync cursor.
+ */
+export async function pruneCollectorDiagnostics(
+  options: { budgetMs?: number } = {},
+): Promise<"partial" | "complete"> {
+  const startedAtMs = Date.now();
+  const keys = await enqueueDatabaseOperation(async () =>
+    (await getLocalDatabase()).getAllAsync<{ collector_key: string }>(
+      `${COLLECTOR_KEYS_CTE}
+        SELECT collector_key FROM keys WHERE collector_key IS NOT NULL`,
+    ),
+  );
+
+  for (const { collector_key: collectorKey } of keys) {
+    let deleted = DIAGNOSTICS_PRUNE_CHUNK_ROWS;
+    while (deleted === DIAGNOSTICS_PRUNE_CHUNK_ROWS) {
+      if (
+        options.budgetMs != null &&
+        Date.now() - startedAtMs >= options.budgetMs
+      )
+        return "partial";
+      deleted = await enqueueRetriedWrite(async () => {
+        const result = await (await getLocalDatabase()).runAsync(
+          `DELETE FROM collector_diagnostics WHERE rowid IN (
+            SELECT rowid FROM collector_diagnostics
+            WHERE collector_key = ?
+            AND recorded_at < (
+              SELECT recorded_at FROM collector_diagnostics
+              WHERE collector_key = ?
+              ORDER BY recorded_at DESC LIMIT 1 OFFSET ?
+            )
+            AND id IS NOT (
+              SELECT id FROM collector_diagnostics
+              WHERE collector_key = ? AND status = 'success'
+              ORDER BY recorded_at DESC LIMIT 1
+            )
+            LIMIT ?
+          )`,
+          collectorKey,
+          collectorKey,
+          DIAGNOSTICS_KEPT_PER_COLLECTOR - 1,
+          collectorKey,
+          DIAGNOSTICS_PRUNE_CHUNK_ROWS,
+        );
+        return result.changes;
+      });
+    }
+  }
+  return "complete";
+}
+
 export async function getLatestCollectorDiagnostics(): Promise<
   CollectorDiagnosticRecord[]
 > {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
     const rows = await database.getAllAsync<DiagnosticRow>(
-      `SELECT diagnostics.*
-        FROM collector_diagnostics diagnostics
-        INNER JOIN (
-          SELECT collector_key, MAX(recorded_at) AS max_recorded_at
-          FROM collector_diagnostics
-          GROUP BY collector_key
-        ) latest
-        ON diagnostics.collector_key = latest.collector_key
-        AND diagnostics.recorded_at = latest.max_recorded_at
+      `${COLLECTOR_KEYS_CTE}
+        SELECT diagnostics.*
+        FROM keys
+        JOIN collector_diagnostics diagnostics ON diagnostics.rowid = (
+          SELECT rowid FROM collector_diagnostics
+          WHERE collector_key = keys.collector_key
+          ORDER BY recorded_at DESC
+          LIMIT 1
+        )
+        WHERE keys.collector_key IS NOT NULL
         ORDER BY diagnostics.collector_key ASC`,
     );
 

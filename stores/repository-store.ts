@@ -242,19 +242,13 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       await getBufferedActivityTransitionCountAsync();
     const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
-    const [
-      diagnostics,
-      diagnosticsHistory,
-      todayAggregate,
-      latestSleepEvent,
-      todayEvents,
-    ] = await Promise.all([
-      getLatestCollectorDiagnostics(),
-      getCollectorDiagnosticsHistory(),
-      getDailyAggregateForDate(todayDate),
-      getLatestEventByType("sleep_inferred"),
-      getEventsForRange(todayDate, todayDate),
-    ]);
+    const [diagnostics, todayAggregate, latestSleepEvent, todayEvents] =
+      await Promise.all([
+        getLatestCollectorDiagnostics(),
+        getDailyAggregateForDate(todayDate),
+        getLatestEventByType("sleep_inferred"),
+        getEventsForRange(todayDate, todayDate),
+      ]);
     // Same local-day window as the events above: no second full-day read.
     const todaySnapshot = buildTodaySnapshot(todayEvents);
 
@@ -311,7 +305,6 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       todayEvents,
       latestSleepEvent,
       diagnostics,
-      diagnosticsHistory,
     });
   }),
 
@@ -323,19 +316,13 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       await get().refreshBackgroundCollectionServiceState();
     const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
-    const [
-      diagnostics,
-      diagnosticsHistory,
-      todayAggregate,
-      latestSleepEvent,
-      todayEvents,
-    ] = await Promise.all([
-      getLatestCollectorDiagnostics(),
-      getCollectorDiagnosticsHistory(),
-      getDailyAggregateForDate(todayDate),
-      getLatestEventByType("sleep_inferred"),
-      getEventsForRange(todayDate, todayDate),
-    ]);
+    const [diagnostics, todayAggregate, latestSleepEvent, todayEvents] =
+      await Promise.all([
+        getLatestCollectorDiagnostics(),
+        getDailyAggregateForDate(todayDate),
+        getLatestEventByType("sleep_inferred"),
+        getEventsForRange(todayDate, todayDate),
+      ]);
     // Same local-day window as the events above: no second full-day read.
     const todaySnapshot = buildTodaySnapshot(todayEvents);
 
@@ -357,7 +344,6 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       todayEvents,
       latestSleepEvent,
       diagnostics,
-      diagnosticsHistory,
     });
   }),
 

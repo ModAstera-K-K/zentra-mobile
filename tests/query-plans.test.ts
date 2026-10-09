@@ -29,14 +29,6 @@ const GROWING_TABLES = ["events", "collector_diagnostics"];
  */
 const KNOWN = [
   {
-    sql: "FROM collector_diagnostics diagnostics INNER JOIN",
-    why: "latest diagnostic per collector groups the whole table (029 item 3.8)",
-  },
-  {
-    sql: "SELECT * FROM collector_diagnostics ORDER BY recorded_at DESC LIMIT ?",
-    why: "diagnostics history sorts the whole table (029 item 3.8)",
-  },
-  {
     sql: "SELECT COUNT(*) as count FROM events",
     why: "seed check counts every event (029 item 4.3)",
   },
@@ -48,6 +40,10 @@ const KNOWN = [
 
 /** Statements the rules flag that are cheap for a reason the plan text cannot show. */
 const ACCEPTED = [
+  {
+    sql: "SELECT * FROM collector_diagnostics ORDER BY recorded_at DESC LIMIT ?",
+    why: "Settings only, over a table pruned to 200 rows per collector",
+  },
   {
     sql: "SELECT * FROM events WHERE data_type = ? ORDER BY timestamp_start DESC LIMIT 1",
     why: "reads one row from the end of the index",
@@ -120,6 +116,8 @@ test("no statement walks a growing table from end to end, beyond the listed ones
   await repository.appendEventsForCollector("deviceState", [battery], "Battery snapshot refreshed");
   await store().refreshTodayData(true);
   await store().refreshAll();
+  await store().refreshDiagnostics();
+  await repository.pruneCollectorDiagnostics();
   await repository.getDailyAggregatesForRange(weekAgo, today);
   await repository.getDailyAggregatesForRange(weekAgo, today);
   await repository.getEventsForRange(shiftISODate(today, -1), today);
