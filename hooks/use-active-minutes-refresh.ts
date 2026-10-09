@@ -12,7 +12,7 @@ import {
   rebuildAggregateForDate,
 } from "@/utils/event-repository";
 import { getLocalDatabase } from "@/utils/local-database";
-import { parseISODate, shiftISODate, toISODate } from "@/utils/dates";
+import { parseISODate, shiftISODate } from "@/utils/dates";
 import { RELEASE_FLAGS } from "@/constants/release-flags";
 
 export function useActiveMinutesRefresh(
@@ -26,7 +26,7 @@ export function useActiveMinutesRefresh(
     updating: boolean;
     error: string | null;
   }>({ updating: false, error: null });
-  const today = toISODate(new Date());
+  const today = useRepositoryStore((s) => s.todayDate);
   const start = range?.start ?? shiftISODate(today, -30);
   const end = range?.end ?? today;
   const rangeMode = !!range;

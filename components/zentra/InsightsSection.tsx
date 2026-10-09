@@ -9,7 +9,6 @@ import { RELEASE_FLAGS } from "@/constants/release-flags";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { loadPersonalInsights } from "@/utils/insight-repository";
 import { insightSummary, insightDetail } from "@/utils/insight-presentation";
-import { toISODate } from "@/utils/dates";
 import { DetailSheet } from "@/components/zentra/DetailSheet";
 import type { PersonalInsight } from "@/types/insights";
 
@@ -40,7 +39,7 @@ export function InsightsSection({ limit = 4 }: { limit?: number }) {
     };
   }, [selected, focused]);
   const [retry, setRetry] = React.useState(0);
-  const anchor = toISODate(new Date());
+  const anchor = useRepositoryStore((s) => s.todayDate);
   React.useEffect(() => {
     if (
       !focused ||

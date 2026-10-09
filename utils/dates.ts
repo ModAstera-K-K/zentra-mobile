@@ -56,6 +56,12 @@ export function parseISODate(value: string): Date {
   return new Date(`${value}T00:00:00`);
 }
 
+/** Milliseconds from `now` to the next local midnight, across clock changes. */
+export function msUntilNextLocalDay(now: Date): number {
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  return next.getTime() - now.getTime();
+}
+
 export function shiftISODate(value: string, days: number): string {
   const date = parseISODate(value);
   date.setDate(date.getDate() + days);
@@ -117,8 +123,10 @@ export function getTrendRangeDays(range: '7d' | '30d' | '90d' | 'custom'): numbe
   }
 }
 
-export function getDateRangeForTrendRange(range: TrendRange): { start: string; end: string } {
-  const end = toISODate(new Date());
+export function getDateRangeForTrendRange(
+  range: TrendRange,
+  end = toISODate(new Date()),
+): { start: string; end: string } {
   const days = getTrendRangeDays(range);
 
   return {

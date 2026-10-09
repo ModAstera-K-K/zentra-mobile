@@ -121,6 +121,11 @@ interface RepositoryStoreState {
   lastReconcileTrigger: ReconcileTrigger | null;
   lastUpdatedAt: string | null;
   todayDataUpdatedAt: string | null;
+  /**
+   * The local day the today* fields describe. It moves only together with
+   * them, so a screen never pairs a new date with the previous day's data.
+   */
+  todayDate: string;
   /** Repository epoch; changes when local data is wiped. */
   dataEpoch: number;
   diagnosticsUpdatedAt: string | null;
@@ -213,6 +218,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   lastReconcileTrigger: null,
   lastUpdatedAt: null,
   todayDataUpdatedAt: null,
+  todayDate: toISODate(new Date()),
   dataEpoch: repositoryEpoch(),
   diagnosticsUpdatedAt: null,
   sleepUpdatedAt: null,
@@ -297,6 +303,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastReconcileTrigger: persistedMeta?.lastReconcileTrigger ?? null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: dataRevision,
+      todayDate,
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot,
@@ -342,6 +349,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       bufferedActivityQueueDepth,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: dataRevision,
+      todayDate,
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot,
@@ -363,6 +371,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     if (
       !force &&
+      // A new local day is published at once, even right after a refresh.
+      get().todayDate === toISODate(new Date()) &&
       Date.now() - lastTodayRefreshCompletedAtMs < MIN_TODAY_REFRESH_INTERVAL_MS
     ) {
       return;
@@ -374,7 +384,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       if (
         !force &&
         get().todayDataUpdatedAt === dataRevision &&
-        get().todayAggregate?.date === todayDate
+        get().todayDate === todayDate
       )
         return;
       const [todayAggregate, todayEvents] = await Promise.all([
@@ -390,6 +400,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       set({
         lastUpdatedAt: updatedAt,
         todayDataUpdatedAt: dataRevision,
+        todayDate,
         todaySnapshot,
         todayAggregate,
         todayEvents: stableTodayEvents,
@@ -457,7 +468,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       latestSleepEvent,
-      todayAggregate,
+      // After midnight the today fields move together, in refreshTodayData.
+      ...(todayDate === get().todayDate ? { todayAggregate } : {}),
     });
   },
 
@@ -655,6 +667,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastReconcileTrigger: null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: await getRepositoryRevision(),
+      todayDate: toISODate(new Date()),
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot: EMPTY_TODAY_SNAPSHOT,

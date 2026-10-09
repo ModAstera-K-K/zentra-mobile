@@ -68,7 +68,12 @@ import {
   getActivityNormalizationRange,
   mergeActivityScoreMaxima,
 } from "@/utils/activity-intensity";
-import { formatScreenDate, shiftISODate, toISODate } from "@/utils/dates";
+import {
+  formatScreenDate,
+  parseISODate,
+  shiftISODate,
+  toISODate,
+} from "@/utils/dates";
 import {
   loadTodayPatternSnapshot,
   saveTodayPatternSnapshot,
@@ -421,6 +426,7 @@ export default function TodayScreen() {
         state.backgroundTaskRegistrationMessage,
       backgroundTaskRegistrationStatus: state.backgroundTaskRegistrationStatus,
       todayDataUpdatedAt: state.todayDataUpdatedAt,
+      todayDate: state.todayDate,
       todaySnapshot: state.todaySnapshot,
       todayAggregate: state.todayAggregate,
       todayEvents: state.todayEvents,
@@ -506,15 +512,8 @@ export default function TodayScreen() {
   React.useEffect(() => {
     latestSignalValuesRef.current = signalValues;
   }, [signalValues]);
-  const todayAnchor = React.useMemo(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-    // Re-derive when the repository refreshes so the anchor advances at midnight
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repository.todayDataUpdatedAt]);
+  // The store's day, so the anchor and today's records always change together.
+  const todayAnchor = repository.todayDate;
 
   React.useEffect(() => {
     if (!isFocused) {
@@ -1365,6 +1364,8 @@ export default function TodayScreen() {
       isDemoMode ||
       !freshMonthCells ||
       !combinedMaxima ||
+      // Just after midnight this grid is still yesterday's.
+      todayAnchor !== toISODate(new Date()) ||
       // Only current days at the current revision: never re-save a grid
       // computed before the data underneath it changed or was cleared.
       !activityHistory?.history.visibleComplete ||
@@ -1731,7 +1732,7 @@ export default function TodayScreen() {
   return (
     <ScreenShell
       scrollable={false}
-      subtitle={formatScreenDate(new Date())}
+      subtitle={formatScreenDate(parseISODate(todayAnchor))}
       subtitleAccessory={
         <View style={styles.subtitleAccessory}>
           <Text style={[styles.introTitle, { color: palette.foreground }]}>

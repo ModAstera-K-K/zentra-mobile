@@ -116,6 +116,9 @@ const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
 ];
 
 export default function TrendsScreen() {
+  // React Compiler has never compiled this screen. Opting in is its own change,
+  // to be measured on a device.
+  "use no memo";
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const isFocused = useIsFocused();
@@ -150,6 +153,7 @@ export default function TrendsScreen() {
       dataEpoch: state.dataEpoch,
       isHydrated: state.isHydrated,
       todayDataUpdatedAt: state.todayDataUpdatedAt,
+      todayDate: state.todayDate,
       todayEvents: state.todayEvents,
     })),
   );
@@ -159,8 +163,11 @@ export default function TrendsScreen() {
     [collectors],
   );
 
+  // The store's day, so ranges and today's records move to a new day together.
+  const today = repository.todayDate;
+
   const rangeSelection: { start: string; end: string } =
-    range === "custom" ? customRange : getDateRangeForTrendRange(range);
+    range === "custom" ? customRange : getDateRangeForTrendRange(range, today);
 
   // Check if user entered a range that is valid
   const validCustom =
@@ -173,21 +180,14 @@ export default function TrendsScreen() {
     range === "custom" && validCustom
       ? customRange.start
       : range === "custom"
-        ? shiftISODate(toISODate(new Date()), -13)
+        ? shiftISODate(today, -13)
         : rangeSelection.start;
   const rangeEnd =
     range === "custom" && validCustom
       ? customRange.end
       : range === "custom"
-        ? toISODate(new Date())
+        ? today
         : rangeSelection.end;
-
-  // Re-derived when the repository refreshes so the date advances at midnight.
-  const today = React.useMemo(
-    () => toISODate(new Date()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [repository.todayDataUpdatedAt],
-  );
 
   // What is loaded for the selected range. New data inside it does not change
   // the scope; it only moves a revision, which queues another pass.

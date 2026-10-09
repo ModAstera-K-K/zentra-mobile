@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useIsFocused } from "@react-navigation/native";
 import { useRepositoryStore } from "@/stores";
 import { getEventsForRange } from "@/utils/event-repository";
-import { toISODate, shiftISODate } from "@/utils/dates";
+import { shiftISODate } from "@/utils/dates";
 import { sleepSummaryEvent } from "@/utils/sleep-summary";
 import { buildLiveSleepEstimate } from "@/utils/device-signals";
 
@@ -10,7 +10,7 @@ export function useSleepSummary(enabled: boolean) {
   const focused = useIsFocused(),
     revision = useRepositoryStore((s) => s.todayDataUpdatedAt);
   const [summary, setSummary] = useState(() => buildLiveSleepEstimate(null));
-  const today = toISODate(new Date());
+  const today = useRepositoryStore((s) => s.todayDate);
   useEffect(() => {
     if (!enabled || !focused) return;
     let cancelled = false;
