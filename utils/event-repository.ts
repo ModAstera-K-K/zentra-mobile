@@ -288,6 +288,16 @@ async function getEventsBetween(
   return getEventsBetweenWithDatabase(database, startIso, endExclusiveIso);
 }
 
+// How far before a day its carried-in app-usage and step rows may start. The
+// index is on the start time only, so without a lower bound this read visits
+// every stored row of those types.
+const CARRIED_IN_LOOKBACK_DAYS = 2;
+
+/**
+ * A local day's own events plus the earlier records still running into it.
+ * App-usage and step rows are looked for over the lookback only; sleep and
+ * exercise rows are a few per day, so those are found however long they run.
+ */
 async function getAggregateEventsForDateWithDatabase(
   database: SQLiteDatabase,
   date: string,
@@ -298,25 +308,36 @@ async function getAggregateEventsForDateWithDatabase(
     startIso,
     endExclusiveIso,
   );
-  const overlappingAppUsageRows = await database.getAllAsync<EventRow>(
+  const lookbackIso = getRangeBounds(
+    shiftISODate(date, -CARRIED_IN_LOOKBACK_DAYS),
+    date,
+  ).startIso;
+  const carriedInRows = await database.getAllAsync<EventRow>(
     `SELECT * FROM events
-      WHERE data_type IN ('app_usage','sleep_inferred','exercise_session','steps')
-      AND timestamp_start < ?
+      WHERE data_type IN ('app_usage','steps')
+      AND timestamp_start >= ? AND timestamp_start < ?
       AND timestamp_end > ?
-      ORDER BY timestamp_start ASC`,
-    endExclusiveIso,
+    UNION ALL
+    SELECT * FROM events
+      WHERE data_type IN ('sleep_inferred','exercise_session')
+      AND timestamp_start < ?
+      AND timestamp_end > ?`,
+    lookbackIso,
+    startIso,
+    startIso,
+    startIso,
     startIso,
   );
 
-  const eventsById = new Map(dayEvents.map((event) => [event.id, event]));
-
-  overlappingAppUsageRows.map(mapEventRow).forEach((event) => {
-    eventsById.set(event.id, event);
-  });
-
-  return Array.from(eventsById.values()).sort((left, right) =>
-    compareTimestamps(left.timestampStart, right.timestampStart),
-  );
+  if (!carriedInRows.length) return dayEvents;
+  // Every carried-in row starts before the day, so it sorts ahead of the
+  // day's own events, which are already in start order.
+  const carriedIn = carriedInRows
+    .map(mapEventRow)
+    .sort((left, right) =>
+      compareTimestamps(left.timestampStart, right.timestampStart),
+    );
+  return [...carriedIn, ...dayEvents];
 }
 
 export async function rebuildAggregateForDate(

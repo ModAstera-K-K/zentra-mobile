@@ -41,10 +41,6 @@ const KNOWN = [
     why: "seed check counts every event (029 item 4.3)",
   },
   {
-    sql: "WHERE data_type IN ('app_usage','sleep_inferred','exercise_session','steps') AND timestamp_start < ?",
-    why: "aggregate rebuild reads all earlier rows of four types (029 item 3.1)",
-  },
-  {
     sql: "FROM health_sync_state s LEFT JOIN events e ON e.source='health_connect'",
     why: "health sync states read every imported record (029 item 6.1)",
   },
@@ -59,6 +55,10 @@ const ACCEPTED = [
   {
     sql: "SELECT DISTINCT date(timestamp_end,'localtime') AS date FROM events WHERE data_type='sleep_inferred'",
     why: "sleep rows are a handful per night",
+  },
+  {
+    sql: "WHERE data_type IN ('sleep_inferred','exercise_session') AND timestamp_start < ? AND timestamp_end > ?",
+    why: "sleep and exercise rows are a few per day, read in full so long records still count",
   },
 ];
 const LISTED = [...KNOWN, ...ACCEPTED];
