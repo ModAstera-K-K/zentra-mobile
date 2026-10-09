@@ -23,18 +23,41 @@ export async function loadSleepSummaryEvent(wakeDate: string): Promise<ZentraEve
   return sleepSummaryEvent(await getEventsOfTypeForRange("sleep_inferred", shiftISODate(wakeDate, -1), wakeDate), wakeDate);
 }
 
+let restReconcileInFlight: Promise<number> | null = null;
+
+/**
+ * Re-infer rest for the nights around `now` and store what changed. Calls made
+ * while one is running share that run.
+ */
 export function reconcileRestEstimates(now = new Date()): Promise<number> {
-  const epoch = repositoryEpoch();
-  return enqueueDatabaseOperation(async () => {
-    const db = await getLocalDatabase(), date = toISODate(now);
+  restReconcileInFlight ??= runRestReconcile(now).finally(() => {
+    restReconcileInFlight = null;
+  });
+  return restReconcileInFlight;
+}
+
+/**
+ * Only the read and the commit hold the database queue. Decoding eight days of
+ * records and inferring rest from them takes a few hundred milliseconds, and
+ * runs between the two so screen reads are not kept waiting behind it. The
+ * commit only touches the rows it read or inferred, so a write that lands in
+ * between is left alone and picked up by the next run.
+ */
+async function runRestReconcile(now: Date): Promise<number> {
+  const epoch = repositoryEpoch(), date = toISODate(now);
+  const { rows, gaps } = await enqueueDatabaseOperation(async () => {
+    const db = await getLocalDatabase();
     const rows = await db.getAllAsync<EventRow>(`SELECT * FROM events WHERE timestamp_start >= ? AND timestamp_start <= ?
       AND data_type IN ('activity','screen_state','app_usage','unlock_event','steps','exercise_session','motion_context','location','charging_state','sleep_inferred')
       ORDER BY timestamp_start`,
       parseISODate(shiftISODate(date, -8)).toISOString(), now.toISOString());
-    // Eight days of records: decode in slices rather than block the thread.
-    const events = await runCooperatively(decodeEventRowsWork(rows));
-    const gaps = pendingRestHistoryGaps(await readActivityHistoryState(db));
-    const next = RELEASE_FLAGS.restInference ? await inferSleepEventsAsync(events, date, now, gaps) : [];
+    return { rows, gaps: pendingRestHistoryGaps(await readActivityHistoryState(db)) };
+  });
+  // Eight days of records: decode in slices rather than block the thread.
+  const events = await runCooperatively(decodeEventRowsWork(rows));
+  const next = RELEASE_FLAGS.restInference ? await inferSleepEventsAsync(events, date, now, gaps) : [];
+  return enqueueDatabaseOperation(async () => {
+    const db = await getLocalDatabase();
     const changed = await commitRestEstimates(db, next, events, restWakeDates(date), () => assertRepositoryEpoch(epoch));
     const affected = getLocalDatesForEvents(changed);
     for (const day of affected) await rebuildAggregateForDate(db, day);
