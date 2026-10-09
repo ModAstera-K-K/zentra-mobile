@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 // Native packages that cannot load in Node. Tests get small stand-ins so
 // repository and store code runs for real against node:sqlite.
 const stubs = {
+  "expo-battery": "tests/stubs/expo-battery.ts",
   "expo-sqlite": "tests/stubs/expo-sqlite.ts",
   "react-native": "tests/stubs/react-native.ts",
   expo: "tests/stubs/expo.ts",
