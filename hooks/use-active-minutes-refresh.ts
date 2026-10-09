@@ -3,7 +3,7 @@ import {
   calibrationDates,
 } from "@/utils/active-refresh-state";
 import { useEffect, useState, useRef } from "react";
-import { InteractionManager } from "react-native";
+import { afterRender } from "@/utils/cooperative-work";
 import { useIsFocused } from "@react-navigation/native";
 import { useRepositoryStore, useAppStore } from "@/stores";
 import { refreshActiveDay } from "@/utils/active-background";
@@ -36,7 +36,7 @@ export function useActiveMinutesRefresh(
   useEffect(() => {
     if (!enabled || !focused) return;
     const controller = new AbortController();
-    const task = InteractionManager.runAfterInteractions(() => {
+    const task = afterRender(() => {
       void (async () => {
         const signature = `${health}:${timezone}:${await activeRangeRevision(start, end)}`;
         if (controller.signal.aborted) return;
@@ -64,7 +64,6 @@ export function useActiveMinutesRefresh(
             if (controller.signal.aborted) return;
             if (candidates && !candidates.has(day)) continue;
             await refreshActiveDay(day, controller.signal, health);
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
           }
           if (controller.signal.aborted) return;
           await enqueueDatabaseOperation(async () => {

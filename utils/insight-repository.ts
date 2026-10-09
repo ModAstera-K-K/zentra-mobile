@@ -72,7 +72,6 @@ async function loadObservations(anchor: string): Promise<MetricObservation[]> {
         );
       });
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
   assertRepositoryEpoch(epoch);
   return observations;

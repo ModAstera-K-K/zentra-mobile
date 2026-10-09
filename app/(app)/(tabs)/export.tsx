@@ -5,7 +5,6 @@ import React from "react";
 import {
   ActivityIndicator,
   Alert,
-  InteractionManager,
   StyleSheet,
   Text,
   TextInput,
@@ -66,6 +65,7 @@ import { formatBytes } from "@/utils/format";
 import { startPerfTimer } from "@/utils/perf";
 import { buildUnifiedTimelineAsync } from "@/utils/unified-timeline";
 import { useShallow } from "zustand/react/shallow";
+import { afterRender } from "@/utils/cooperative-work";
 
 const PRESETS: ExportPreset[] = ["today", "week", "month", "all", "custom"];
 const RESOLUTION_OPTIONS: {
@@ -284,7 +284,7 @@ export default function ExportScreen() {
       }
     }
 
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void loadLiveExportData();
     });
 
@@ -339,7 +339,7 @@ export default function ExportScreen() {
     setIsComputingTimeline(true);
 
     const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void (async () => {
         const stopCompute = startPerfTimer("export.compute_unified_timeline", {
           eventCount: rawEventsForTimeline.length,

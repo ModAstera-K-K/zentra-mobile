@@ -17,7 +17,6 @@ import {
   ActivityIndicator,
   AppState,
   FlatList,
-  InteractionManager,
   RefreshControl,
   StyleSheet,
   Text,
@@ -123,6 +122,7 @@ import {
 import { startPerfTimer } from "@/utils/perf";
 import { repositoryEpoch } from "@/utils/repository-session";
 import { useShallow } from "zustand/react/shallow";
+import { afterRender } from "@/utils/cooperative-work";
 import { shallow } from "zustand/shallow";
 
 function getActivityNormalizationLabel(
@@ -858,7 +858,7 @@ export default function TodayScreen() {
   // Defer expensive dashboard metrics computation until after interactions.
   // Only re-triggers on permission/capability changes, not sensor ticks.
   React.useEffect(() => {
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       const result = isDemoMode
         ? buildDashboardMetrics(demoCollectors, true)
         : buildLiveDashboardMetrics(
@@ -932,7 +932,7 @@ export default function TodayScreen() {
           : result,
       );
     };
-    const interaction = InteractionManager.runAfterInteractions(update);
+    const interaction = afterRender(update);
     const unsubscribe = isDemoMode ? null : useSignalStore.subscribe(update);
     return () => {
       interaction.cancel();
@@ -952,7 +952,7 @@ export default function TodayScreen() {
   );
   // Defer derived events and downstream computations until after interactions
   React.useEffect(() => {
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       if (isDemoMode) {
         setDerivedTodayEvents(null);
         setSecondaryMetrics([]);
@@ -982,7 +982,7 @@ export default function TodayScreen() {
 
   // Defer signal health summary (depends on visibleCollectors computed above)
   React.useEffect(() => {
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       if (isDemoMode) {
         setSignalHealthSummary(null);
         return;
@@ -1012,7 +1012,7 @@ export default function TodayScreen() {
   React.useEffect(() => {
     if (!isFocused || !isDemoMode) return;
     const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void buildNormalizationMaximaAsync(demoPatternEvents, controller.signal)
         .then((value) => {
           if (!controller.signal.aborted) setDemoMaxima(value);
@@ -1057,7 +1057,7 @@ export default function TodayScreen() {
       return;
 
     const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void buildUnifiedTimelineAsync(
         todayTimelineEvents,
         {
@@ -1158,7 +1158,7 @@ export default function TodayScreen() {
   React.useEffect(() => {
     if (!isFocused || !isDemoMode || !combinedMaxima) return;
     const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void buildPatternDayCellsAsync(
         demoPatternEvents,
         getMonthlyPatternGrid(todayAnchor).filter((date) => date < todayAnchor),
@@ -1248,7 +1248,7 @@ export default function TodayScreen() {
   React.useEffect(() => {
     if (!isFocused || !combinedMaxima) return;
     const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void buildPatternDayCellsAsync(
         todayCellEvents,
         [todayAnchor],
