@@ -3,7 +3,6 @@ import type { ActivityHistoryState } from "@/types/activity-history";
 import { getActivityHistoryState } from "@/utils/activity-history-repository";
 import { syncActivityHistory } from "@/utils/activity-history-runner";
 import { useAppStore } from "@/stores/app-store";
-import { stableEvents } from "@/utils/event-identity";
 import { getRepositoryRevision } from "@/utils/event-repository";
 import { Platform } from "react-native";
 import { create } from "zustand";
@@ -58,6 +57,10 @@ const MIN_TODAY_REFRESH_INTERVAL_MS = 1_500;
 
 let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
+// The revision of today's own records when refreshTodayData last read them.
+// While it holds, the events in the store are the events in the database.
+let publishedToday: { epoch: number; date: string; revision: string } | null =
+  null;
 
 /**
  * For refreshes that read and then publish. A wipe that overtakes one rejects
@@ -373,14 +376,32 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
         get().todayDate === todayDate
       )
         return;
+
+      // The revision moved, but a write to another day leaves today's records
+      // as they are: the same array then stays in the store, and nothing that
+      // derives from it runs again.
+      const epoch = repositoryEpoch();
+      const todayRevision = await getRepositoryRevision(todayDate, todayDate);
+      const eventsUnchanged =
+        publishedToday?.epoch === epoch &&
+        publishedToday.date === todayDate &&
+        publishedToday.revision === todayRevision;
+      if (!force && eventsUnchanged) {
+        if (isCurrent()) set({ todayDataUpdatedAt: dataRevision });
+        return;
+      }
+
       const [todayAggregate, todayEvents] = await Promise.all([
         getDailyAggregateForDate(todayDate),
-        getEventsForRange(todayDate, todayDate),
+        eventsUnchanged
+          ? get().todayEvents
+          : getEventsForRange(todayDate, todayDate),
       ]);
-      const todaySnapshot = buildTodaySnapshot(todayEvents);
+      const todaySnapshot = eventsUnchanged
+        ? get().todaySnapshot
+        : buildTodaySnapshot(todayEvents);
 
       const updatedAt = new Date().toISOString();
-      const stableTodayEvents = stableEvents(get().todayEvents, todayEvents);
 
       if (!isCurrent()) return;
       set({
@@ -389,8 +410,9 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
         todayDate,
         todaySnapshot,
         todayAggregate,
-        todayEvents: stableTodayEvents,
+        todayEvents,
       });
+      publishedToday = { epoch, date: todayDate, revision: todayRevision };
 
       lastTodayRefreshCompletedAtMs = Date.now();
     })();

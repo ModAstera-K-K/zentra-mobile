@@ -26,7 +26,9 @@ const NOW = new Date(2026, 8, 15, 15, 0, 0).getTime();
 const BUDGET = {
   bootstrap: { statements: 18, rows: 1825 },
   batteryWrite: { statements: 5, rows: 2 },
-  refreshAfterWrite: { statements: 7, rows: 773 },
+  // One statement more than a plain re-read: the check of today's own revision,
+  // which is what lets a write to another day skip the re-read altogether.
+  refreshAfterWrite: { statements: 8, rows: 774 },
   refreshUnchanged: { statements: 1, rows: 1 },
   monthOfAggregatesFirstRead: { statements: 295, rows: 44403 },
   monthOfAggregates: { statements: 34, rows: 120 },
