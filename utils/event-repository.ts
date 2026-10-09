@@ -33,6 +33,8 @@ import type {
 } from "@/types/zentra";
 import { getLocalDatabase } from "@/utils/local-database";
 import {
+  AGGREGATE_INPUT_TYPES,
+  AGGREGATE_PRESENCE_TYPES,
   buildDailyAggregateRecord,
   buildTodaySnapshot,
   getLocalDatesForEvents,
@@ -340,6 +342,47 @@ async function getAggregateEventsForDateWithDatabase(
   return [...carriedIn, ...dayEvents];
 }
 
+/**
+ * The local days whose aggregate a batch of newly stored events can change.
+ * Events of a type the aggregate never reads change none, and a type that
+ * only counts as present changes a day only when it is that day's first.
+ */
+async function aggregateDatesChangedBy(
+  database: SQLiteDatabase,
+  events: ZentraEventRecord[],
+): Promise<string[]> {
+  const dates = new Set(
+    getLocalDatesForEvents(
+      events.filter((event) => AGGREGATE_INPUT_TYPES.has(event.dataType)),
+    ),
+  );
+
+  for (const type of AGGREGATE_PRESENCE_TYPES) {
+    const ofType = events.filter((event) => event.dataType === type);
+    for (const date of getLocalDatesForEvents(ofType)) {
+      if (dates.has(date)) continue;
+      const { startIso, endExclusiveIso } = getRangeBounds(date, date);
+      const inBatch = ofType.filter(
+        (event) =>
+          event.timestampStart >= startIso &&
+          event.timestampStart < endExclusiveIso,
+      ).length;
+      const stored = await database.getAllAsync(
+        `SELECT 1 FROM events
+          WHERE data_type = ? AND timestamp_start >= ? AND timestamp_start < ?
+          LIMIT ?`,
+        type,
+        startIso,
+        endExclusiveIso,
+        inBatch + 1,
+      );
+      if (stored.length <= inBatch) dates.add(date);
+    }
+  }
+
+  return [...dates];
+}
+
 export async function rebuildAggregateForDate(
   database: SQLiteDatabase,
   date: string,
@@ -637,7 +680,6 @@ export async function appendEventsForCollector(
 
   await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
-    const affectedDates = getLocalDatesForEvents(events);
     assertActive?.();
     const timestamp = new Date().toISOString();
     const importedRecordCount =
@@ -717,7 +759,7 @@ export async function appendEventsForCollector(
       throw error;
     }
 
-    for (const date of affectedDates) {
+    for (const date of await aggregateDatesChangedBy(database, events)) {
       await rebuildAggregateForDate(database, date);
     }
   });

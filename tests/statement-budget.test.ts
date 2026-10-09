@@ -25,7 +25,7 @@ const NOW = new Date(2026, 8, 15, 15, 0, 0).getTime();
  */
 const BUDGET = {
   bootstrap: { statements: 18, rows: 1825 },
-  batteryWrite: { statements: 11, rows: 771 },
+  batteryWrite: { statements: 5, rows: 2 },
   refreshAfterWrite: { statements: 7, rows: 773 },
   refreshUnchanged: { statements: 1, rows: 1 },
   monthOfAggregatesFirstRead: { statements: 295, rows: 44403 },
