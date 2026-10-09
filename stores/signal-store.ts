@@ -1,3 +1,4 @@
+import { AppState } from "react-native";
 import { create } from "zustand";
 
 import type {
@@ -74,6 +75,28 @@ async function persistSignalState(state: SignalState): Promise<void> {
   });
 }
 
+// The saved copy only seeds the next launch, and readings arrive far faster
+// than that is worth writing. One write follows a burst of changes, or the
+// app leaving the foreground, where a pending timer may never fire.
+const PERSIST_DELAY_MS = 5_000;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+function persistNow(): Promise<void> {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  return persistSignalState(useSignalStore.getState());
+}
+
+function persistSoon(): void {
+  persistTimer ??= setTimeout(() => void persistNow(), PERSIST_DELAY_MS);
+}
+
+AppState.addEventListener("change", (state) => {
+  if (state !== "active" && persistTimer) void persistNow();
+});
+
 function withTimestamp<T extends object>(
   payload: T,
   key: string,
@@ -101,23 +124,27 @@ export const useSignalStore = create<SignalState>((set, get) => ({
   },
 
   setStepSupport: async (stepSupported) => {
+    if (get().stepSupported === stepSupported) return;
     set({ stepSupported });
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setStepPermissionStatus: async (stepPermissionStatus) => {
+    if (get().stepPermissionStatus === stepPermissionStatus) return;
     set({ stepPermissionStatus });
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setStepCount: async (stepCount) => {
+    if (get().stepCount === stepCount) return;
     set(withTimestamp({ stepCount }, "stepLastUpdatedAt"));
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setBatterySupport: async (batterySupported) => {
+    if (get().batterySupported === batterySupported) return;
     set({ batterySupported });
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setBatterySnapshot: async ({
@@ -135,22 +162,25 @@ export const useSignalStore = create<SignalState>((set, get) => ({
         "batteryLastUpdatedAt",
       ),
     );
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setLocationSupport: async (locationSupported) => {
+    if (get().locationSupported === locationSupported) return;
     set({ locationSupported });
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setLocationPermissionStatus: async (locationPermissionStatus) => {
+    if (get().locationPermissionStatus === locationPermissionStatus) return;
     set({ locationPermissionStatus });
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setLocationServicesEnabled: async (locationServicesEnabled) => {
+    if (get().locationServicesEnabled === locationServicesEnabled) return;
     set({ locationServicesEnabled });
-    await persistSignalState(get());
+    persistSoon();
   },
 
   addLocationSample: async (sample) => {
@@ -162,17 +192,19 @@ export const useSignalStore = create<SignalState>((set, get) => ({
         "locationLastUpdatedAt",
       ),
     );
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setAmbientLightSupport: async (ambientLightSupported) => {
+    if (get().ambientLightSupported === ambientLightSupported) return;
     set({ ambientLightSupported });
-    await persistSignalState(get());
+    persistSoon();
   },
 
   setAmbientLightLux: async (ambientLightLux) => {
+    if (get().ambientLightLux === ambientLightLux) return;
     set(withTimestamp({ ambientLightLux }, "ambientLightLastUpdatedAt"));
-    await persistSignalState(get());
+    persistSoon();
   },
 
   clearCapturedData: async () => {
@@ -180,6 +212,6 @@ export const useSignalStore = create<SignalState>((set, get) => ({
       ...EMPTY_SIGNAL_STATE,
       isHydrated: true,
     });
-    await persistSignalState(get());
+    await persistNow();
   },
 }));
