@@ -38,32 +38,42 @@ function hasPeriodicReconcileCollectors(
   ]);
 }
 
-if (!TaskManager.isTaskDefined(ZENTRA_BACKGROUND_RECONCILE_TASK)) {
-  TaskManager.defineTask(ZENTRA_BACKGROUND_RECONCILE_TASK, async () => {
-    try {
-      logBackgroundReconcile("task started");
-      await runImportantCollectorReconcile({
-        activityDrainBatchSize: BACKGROUND_ACTIVITY_DRAIN_BATCH_SIZE,
-        activityDrainMaxBatches: BACKGROUND_ACTIVITY_DRAIN_MAX_BATCHES,
-        budgetMs: BACKGROUND_RECONCILE_BUDGET_MS,
-        trigger: "backgroundTask",
-      });
-      await useRepositoryStore.getState().noteBackgroundTaskSuccess();
-      logBackgroundReconcile("task finished successfully");
-      return BackgroundTask.BackgroundTaskResult.Success;
-    } catch (error) {
-      logBackgroundReconcile(
-        `task failed: ${error instanceof Error ? error.message : "Background reconcile failed"}`,
+async function reconcileInBackground(): Promise<BackgroundTask.BackgroundTaskResult> {
+  try {
+    logBackgroundReconcile("task started");
+    await runImportantCollectorReconcile({
+      activityDrainBatchSize: BACKGROUND_ACTIVITY_DRAIN_BATCH_SIZE,
+      activityDrainMaxBatches: BACKGROUND_ACTIVITY_DRAIN_MAX_BATCHES,
+      budgetMs: BACKGROUND_RECONCILE_BUDGET_MS,
+      trigger: "backgroundTask",
+    });
+    await useRepositoryStore.getState().noteBackgroundTaskSuccess();
+    logBackgroundReconcile("task finished successfully");
+    return BackgroundTask.BackgroundTaskResult.Success;
+  } catch (error) {
+    logBackgroundReconcile(
+      `task failed: ${error instanceof Error ? error.message : "Background reconcile failed"}`,
+    );
+    await useRepositoryStore
+      .getState()
+      .noteBackgroundTaskFailure(
+        error instanceof Error ? error.message : "Background reconcile failed",
       );
-      await useRepositoryStore
-        .getState()
-        .noteBackgroundTaskFailure(
-          error instanceof Error
-            ? error.message
-            : "Background reconcile failed",
-        );
-      return BackgroundTask.BackgroundTaskResult.Failed;
-    }
+    return BackgroundTask.BackgroundTaskResult.Failed;
+  }
+}
+
+let backgroundReconcileInFlight: Promise<BackgroundTask.BackgroundTaskResult> | null =
+  null;
+
+if (!TaskManager.isTaskDefined(ZENTRA_BACKGROUND_RECONCILE_TASK)) {
+  // The system can start the task again before the last run has finished. A
+  // second start joins the run in progress, as a foreground resume does.
+  TaskManager.defineTask(ZENTRA_BACKGROUND_RECONCILE_TASK, () => {
+    backgroundReconcileInFlight ??= reconcileInBackground().finally(() => {
+      backgroundReconcileInFlight = null;
+    });
+    return backgroundReconcileInFlight;
   });
 }
 
