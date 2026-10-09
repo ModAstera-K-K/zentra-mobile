@@ -33,7 +33,9 @@ import { BackgroundStatusCard } from "@/components/zentra/BackgroundStatusCard";
 import { CompletenessCard } from "@/components/zentra/CompletenessCard";
 import { DetailSheet } from "@/components/zentra/DetailSheet";
 import { EmptyState } from "@/components/zentra/EmptyState";
+import { DataUnavailableCard } from "@/components/zentra/DataUnavailableCard";
 import { MetricGrid } from "@/components/zentra/MetricGrid";
+import { MetricGridSkeleton } from "@/components/zentra/MetricGridSkeleton";
 import { PilotLight } from "@/components/zentra/PilotLight";
 import { RecentSignalFeed } from "@/components/zentra/RecentSignalFeed";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
@@ -138,9 +140,14 @@ function getActivityNormalizationLabel(
 
 const NO_PENDING_DATES: ReadonlySet<string> = new Set();
 
+const LOADING_SECTIONS: TodaySectionKey[] = ["pattern", "loadingMetrics"];
+const DATA_UNAVAILABLE_SECTIONS: TodaySectionKey[] = ["dataUnavailable"];
+
 type TodaySectionKey =
   | "insights"
   | "pattern"
+  | "loadingMetrics"
+  | "dataUnavailable"
   | "metrics"
   | "activityStrip"
   | "backgroundStatus"
@@ -435,6 +442,7 @@ export default function TodayScreen() {
   const repository = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
+      bootstrapError: state.bootstrapError,
       backgroundCollectionServiceCheckedAt:
         state.backgroundCollectionServiceCheckedAt,
       backgroundCollectionServiceState: state.backgroundCollectionServiceState,
@@ -471,6 +479,7 @@ export default function TodayScreen() {
   const refreshTodayData = useRepositoryStore(
     (state) => state.refreshTodayData,
   );
+  const bootstrapRepository = useRepositoryStore((state) => state.bootstrap);
   // Only the slow-changing permission and capability fields are subscribed to.
   // Live sensor readings are read where they are used (liveSignalValues), so a
   // step, lux or battery reading does not re-render this screen.
@@ -1553,14 +1562,20 @@ export default function TodayScreen() {
     : hasCollectors
       ? "Welcome back."
       : "Hey, welcome.";
+  // Stored records are not loaded yet: say so, and never claim there are none.
+  const isLoadingRepository = !repository.isHydrated && !isDemoMode;
   const introMessage =
     isRefreshingTodayData && !isDemoMode
       ? "Refreshing today..."
       : isDemoMode
         ? "Sample signals are flowing."
-        : hasCollectors
-          ? "Signals are coming in from your phone."
-          : "Nothing's running yet — head to Settings to start.";
+        : !hasCollectors
+          ? "Nothing's running yet — head to Settings to start."
+          : !isLoadingRepository
+            ? "Signals are coming in from your phone."
+            : repository.bootstrapError
+              ? "Your signals are still on this phone."
+              : "Loading today's signals…";
   const totalCollectorCount = Object.keys(collectors).length;
   const statusLabel = isDemoMode
     ? "Demo"
@@ -1586,6 +1601,13 @@ export default function TodayScreen() {
 
     return items;
   }, [secondaryMetrics.length]);
+  // While loading, the saved pattern keeps its place at the top and the tiles
+  // show as placeholders, so nothing moves when the records arrive.
+  const listSections = !isLoadingRepository
+    ? sections
+    : repository.bootstrapError
+      ? DATA_UNAVAILABLE_SECTIONS
+      : LOADING_SECTIONS;
 
   const renderSection = React.useCallback(
     ({ item }: { item: TodaySectionKey }) => {
@@ -1607,6 +1629,10 @@ export default function TodayScreen() {
               textSecondary={palette.textSecondary}
             />
           );
+        case "loadingMetrics":
+          return <MetricGridSkeleton />;
+        case "dataUnavailable":
+          return <DataUnavailableCard onRetry={bootstrapRepository} />;
         case "metrics":
           return (
             <MetricGrid metrics={metrics} onPress={handleSelectMetric} />
@@ -1695,6 +1721,7 @@ export default function TodayScreen() {
     },
     [
       activityNormalizationWindow,
+      bootstrapRepository,
       dailyRhythmBuckets,
       handleSelectMetric,
       handleSelectPatternCell,
@@ -1776,7 +1803,7 @@ export default function TodayScreen() {
         </View>
       }
     >
-      {(!repository.isHydrated && !isDemoMode) || !hasCollectors ? (
+      {!hasCollectors ? (
         <EmptyState
           body="Head to Settings and turn on a collector. Zentra will start reading your signals quietly in the background."
           iconName="radio-outline"
@@ -1785,7 +1812,7 @@ export default function TodayScreen() {
       ) : (
         <FlatList
           contentContainerStyle={styles.listContent}
-          data={sections}
+          data={listSections}
           keyExtractor={(item) => item}
           refreshControl={
             <RefreshControl
