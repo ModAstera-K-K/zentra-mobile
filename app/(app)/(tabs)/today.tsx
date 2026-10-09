@@ -121,6 +121,7 @@ import {
 import { startPerfTimer } from "@/utils/perf";
 import { repositoryEpoch } from "@/utils/repository-session";
 import { useShallow } from "zustand/react/shallow";
+import { shallow } from "zustand/shallow";
 
 function getActivityNormalizationLabel(
   window: ActivityNormalizationWindow,
@@ -404,6 +405,23 @@ const BackgroundStatusSection = React.memo(function BackgroundStatusSection({
   );
 });
 
+/** The live sensor readings as they are now, without subscribing to them. */
+function liveSignalValues() {
+  const state = useSignalStore.getState();
+  return {
+    stepCount: state.stepCount,
+    stepLastUpdatedAt: state.stepLastUpdatedAt,
+    batteryLevel: state.batteryLevel,
+    batteryStateLabel: state.batteryStateLabel,
+    lowPowerMode: state.lowPowerMode,
+    batteryLastUpdatedAt: state.batteryLastUpdatedAt,
+    locationSamples: state.locationSamples,
+    locationLastUpdatedAt: state.locationLastUpdatedAt,
+    ambientLightLux: state.ambientLightLux,
+    ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
+  };
+}
+
 export default function TodayScreen() {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -453,9 +471,9 @@ export default function TodayScreen() {
   const refreshTodayData = useRepositoryStore(
     (state) => state.refreshTodayData,
   );
-  // Split signal subscriptions: slow-changing permission/capability fields vs
-  // fast-changing sensor values. This prevents every step/lux/battery tick from
-  // re-queuing the expensive metrics and visibleCollectors effects.
+  // Only the slow-changing permission and capability fields are subscribed to.
+  // Live sensor readings are read where they are used (liveSignalValues), so a
+  // step, lux or battery reading does not re-render this screen.
   const signalMeta = useSignalStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
@@ -466,20 +484,6 @@ export default function TodayScreen() {
       locationPermissionStatus: state.locationPermissionStatus,
       locationServicesEnabled: state.locationServicesEnabled,
       ambientLightSupported: state.ambientLightSupported,
-    })),
-  );
-  const signalValues = useSignalStore(
-    useShallow((state) => ({
-      stepCount: state.stepCount,
-      stepLastUpdatedAt: state.stepLastUpdatedAt,
-      batteryLevel: state.batteryLevel,
-      batteryStateLabel: state.batteryStateLabel,
-      lowPowerMode: state.lowPowerMode,
-      batteryLastUpdatedAt: state.batteryLastUpdatedAt,
-      locationSamples: state.locationSamples,
-      locationLastUpdatedAt: state.locationLastUpdatedAt,
-      ambientLightLux: state.ambientLightLux,
-      ambientLightLastUpdatedAt: state.ambientLightLastUpdatedAt,
     })),
   );
   const isDemoMode = dataMode === "demo";
@@ -498,7 +502,6 @@ export default function TodayScreen() {
     React.useState(false);
   const [isRefreshingTodayData, setIsRefreshingTodayData] =
     React.useState(false);
-  const latestSignalValuesRef = React.useRef(signalValues);
   const focusReadyStopRef = React.useRef<
     | ((
         endContext?: Record<
@@ -509,9 +512,6 @@ export default function TodayScreen() {
     | null
   >(null);
 
-  React.useEffect(() => {
-    latestSignalValuesRef.current = signalValues;
-  }, [signalValues]);
   // The store's day, so the anchor and today's records always change together.
   const todayAnchor = repository.todayDate;
 
@@ -831,7 +831,7 @@ export default function TodayScreen() {
     }
   }, [refreshTodayData]);
 
-  const [metrics, setMetrics] = React.useState<DashboardMetric[]>([]);
+  const [baseMetrics, setBaseMetrics] = React.useState<DashboardMetric[]>([]);
   const [visibleCollectors, setVisibleCollectors] = React.useState<
     CollectorState[]
   >([]);
@@ -854,25 +854,12 @@ export default function TodayScreen() {
         ? buildDashboardMetrics(demoCollectors, true)
         : buildLiveDashboardMetrics(
             collectors,
-            { ...signalMeta, ...latestSignalValuesRef.current },
+            { ...signalMeta, ...liveSignalValues() },
             repository.todaySnapshot,
             repository.todayAggregate,
             repository.todayEvents,
           );
-      setMetrics(
-        result.map((metric) =>
-          metric.key === "activeMinutes" && !isDemoMode
-            ? {
-                ...metric,
-                detail: activeRefresh.error
-                  ? `Update unavailable: ${activeRefresh.error}. Cached coverage may be incomplete.`
-                  : activeRefresh.updating
-                    ? `${metric.detail} Updating…`
-                    : metric.detail,
-              }
-            : metric,
-        ),
-      );
+      setBaseMetrics(result);
     });
     return () => interaction.cancel();
   }, [
@@ -883,27 +870,42 @@ export default function TodayScreen() {
     repository.todaySnapshot,
     repository.todayAggregate,
     repository.todayEvents,
-    activeRefresh.error,
-    activeRefresh.updating,
-    // signalValues is intentionally omitted — metrics only needs permission/
-    // capability fields (signalMeta). Including signalValues would re-trigger
-    // this effect on every sensor tick (step, lux, battery).
   ]);
+  // The refresh status only changes one tile's detail line, so it is applied
+  // here and does not rebuild every metric each time a refresh starts or ends.
+  const metrics = React.useMemo(
+    () =>
+      isDemoMode
+        ? baseMetrics
+        : baseMetrics.map((metric) =>
+            metric.key === "activeMinutes"
+              ? {
+                  ...metric,
+                  detail: activeRefresh.error
+                    ? `Update unavailable: ${activeRefresh.error}. Cached coverage may be incomplete.`
+                    : activeRefresh.updating
+                      ? `${metric.detail} Updating…`
+                      : metric.detail,
+                }
+              : metric,
+          ),
+    [activeRefresh.error, activeRefresh.updating, baseMetrics, isDemoMode],
+  );
   const liveSleepSummary = useSleepSummary(!isDemoMode);
   const sleepEstimate = React.useMemo(
     () =>
       isDemoMode ? buildSleepEstimate(demoCollectors, true) : liveSleepSummary,
     [isDemoMode, demoCollectors, liveSleepSummary],
   );
-  // Defer visible collectors computation until after interactions.
-  // Depends on both signal slices since collector labels show sensor values.
+  // Collector labels can show sensor readings, so this follows the signal
+  // store directly and updates state only when a visible status changed.
   React.useEffect(() => {
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const update = () => {
       const result = isDemoMode
         ? Object.values(demoCollectors).filter((collector) => collector.enabled)
         : buildCollectorStatuses(
             collectors,
-            { ...signalMeta, ...signalValues },
+            { ...signalMeta, ...liveSignalValues() },
             repository.diagnostics,
             {
               hasLatestSleepEstimate: Boolean(repository.latestSleepEvent),
@@ -914,15 +916,24 @@ export default function TodayScreen() {
               },
             },
           ).filter((collector) => collector.enabled);
-      setVisibleCollectors(result);
-    });
-    return () => interaction.cancel();
+      setVisibleCollectors((previous) =>
+        previous.length === result.length &&
+        result.every((collector, index) => shallow(collector, previous[index]))
+          ? previous
+          : result,
+      );
+    };
+    const interaction = InteractionManager.runAfterInteractions(update);
+    const unsubscribe = isDemoMode ? null : useSignalStore.subscribe(update);
+    return () => {
+      interaction.cancel();
+      unsubscribe?.();
+    };
   }, [
     isDemoMode,
     demoCollectors,
     collectors,
     signalMeta,
-    signalValues,
     repository.diagnostics,
     repository.latestSleepEvent,
     activityPermissionStatus,
