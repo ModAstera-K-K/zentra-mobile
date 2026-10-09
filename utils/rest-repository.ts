@@ -1,5 +1,5 @@
 import { getLocalDatabase } from "@/utils/local-database";
-import { decodeEventRowsWork, enqueueDatabaseOperation, mapEventRow, rebuildAggregateForDate, type EventRow } from "@/utils/event-repository";
+import { decodeEventRowsWork, enqueueDatabaseOperation, getEventsOfTypeForRange, mapEventRow, rebuildAggregateForDate, type EventRow } from "@/utils/event-repository";
 import { runCooperatively } from "@/utils/cooperative-work";
 import { repositoryEpoch, assertRepositoryEpoch } from "@/utils/repository-session";
 import { getLocalDatesForEvents } from "@/utils/repository-aggregates";
@@ -9,9 +9,19 @@ import { restWakeDates } from "@/utils/rest-window";
 import { commitRestEstimates, upsertRestEvent } from "@/utils/rest-inference-sql";
 import { createRestAdjustment, adjustmentDates } from "@/utils/rest-adjustment";
 import { selectSleepForWakeDate } from "@/utils/sleep-selection";
+import { sleepSummaryEvent } from "@/utils/sleep-summary";
+import type { ZentraEventRecord } from "@/types/zentra";
 import { RELEASE_FLAGS } from "@/constants/release-flags";
 import { readActivityHistoryState } from "@/utils/activity-history-sql";
 import { pendingRestHistoryGaps } from "@/utils/rest-history-coverage";
+
+/**
+ * The night that ended on `wakeDate`, from the sleep records alone. The
+ * summary reads no other event type, so none of them is fetched.
+ */
+export async function loadSleepSummaryEvent(wakeDate: string): Promise<ZentraEventRecord | null> {
+  return sleepSummaryEvent(await getEventsOfTypeForRange("sleep_inferred", shiftISODate(wakeDate, -1), wakeDate), wakeDate);
+}
 
 export function reconcileRestEstimates(now = new Date()): Promise<number> {
   const epoch = repositoryEpoch();

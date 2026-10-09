@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { useIsFocused } from "@react-navigation/native";
 import { useRepositoryStore } from "@/stores";
-import { getEventsForRange } from "@/utils/event-repository";
-import { shiftISODate } from "@/utils/dates";
-import { sleepSummaryEvent } from "@/utils/sleep-summary";
+import { shallow } from "zustand/shallow";
+import { loadSleepSummaryEvent } from "@/utils/rest-repository";
 import { buildLiveSleepEstimate } from "@/utils/device-signals";
 
 export function useSleepSummary(enabled: boolean) {
@@ -14,10 +13,12 @@ export function useSleepSummary(enabled: boolean) {
   useEffect(() => {
     if (!enabled || !focused) return;
     let cancelled = false;
-    void getEventsForRange(shiftISODate(today, -1), today)
-      .then((events) => {
-        if (!cancelled)
-          setSummary(buildLiveSleepEstimate(sleepSummaryEvent(events, today)));
+    void loadSleepSummaryEvent(today)
+      .then((event) => {
+        if (cancelled) return;
+        const next = buildLiveSleepEstimate(event);
+        // An unchanged night keeps its object, so a write elsewhere does not re-render the card.
+        setSummary((previous) => (shallow(previous, next) ? previous : next));
       })
       .catch(() => {
         if (!cancelled) setSummary({ ...buildLiveSleepEstimate(null), qualityLabel: "Records unavailable", detail: "Could not read this night's records. Reopen this screen to retry." });
