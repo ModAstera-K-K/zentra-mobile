@@ -9,7 +9,34 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Regression tests
+        run: npm test
+
   release-android:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -49,6 +76,14 @@ jobs:
         run: |
           ./android/gradlew -p android assembleRelease -Pzentra.requireReleaseSigning=true
 
+      - name: Verify release signature
+        id: signature
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/zentra-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: node ./scripts/verify-android-release-signature.mjs android/app/build/outputs/apk/release/app-release.apk
+
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
@@ -59,6 +94,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            APK signer certificate SHA-256: `${{ steps.signature.outputs.signer_sha256 }}`
           files: |
             release-assets/zentra-${{ github.ref_name }}.apk
             release-assets/zentra-${{ github.ref_name }}.apk.sha256
