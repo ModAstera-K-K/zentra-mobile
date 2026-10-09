@@ -3,7 +3,7 @@ import { AppState, Platform, type AppStateStatus } from "react-native";
 
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import {
-  getStoredEventCount,
+  hasStoredEvents,
   pruneLocationEventsBefore,
   seedRepositoryEvents,
 } from "@/utils/event-repository";
@@ -118,7 +118,8 @@ export function useSignalBootstrap(): void {
   }, [bootstrap]);
 
   useEffect(() => {
-    void bootstrapRepository();
+    // A failure is kept in the store, where Today offers a retry.
+    void bootstrapRepository().catch(() => undefined);
   }, [bootstrapRepository]);
 
   useEffect(() => {
@@ -129,7 +130,7 @@ export function useSignalBootstrap(): void {
     let isCancelled = false;
 
     async function seedRepository(): Promise<void> {
-      if ((await getStoredEventCount()) > 0 || isCancelled) {
+      if ((await hasStoredEvents()) || isCancelled) {
         hasSeededRef.current = true;
         return;
       }

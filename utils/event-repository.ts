@@ -495,13 +495,14 @@ export async function initializeEventRepository(): Promise<void> {
   });
 }
 
-export async function getStoredEventCount(): Promise<number> {
+/** Whether anything is stored. Stops at the first row, where a count reads them all. */
+export async function hasStoredEvents(): Promise<boolean> {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
-    const row = await database.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM events",
+    const row = await database.getFirstAsync<{ present: number }>(
+      "SELECT EXISTS (SELECT 1 FROM events) AS present",
     );
-    return row?.count ?? 0;
+    return row?.present === 1;
   });
 }
 
@@ -768,7 +769,7 @@ export async function appendEventsForCollector(
 export async function seedRepositoryEvents(
   events: ZentraEventRecord[],
 ): Promise<void> {
-  if (!events.length || (await getStoredEventCount()) > 0) {
+  if (!events.length || await hasStoredEvents()) {
     return;
   }
 

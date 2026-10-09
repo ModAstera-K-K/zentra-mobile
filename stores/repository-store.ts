@@ -28,6 +28,7 @@ import {
 import {
   loadPersistedRepositoryMeta,
   savePersistedRepositoryMeta,
+  type PersistedRepositoryMeta,
 } from "@/utils/app-storage";
 import { createActivityEvent } from "@/utils/live-event-builders";
 import {
@@ -55,6 +56,7 @@ const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
 
 const MIN_TODAY_REFRESH_INTERVAL_MS = 1_500;
 
+let bootstrapInFlight: Promise<void> | null = null;
 let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
 // The revision of today's own records when refreshTodayData last read them.
@@ -104,6 +106,8 @@ interface RepositoryStoreState {
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
   bufferedActivityQueueDepth: number;
+  /** Why the last bootstrap failed; null while one is running or once one succeeds. */
+  bootstrapError: string | null;
   isHydrated: boolean;
   lastBufferedActivityCursor: number | null;
   lastBackgroundReconcileAt: string | null;
@@ -140,6 +144,8 @@ interface RepositoryStoreState {
   diagnostics: CollectorDiagnosticRecord[];
   diagnosticsHistory: CollectorDiagnosticRecord[];
   bootstrap: () => Promise<void>;
+  /** The reads behind bootstrap; call bootstrap, which runs one at a time. */
+  loadStoredState: () => Promise<void>;
   refreshAll: () => Promise<void>;
   refreshTodayData: (force?: boolean) => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
@@ -164,7 +170,7 @@ interface RepositoryStoreState {
 async function persistRepositoryMeta(
   state: RepositoryStoreState,
 ): Promise<void> {
-  await savePersistedRepositoryMeta({
+  const meta: PersistedRepositoryMeta = {
     backgroundCollectionServiceCheckedAt:
       state.backgroundCollectionServiceCheckedAt,
     backgroundCollectionServiceState: state.backgroundCollectionServiceState,
@@ -190,7 +196,19 @@ async function persistRepositoryMeta(
     lastReconcileRunAt: state.lastReconcileRunAt,
     lastReconcileStartedAt: state.lastReconcileStartedAt,
     lastReconcileTrigger: state.lastReconcileTrigger,
-  });
+  };
+  if (state.isHydrated) {
+    await savePersistedRepositoryMeta(meta);
+    return;
+  }
+  // Before bootstrap the store still holds its empty defaults, so saving it
+  // whole would erase what earlier runs recorded. Only what this run has set
+  // is laid over the saved record.
+  const saved = await loadPersistedRepositoryMeta();
+  const setThisRun = Object.fromEntries(
+    Object.entries(meta).filter(([, value]) => value !== null && value !== 0),
+  );
+  await savePersistedRepositoryMeta({ ...meta, ...saved, ...setThisRun });
 }
 
 export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
@@ -201,6 +219,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   backgroundTaskRegistrationStatus: null,
   activityHistory: null,
   bufferedActivityQueueDepth: 0,
+  bootstrapError: null,
   isHydrated: false,
   lastBufferedActivityCursor: null,
   lastBackgroundReconcileAt: null,
@@ -232,26 +251,50 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   diagnostics: [],
   diagnosticsHistory: [],
 
-  bootstrap: unlessWiped(async (isCurrent) => {
-    if (get().isHydrated) {
-      return;
-    }
+  bootstrap: () => {
+    if (get().isHydrated) return Promise.resolve();
+    bootstrapInFlight ??= (async () => {
+      set({ bootstrapError: null });
+      try {
+        await get().loadStoredState();
+      } catch (error) {
+        set({
+          bootstrapError:
+            error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      } finally {
+        bootstrapInFlight = null;
+      }
+    })();
+    return bootstrapInFlight;
+  },
 
+  loadStoredState: unlessWiped(async (isCurrent) => {
     await initializeEventRepository();
-    const persistedMeta = await loadPersistedRepositoryMeta();
-    const activityHistory =
-      Platform.OS === "ios" ? await getActivityHistoryState() : null;
-    const bufferedActivityQueueDepth =
-      await getBufferedActivityTransitionCountAsync();
-    const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
-    const [diagnostics, todayAggregate, latestSleepEvent, todayEvents] =
-      await Promise.all([
-        getLatestCollectorDiagnostics(),
-        getDailyAggregateForDate(todayDate),
-        getLatestEventByType("sleep_inferred"),
-        getEventsForRange(todayDate, todayDate),
-      ]);
+    // The database reads are queued together, straight after the open, so a
+    // collector's first write cannot slot in between them. Storage and the
+    // native count do not use the database and are read alongside.
+    const [
+      persistedMeta,
+      activityHistory,
+      bufferedActivityQueueDepth,
+      dataRevision,
+      diagnostics,
+      todayAggregate,
+      latestSleepEvent,
+      todayEvents,
+    ] = await Promise.all([
+      loadPersistedRepositoryMeta(),
+      Platform.OS === "ios" ? getActivityHistoryState() : null,
+      getBufferedActivityTransitionCountAsync(),
+      getRepositoryRevision(),
+      getLatestCollectorDiagnostics(),
+      getDailyAggregateForDate(todayDate),
+      getLatestEventByType("sleep_inferred"),
+      getEventsForRange(todayDate, todayDate),
+    ]);
     // Same local-day window as the events above: no second full-day read.
     const todaySnapshot = buildTodaySnapshot(todayEvents);
 

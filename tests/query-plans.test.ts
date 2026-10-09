@@ -29,10 +29,6 @@ const GROWING_TABLES = ["events", "collector_diagnostics"];
  */
 const KNOWN = [
   {
-    sql: "SELECT COUNT(*) as count FROM events",
-    why: "seed check counts every event (029 item 4.3)",
-  },
-  {
     sql: "FROM health_sync_state s LEFT JOIN events e ON e.source='health_connect'",
     why: "health sync states read every imported record (029 item 6.1)",
   },
@@ -40,6 +36,10 @@ const KNOWN = [
 
 /** Statements the rules flag that are cheap for a reason the plan text cannot show. */
 const ACCEPTED = [
+  {
+    sql: "SELECT EXISTS (SELECT 1 FROM events) AS present",
+    why: "stops at the first row it finds",
+  },
   {
     sql: "SELECT * FROM collector_diagnostics ORDER BY recorded_at DESC LIMIT ?",
     why: "Settings only, over a table pruned to 200 rows per collector",
@@ -131,7 +131,7 @@ test("no statement walks a growing table from end to end, beyond the listed ones
   await repository.getGroupedEventsForRange(today, today);
   await repository.getTodayLiveSnapshot();
   await repository.getRepositoryFirstDate();
-  await repository.getStoredEventCount();
+  await repository.hasStoredEvents();
   await repository.getLatestCollectorDiagnosticForKey("deviceState");
   await repository.getCollectorDiagnosticHistoryForKey("deviceState");
   await repository.getRepositoryRevision(weekAgo, today);
