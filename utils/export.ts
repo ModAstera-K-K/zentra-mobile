@@ -208,10 +208,11 @@ const BUCKETS_PER_DAY: Record<UnifiedTimelineResolution, number> = {
   "15min": 96,
   hour: 24,
 };
-// One timeline bucket and one daily aggregate as written, measured on
-// ordinary days.
-const BUCKET_BYTES: Record<ExportFormat, number> = { json: 620, csv: 150 };
-const AGGREGATE_BYTES = 110;
+// One timeline bucket and one daily aggregate row as written. Measured on a
+// week of default-collector days: 720 to 820 bytes a bucket as JSON, 150 to
+// 160 as CSV, 116 an aggregate row.
+const BUCKET_BYTES: Record<ExportFormat, number> = { json: 800, csv: 160 };
+const AGGREGATE_BYTES = 120;
 
 export function timelineBucketCount(
   days: number,
