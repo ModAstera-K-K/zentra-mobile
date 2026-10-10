@@ -11,7 +11,7 @@ import {
   type HealthSyncState,
 } from "@/types/health-sync";
 import {
-  getHealthSyncStates,
+  getHealthSyncStatus,
   setHealthSyncStatus,
   commitHealthPage,
 } from "@/utils/health-sync-repository";
@@ -36,7 +36,7 @@ export function syncHealthHistory(): Promise<void> {
   return inFlight;
 }
 async function runHealthHistory(generation: number): Promise<void> {
-  const states = await getHealthSyncStates();
+  const states = await getHealthSyncStatus();
   const permissions = await getGrantedHealthConnectPermissionsAsync();
   for (const type of HEALTH_RECORD_TYPES) {
     assertHealthSyncGeneration(generation);

@@ -3,8 +3,10 @@ import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import { HEALTH_RECORD_TYPES, type HealthSyncState } from "@/types/health-sync";
+import { startHealthSourcesPolling } from "@/utils/health-sources-poller";
 import {
   getHealthSyncStates,
+  getHealthSyncStatus,
   resetHealthHistory,
 } from "@/utils/health-sync-repository";
 import {
@@ -27,22 +29,12 @@ export function HealthSourcesCard() {
     [message, setMessage] = React.useState("");
   React.useEffect(() => {
     if (!focused || mode === "demo") return;
-    let cancelled = false;
-    const read = () => {
-      void getHealthSyncStates()
-        .then((value) => {
-          if (!cancelled) setStates(value);
-        })
-        .catch(() => {
-          if (!cancelled) setMessage("Source status unavailable. Retry below.");
-        });
-    };
-    read();
-    const timer = setInterval(read, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    return startHealthSourcesPolling({
+      onError: () => setMessage("Source status unavailable. Retry below."),
+      onStates: setStates,
+      readCounts: getHealthSyncStates,
+      readStatus: getHealthSyncStatus,
+    });
   }, [focused, mode]);
   async function run(extend: boolean) {
     setBusy(true);

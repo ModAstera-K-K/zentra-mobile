@@ -4,7 +4,10 @@ import { useRepositoryStore } from "@/stores";
 import { refreshActiveDay } from "@/utils/active-background";
 import { enumerateISODateRange, shiftISODate, toISODate } from "@/utils/dates";
 import * as repository from "@/utils/event-repository";
-import { getHealthSyncStates } from "@/utils/health-sync-repository";
+import {
+  getHealthSyncStates,
+  getHealthSyncStatus,
+} from "@/utils/health-sync-repository";
 import { loadPersonalInsights } from "@/utils/insight-repository";
 import { createBatteryEvent } from "@/utils/live-event-builders";
 import { reconcileRestEstimates } from "@/utils/rest-repository";
@@ -139,6 +142,7 @@ test("no statement walks a growing table from end to end, beyond the listed ones
   await repository.getEventsByIds([battery.id]);
   await reconcileRestEstimates(new Date());
   await getHealthSyncStates();
+  await getHealthSyncStatus();
   await loadPersonalInsights(today, await repository.getRepositoryRevision());
   await refreshActiveDay(shiftISODate(today, -1), new AbortController().signal, false);
 

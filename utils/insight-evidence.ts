@@ -9,6 +9,19 @@ export async function loadInsightEvidence(insight: PersonalInsight) {
     ),
   ];
   const records = await getEventsByIds(ids.slice(0, 50));
+  // An observation keeps at most 50 ids and the count of all its records.
+  // The ids give the exact total unless one of them was cut short.
+  const truncated = insight.observations.some(
+    (observation) =>
+      (observation.recordCount ?? 0) > observation.recordIds.length,
+  );
+  const total = truncated
+    ? insight.observations.reduce(
+        (sum, observation) =>
+          sum + (observation.recordCount ?? observation.recordIds.length),
+        0,
+      )
+    : ids.length;
   const detail = insightDetail(insight);
   return {
     ...detail,
@@ -16,7 +29,7 @@ export async function loadInsightEvidence(insight: PersonalInsight) {
       ...detail.facts,
       {
         label: "Supporting records",
-        value: `Showing ${records.length} of ${ids.length} records. Raw source samples can be exported separately.`,
+        value: `Showing ${records.length} of ${total} records. Raw source samples can be exported separately.`,
       },
     ],
     rows: [

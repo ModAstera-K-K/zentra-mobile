@@ -9,7 +9,9 @@ export interface MetricObservation {
   provenance: string;
   coverage: string;
   updatedAt: string | null;
+  /** Up to 50 of the records behind the value; `recordCount` is all of them. */
   recordIds: string[];
+  recordCount?: number;
 }
 export interface PersonalInsight {
   metric: InsightMetric;
