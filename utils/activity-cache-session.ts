@@ -12,6 +12,12 @@ export interface ActivityCacheSessionOptions<Result = ActivityHistory> {
   onHistory(history: Result, revision: string, final: boolean): void;
   onLoading?(loading: boolean): void;
   onError(error: unknown): void;
+  /**
+   * The revision the screen's result already reflects, from an earlier
+   * session's successful pass. Noting it again runs nothing, so coming back to
+   * a screen whose data did not change costs no load.
+   */
+  handled?: string | null;
   /** Quiet time required before a follow-up pass, so a burst of writes costs one pass. */
   settleMs?: number;
   /** Longest a follow-up waits for quiet while writes keep arriving. */
@@ -58,7 +64,8 @@ export function startActivityCacheSession<Result = ActivityHistory>(
   const settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
   const maxSettleMs = options.maxSettleMs ?? DEFAULT_MAX_SETTLE_MS;
   let latest: string | null = null;
-  let handled: string | null = null;
+  let handled: string | null = options.handled ?? null;
+  let passed = false;
   let running = false;
 
   async function run(): Promise<void> {
@@ -66,10 +73,10 @@ export function startActivityCacheSession<Result = ActivityHistory>(
     running = true;
     try {
       while (!signal.aborted && latest !== null && latest !== handled) {
-        // The first pass paints the screen at once. A later one follows writes,
-        // so it waits until they pause: rescoring a day between every burst of
-        // a long import would repeat the same work many times over.
-        if (handled !== null) {
+        // The session's first pass paints the screen at once. A later one
+        // follows writes, so it waits until they pause: rescoring a day between
+        // every burst of a long import would repeat the same work many times.
+        if (passed) {
           for (let waited = 0; waited < maxSettleMs; waited += settleMs) {
             const seen: string | null = latest;
             await wait(settleMs, signal);
@@ -79,6 +86,7 @@ export function startActivityCacheSession<Result = ActivityHistory>(
         }
         const revision = latest;
         if (revision === null) return;
+        passed = true;
         options.onLoading?.(true);
         try {
           const history = await options.load(signal, (progress) => {
