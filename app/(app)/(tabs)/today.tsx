@@ -14,7 +14,6 @@ import { useTabPerformance } from "@/hooks/use-tab-performance";
 import { InsightsSection } from "@/components/zentra/InsightsSection";
 import React from "react";
 import {
-  ActivityIndicator,
   AppState,
   FlatList,
   RefreshControl,
@@ -40,8 +39,8 @@ import { RecentSignalFeed } from "@/components/zentra/RecentSignalFeed";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { SignalSummaryCard } from "@/components/zentra/SignalSummaryCard";
 import { SleepEstimateCard } from "@/components/zentra/SleepEstimateCard";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import type { InlineStatusProps } from "@/components/ui/InlineStatus";
+import { ProgressLine } from "@/components/ui/ProgressLine";
 import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
@@ -166,89 +165,52 @@ const PatternSection = React.memo(function PatternSection({
   error,
   hasLoadedPattern,
   isDemoMode,
-  mutedForeground,
   onRetry,
   onSelectCell,
   statusLabel,
-  textSecondary,
 }: {
   activityNormalizationWindow: ActivityNormalizationWindow;
   cells: ActivityPatternCell[];
   error: string | null;
   hasLoadedPattern: boolean;
   isDemoMode: boolean;
-  mutedForeground: string;
   onRetry: () => void;
   onSelectCell: (cell: ActivityPatternCell) => void;
-  /** Shown under the grid while it is still being brought up to date. */
-  statusLabel: string | null;
-  textSecondary: string;
+  /** Shown in the card's heading while it is being brought up to date. */
+  statusLabel: InlineStatusProps | null;
 }) {
-  if (((!hasLoadedPattern && !isDemoMode) || !cells.length) && error) {
-    return (
-      <View style={styles.sectionBlock}>
-        <Card>
-          <View accessibilityLiveRegion="polite" style={styles.patternLoading}>
-            <Text style={[styles.patternLoadingText, { color: textSecondary }]}>
-              {error} The pattern can&apos;t be shown yet.
-            </Text>
-            <Button onPress={onRetry} variant="outline">
-              Try again
-            </Button>
-          </View>
-        </Card>
-      </View>
-    );
-  }
-  if ((!hasLoadedPattern && !isDemoMode) || !cells.length) {
-    return (
-      <View style={styles.sectionBlock}>
-        <Card>
-          <View style={styles.patternLoading}>
-            <ActivityIndicator color={mutedForeground} size="small" />
-            <Text style={[styles.patternLoadingText, { color: textSecondary }]}>
-              Preparing pattern...
-            </Text>
-          </View>
-        </Card>
-      </View>
-    );
-  }
+  // Before the pattern can be shown the card draws its outline at full size,
+  // so the sections below are already where they will stay.
+  const pending = (!hasLoadedPattern && !isDemoMode) || !cells.length;
+  const status: InlineStatusProps | null =
+    pending && error
+      ? null
+      : pending
+        ? { busy: true, label: "Preparing" }
+        : error
+          ? {
+              accessibilityLabel: `${error} Showing the last result.`,
+              action: { label: "Retry", onPress: onRetry },
+              label: "Update failed",
+            }
+          : statusLabel;
   return (
     <View style={styles.sectionBlock}>
       <ActivityPatternCard
         cells={cells}
+        failure={
+          pending && error
+            ? {
+                message: `${error} The pattern can't be shown yet.`,
+                onRetry,
+              }
+            : null
+        }
         normalizationLabel={getActivityNormalizationLabel(window)}
         onSelectCell={onSelectCell}
+        pending={pending}
+        status={status}
       />
-      {error ? (
-        <View
-          accessibilityLiveRegion="polite"
-          style={styles.patternRefreshingRow}
-        >
-          <Text
-            style={[
-              styles.patternRefreshingText,
-              styles.patternErrorText,
-              { color: textSecondary },
-            ]}
-          >
-            {error} Showing the last result.
-          </Text>
-          <Button onPress={onRetry} variant="ghost">
-            Try again
-          </Button>
-        </View>
-      ) : statusLabel ? (
-        <View style={styles.patternRefreshingRow}>
-          <ActivityIndicator color={mutedForeground} size="small" />
-          <Text
-            style={[styles.patternRefreshingText, { color: textSecondary }]}
-          >
-            {statusLabel}
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 });
@@ -1329,12 +1291,23 @@ export default function TodayScreen() {
     monthCells.length > 0 &&
     (visibleHistoryCurrent || monthCells.some((cell) => cell.hasAnyData));
   // The older days only refine the scale; say so rather than "refreshing".
-  const patternStatus =
-    isDemoMode || !isLoadingPatternHistory
-      ? null
-      : visibleHistoryCurrent
-        ? "Updating the scale from older history..."
-        : "Refreshing pattern...";
+  const patternStatus = React.useMemo<InlineStatusProps | null>(
+    () =>
+      isDemoMode || !isLoadingPatternHistory
+        ? null
+        : visibleHistoryCurrent
+          ? {
+              accessibilityLabel: "Updating the scale from older history",
+              busy: true,
+              label: "Updating scale",
+            }
+          : {
+              accessibilityLabel: "Refreshing pattern",
+              busy: true,
+              label: "Refreshing",
+            },
+    [isDemoMode, isLoadingPatternHistory, visibleHistoryCurrent],
+  );
 
   const retryPattern = React.useCallback(() => {
     loadedCarriedKeyRef.current = null;
@@ -1360,11 +1333,11 @@ export default function TodayScreen() {
       ? {
           busy: false,
           onRetry: retryPattern,
-          text: `Provisional scale: history couldn't load, so this is scored against ${basis}.`,
+          text: `History couldn't load; scored against ${basis}`,
         }
       : {
           busy: true,
-          text: `Provisional scale: scored against ${basis} while your history loads.`,
+          text: `Scored against ${basis} while your history loads`,
         };
   }, [
     activityHistory,
@@ -1566,7 +1539,7 @@ export default function TodayScreen() {
   const isLoadingRepository = !repository.isHydrated && !isDemoMode;
   const introMessage =
     isRefreshingTodayData && !isDemoMode
-      ? "Refreshing today..."
+      ? "Refreshing today…"
       : isDemoMode
         ? "Sample signals are flowing."
         : !hasCollectors
@@ -1576,6 +1549,13 @@ export default function TodayScreen() {
             : repository.bootstrapError
               ? "Your signals are still on this phone."
               : "Loading today's signals…";
+  // Drawn as a line under the header that is always laid out, so starting or
+  // finishing a refresh moves nothing.
+  const isWorking =
+    !isDemoMode &&
+    hasCollectors &&
+    (isRefreshingTodayData ||
+      (isLoadingRepository && !repository.bootstrapError));
   const totalCollectorCount = Object.keys(collectors).length;
   const statusLabel = isDemoMode
     ? "Demo"
@@ -1623,10 +1603,8 @@ export default function TodayScreen() {
               hasLoadedPattern={patternReady}
               isDemoMode={isDemoMode}
               statusLabel={patternStatus}
-              mutedForeground={palette.mutedForeground}
               onRetry={retryPattern}
               onSelectCell={handleSelectPatternCell}
-              textSecondary={palette.textSecondary}
             />
           );
         case "loadingMetrics":
@@ -1732,12 +1710,10 @@ export default function TodayScreen() {
       patternStatus,
       metrics,
       monthCells,
-      palette.mutedForeground,
       patternError,
       retryPattern,
       rhythmError,
       rhythmScaleNote,
-      palette.textSecondary,
       recentSignals,
       repository.backgroundCollectionServiceCheckedAt,
       repository.backgroundCollectionServiceState,
@@ -1781,25 +1757,25 @@ export default function TodayScreen() {
       title="Today"
       titleAccessory={
         <View style={styles.titleAccessory}>
-          <View style={styles.titleAccessoryLeft}>
-            {isRefreshingTodayData && !isDemoMode ? (
-              <ActivityIndicator color={palette.mutedForeground} size="small" />
-            ) : null}
-            <Text
-              style={[styles.introMessage, { color: palette.textSecondary }]}
-              numberOfLines={1}
-            >
-              {introMessage}
-            </Text>
+          <View style={styles.titleAccessoryRow}>
+            <View style={styles.titleAccessoryLeft}>
+              <Text
+                style={[styles.introMessage, { color: palette.textSecondary }]}
+                numberOfLines={1}
+              >
+                {introMessage}
+              </Text>
+            </View>
+            <View style={styles.titleAccessoryRight}>
+              <Text
+                style={[styles.statusLabel, { color: palette.textSecondary }]}
+              >
+                {statusLabel}
+              </Text>
+              <PilotLight size={10} />
+            </View>
           </View>
-          <View style={styles.titleAccessoryRight}>
-            <Text
-              style={[styles.statusLabel, { color: palette.textSecondary }]}
-            >
-              {statusLabel}
-            </Text>
-            <PilotLight size={10} />
-          </View>
+          <ProgressLine active={isWorking} />
         </View>
       }
     >
@@ -1846,31 +1822,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 0,
   },
-  patternLoading: {
-    alignItems: "center",
-    gap: Spacing.sm,
-    justifyContent: "center",
-    minHeight: 120,
-  },
-  patternLoadingText: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.xs,
-    letterSpacing: 0,
-  },
-  patternRefreshingRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  patternErrorText: {
-    flex: 1,
-  },
-  patternRefreshingText: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.xs,
-    letterSpacing: 0,
-  },
   sectionBlock: {
     marginBottom: Layout.sectionGap,
   },
@@ -1886,10 +1837,13 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.md,
   },
   titleAccessory: {
+    gap: Spacing.sm,
+    width: "100%",
+  },
+  titleAccessoryRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    width: "100%",
   },
   titleAccessoryLeft: {
     alignItems: "center",

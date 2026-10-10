@@ -15,6 +15,10 @@ const HEIGHT = 64;
 const INSET = 6;
 const AXIS_HEIGHT = 22;
 
+/** The chart's height, for a placeholder that stands in for a trace. */
+export const RHYTHM_TRACE_HEIGHT = (showAxis: boolean) =>
+  HEIGHT + (showAxis ? AXIS_HEIGHT : 0);
+
 interface DailyRhythmTraceProps {
   label: string;
   color: string;

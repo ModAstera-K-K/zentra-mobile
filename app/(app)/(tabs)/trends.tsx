@@ -646,6 +646,7 @@ export default function TrendsScreen() {
     [palette, hiddenSeriesKeys],
   );
 
+  const refreshesActiveMinutes = !isDemoMode && repository.isHydrated;
   const listHeader = React.useMemo(
     () => (
       <>
@@ -661,17 +662,30 @@ export default function TrendsScreen() {
           ))}
         </View>
 
-        <Text style={[styles.helper, { color: palette.mutedForeground }]}>
-          {formatDateRangeLabel(rangeStart, rangeEnd)}
-        </Text>
-        {pendingDays > 0 ? (
+        {/* One line that is always there: the range, then whatever is
+            still loading for it. */}
+        <View style={styles.rangeLine}>
           <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.helper, { color: palette.mutedForeground }]}
+            numberOfLines={1}
+            style={[styles.rangeLabel, { color: palette.mutedForeground }]}
           >
-            {`Loading ${pendingDays} more day${pendingDays === 1 ? "" : "s"} of this range...`}
+            {formatDateRangeLabel(rangeStart, rangeEnd)}
           </Text>
-        ) : null}
+          <ActiveMinutesRefreshStatus
+            before={
+              pendingDays > 0
+                ? {
+                    accessibilityLabel: `Loading ${pendingDays} more day${pendingDays === 1 ? "" : "s"} of this range`,
+                    busy: true,
+                    label: `${pendingDays} more day${pendingDays === 1 ? "" : "s"} loading`,
+                  }
+                : null
+            }
+            enabled={refreshesActiveMinutes}
+            end={rangeEnd}
+            start={rangeStart}
+          />
+        </View>
 
         {range === "custom" ? (
           <DateRangePickerRow
@@ -682,7 +696,15 @@ export default function TrendsScreen() {
         ) : null}
       </>
     ),
-    [range, palette, rangeStart, rangeEnd, customRange, pendingDays],
+    [
+      range,
+      palette,
+      rangeStart,
+      rangeEnd,
+      customRange,
+      pendingDays,
+      refreshesActiveMinutes,
+    ],
   );
 
   return (
@@ -691,11 +713,15 @@ export default function TrendsScreen() {
       subtitle="How your days connect"
       title="Trends"
     >
-      <ActiveMinutesRefreshStatus
-        enabled={!isDemoMode && repository.isHydrated}
-        start={rangeStart}
-        end={rangeEnd}
-      />
+      {isDemoMode || hasLiveTrendData ? null : (
+        // No list to carry the status line: keep the refresh running unseen.
+        <ActiveMinutesRefreshStatus
+          enabled={refreshesActiveMinutes}
+          end={rangeEnd}
+          hidden
+          start={rangeStart}
+        />
+      )}
       {isDemoMode || hasLiveTrendData ? (
         <FlatList
           contentContainerStyle={{
@@ -735,11 +761,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     marginBottom: Spacing.md,
   },
-  helper: {
+  rangeLine: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+    justifyContent: "space-between",
+    marginBottom: Spacing.sm,
+    minHeight: 20,
+  },
+  rangeLabel: {
+    flexShrink: 1,
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
-    marginBottom: Spacing.sm,
   },
   rangeRow: {
     flexDirection: "row",

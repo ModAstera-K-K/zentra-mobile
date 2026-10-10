@@ -10,7 +10,12 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { loadPersonalInsights } from "@/utils/insight-repository";
 import { insightSummary, insightDetail } from "@/utils/insight-presentation";
 import { DetailSheet } from "@/components/zentra/DetailSheet";
+import { InlineStatus } from "@/components/ui/InlineStatus";
 import type { PersonalInsight } from "@/types/insights";
+
+// How many comparisons the last load found, shared by every place the section
+// is shown, so its placeholder rows match what is about to replace them.
+let lastEligibleCount: number | null = null;
 
 export function InsightsSection({ limit = 4 }: { limit?: number }) {
   const palette = Colors[useColorScheme()];
@@ -20,6 +25,7 @@ export function InsightsSection({ limit = 4 }: { limit?: number }) {
   const sync = useRepositoryStore((s) => s.lastHealthSyncWindowEndAt);
   const [insights, setInsights] = React.useState<PersonalInsight[]>([]);
   const [updating, setUpdating] = React.useState(false);
+  const [loaded, setLoaded] = React.useState(false);
   const [error, setError] = React.useState(false);
   const [selected, setSelected] = React.useState<PersonalInsight | null>(null);
   const [evidence, setEvidence] = React.useState<TodayDetailPayload | null>(
@@ -53,7 +59,10 @@ export function InsightsSection({ limit = 4 }: { limit?: number }) {
     setError(false);
     void loadPersonalInsights(anchor, `${revision}:${sync}`)
       .then((value) => {
-        if (!cancelled) setInsights(value);
+        if (cancelled) return;
+        lastEligibleCount = value.filter((i) => i.eligible).length;
+        setInsights(value);
+        setLoaded(true);
       })
       .catch(() => {
         if (!cancelled) setError(true);
@@ -67,39 +76,65 @@ export function InsightsSection({ limit = 4 }: { limit?: number }) {
   }, [focused, revision, sync, mode, anchor, retry]);
   if (!RELEASE_FLAGS.personalInsights || mode === "demo") return null;
   const eligible = insights.filter((i) => i.eligible).slice(0, limit);
+  // Until the first load returns, rows the size of the real ones hold the
+  // section's place. A status never gets a row of its own.
+  const pending = !loaded && (updating || error || (focused && !!revision));
+  const placeholderRows =
+    pending && lastEligibleCount !== 0
+      ? Math.min(limit, lastEligibleCount ?? 2)
+      : 0;
+  const showNone = loaded
+    ? !eligible.length
+    : !pending || lastEligibleCount === 0;
   return (
     <View style={styles.section}>
-      <Text
-        accessibilityRole="header"
-        style={[styles.heading, { color: palette.foreground }]}
-      >
-        What changed
-      </Text>
-      {updating && (
+      <View style={styles.headingRow}>
         <Text
-          accessibilityLiveRegion="polite"
-          style={{ color: palette.textSecondary }}
+          accessibilityRole="header"
+          style={[styles.heading, { color: palette.foreground }]}
         >
-          {insights.length ? "Updating…" : "Preparing comparisons…"}
+          What changed
         </Text>
-      )}
-      {!updating && !eligible.length && !error && (
+        {error ? (
+          <InlineStatus
+            accessibilityLabel="Couldn’t update comparisons"
+            action={{ label: "Retry", onPress: () => setRetry((n) => n + 1) }}
+            label="Update failed"
+          />
+        ) : updating ? (
+          <InlineStatus
+            accessibilityLabel={
+              loaded ? "Updating comparisons" : "Preparing comparisons"
+            }
+            busy
+            label={loaded ? "Updating" : "Preparing"}
+          />
+        ) : null}
+      </View>
+      {showNone && (
         <Text style={{ color: palette.textSecondary }}>
           Not enough comparable days. Comparisons need five matching weekday
           pairs from the same source.
         </Text>
       )}
-      {error && (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setRetry((n) => n + 1)}
-          style={styles.row}
+      {Array.from({ length: placeholderRows }, (_, row) => (
+        <View
+          key={row}
+          style={[styles.row, { borderBottomColor: palette.border }]}
         >
-          <Text style={{ color: palette.foreground }}>
-            Couldn’t update comparisons. Retry
-          </Text>
-        </Pressable>
-      )}
+          {[70, 88].map((width) => (
+            <View key={width} style={styles.placeholderLine}>
+              <Text style={styles.hidden}> </Text>
+              <View
+                style={[
+                  styles.placeholderBar,
+                  { backgroundColor: palette.elevated, width: `${width}%` },
+                ]}
+              />
+            </View>
+          ))}
+        </View>
+      ))}
       {eligible.map((insight) => (
         <Pressable
           key={insight.metric}
@@ -126,7 +161,17 @@ export function InsightsSection({ limit = 4 }: { limit?: number }) {
 }
 const styles = StyleSheet.create({
   section: { gap: Spacing.sm, marginVertical: Spacing.lg },
-  heading: { fontFamily: Fonts.bodyMedium, fontSize: 20 },
+  headingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+    justifyContent: "space-between",
+  },
+  heading: { flexShrink: 1, fontFamily: Fonts.bodyMedium, fontSize: 20 },
+  // A text line of the real row's height, with a bar drawn over it.
+  placeholderLine: { justifyContent: "center" },
+  placeholderBar: { borderRadius: 4, height: 12, position: "absolute" },
+  hidden: { opacity: 0 },
   row: {
     paddingVertical: Spacing.md,
     minHeight: 48,
