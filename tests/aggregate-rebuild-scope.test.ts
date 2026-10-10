@@ -9,6 +9,7 @@ import {
 import {
   AGGREGATE_INPUT_TYPES,
   AGGREGATE_PRESENCE_TYPES,
+  AGGREGATE_UNRELATED_TYPES,
   buildDailyAggregateRecord,
 } from "@/utils/repository-aggregates";
 import {
@@ -88,6 +89,15 @@ test("only the listed event types can change a day's aggregate", () => {
       assert.deepEqual(aggregate([sample(type, `only-${type}`)]), aggregate([]), type);
   }
   assert.deepEqual(AGGREGATE_PRESENCE_TYPES, ["charging_state"]);
+  // Every type is an input, counted as present, or listed as unrelated.
+  assert.deepEqual(
+    [...AGGREGATE_UNRELATED_TYPES].sort(),
+    TYPES.filter(
+      (type) =>
+        !AGGREGATE_INPUT_TYPES.has(type) &&
+        !AGGREGATE_PRESENCE_TYPES.includes(type),
+    ).sort(),
+  );
 });
 
 test("storing an event rebuilds the day's aggregate only when it can change it", async () => {

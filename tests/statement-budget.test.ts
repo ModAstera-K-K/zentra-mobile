@@ -30,8 +30,10 @@ const BUDGET = {
   // which is what lets a write to another day skip the re-read altogether.
   refreshAfterWrite: { statements: 8, rows: 774 },
   refreshUnchanged: { statements: 1, rows: 1 },
-  monthOfAggregatesFirstRead: { statements: 295, rows: 44403 },
-  monthOfAggregates: { statements: 34, rows: 120 },
+  // Freshness is checked from the window's change rows in one read: about 30
+  // rows where there used to be 30 statements of one row each.
+  monthOfAggregatesFirstRead: { statements: 295, rows: 44433 },
+  monthOfAggregates: { statements: 5, rows: 200 },
 };
 
 async function measure(task: () => Promise<unknown>) {

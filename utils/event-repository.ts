@@ -4,7 +4,9 @@ import { cancelActivityHistory } from "@/utils/activity-history-session";
 import { upsertActivityEvent } from "@/utils/activity-history-sql";
 import {
   cachedActiveMinutes,
+  isActiveSummaryAt,
   isActiveSummaryCurrent,
+  summaryRevisions,
 } from "@/utils/active-minutes-cache";
 import { startPerfTimer } from "@/utils/perf";
 import { runCooperatively } from "@/utils/cooperative-work";
@@ -35,6 +37,7 @@ import { getLocalDatabase } from "@/utils/local-database";
 import {
   AGGREGATE_INPUT_TYPES,
   AGGREGATE_PRESENCE_TYPES,
+  AGGREGATE_UNRELATED_TYPES,
   buildDailyAggregateRecord,
   buildTodaySnapshot,
   getLocalDatesForEvents,
@@ -971,7 +974,11 @@ export async function getDailyAggregatesForRange(
   start: string,
   end: string,
 ): Promise<DailyAggregateRecord[]> {
-  return enqueueDatabaseOperation(async () => {
+  const epoch = repositoryEpoch();
+  // Which days have no stored aggregate, or one built before a change it
+  // depends on. One read of the window's change rows answers that for every
+  // day; it used to be a statement per day.
+  const outdated = await enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
     const dates = await readDatesWithEvents(database, start, end);
     const cached = await database.getAllAsync<{
@@ -983,15 +990,32 @@ export async function getDailyAggregatesForRange(
       end,
     );
     const present = new Set(cached.map((row) => row.date));
-    for (const row of dates)
-      if (!present.has(row.date))
-        await rebuildAggregateForDate(database, row.date);
-    for (const row of cached)
-      if (
-        !(await isActiveSummaryCurrent(database, row.date, row.active_summary))
-      )
-        await rebuildAggregateForDate(database, row.date);
-    const rows = await database.getAllAsync<AggregateRow>(
+    const current = await summaryRevisions(
+      database,
+      cached.map((row) => row.date),
+    );
+    return [
+      ...dates.filter((row) => !present.has(row.date)).map((row) => row.date),
+      ...cached
+        .filter(
+          (row) => !isActiveSummaryAt(row.active_summary, current.get(row.date)),
+        )
+        .map((row) => row.date),
+    ];
+  });
+  // Each rebuild is its own queued operation. A change far in the past makes
+  // a month of days out of date, and rebuilding them in one operation kept
+  // every other read waiting for seconds.
+  for (const date of outdated)
+    await enqueueDatabaseOperation(async () => {
+      assertRepositoryEpoch(epoch);
+      await rebuildAggregateForDate(await getLocalDatabase(), date);
+    });
+  return enqueueDatabaseOperation(async () => {
+    assertRepositoryEpoch(epoch);
+    const rows = await (
+      await getLocalDatabase()
+    ).getAllAsync<AggregateRow>(
       `SELECT * FROM daily_aggregates
         WHERE date >= ? AND date <= ?
         ORDER BY date ASC`,
@@ -1284,6 +1308,31 @@ export async function getRepositoryRevision(
   return enqueueDatabaseOperation(async () =>
     readDataRevision(await getLocalDatabase(), start, end),
   );
+}
+
+/**
+ * The revision of what a range's stored-day reads return: its daily
+ * aggregates and its sleep and exercise records. Writes of the types none of
+ * those depend on do not move it, so a screen built from them is not reloaded
+ * for every light reading or network change.
+ */
+export async function getStoredDayRevision(
+  start: string,
+  end: string,
+): Promise<string> {
+  return enqueueDatabaseOperation(async () => {
+    const row = await (
+      await getLocalDatabase()
+    ).getFirstAsync<{ revision: number }>(
+      `SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes
+        WHERE start_date <= ? AND end_date >= ?
+        AND data_type NOT IN (${AGGREGATE_UNRELATED_TYPES.map(() => "?").join(",")})`,
+      end,
+      start,
+      ...AGGREGATE_UNRELATED_TYPES,
+    );
+    return String(row?.revision ?? 0);
+  });
 }
 
 export async function getRepositoryGeneration(): Promise<string> {

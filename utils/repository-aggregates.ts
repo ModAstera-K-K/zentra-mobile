@@ -54,6 +54,20 @@ export const AGGREGATE_PRESENCE_TYPES = COMPLETENESS_TYPES.filter(
 );
 
 /**
+ * Types a day's aggregate does not read at all. Listed rather than derived so
+ * a change type that is not an event type, such as the active-timing marker,
+ * still counts as related.
+ */
+export const AGGREGATE_UNRELATED_TYPES: readonly ZentraEventRecord["dataType"][] =
+  [
+    "ambient_light",
+    "connectivity_state",
+    "distance",
+    "heart_rate",
+    "screen_state",
+  ];
+
+/**
  * Sum step deltas from sensor step events.
  * Each sensor step event stores the running pedometer counter.
  * Convert consecutive readings to deltas and sum them for the true
