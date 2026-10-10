@@ -18,6 +18,7 @@
     "android": "node ./scripts/run-android-dev.mjs",
     "android:dev": "node ./scripts/android-dev.mjs",
     "android:reverse": "node ./scripts/android-reverse.mjs",
+    "android:install": "node ./scripts/install-android-phone.mjs",
     "build-android-dev-device": "node ./scripts/build-android-dev-device.mjs",
     "build-android-release-device": "node ./scripts/build-android-release-device.mjs",
     "build-ios-release-device": "node ./scripts/build-ios-release-device.mjs",
