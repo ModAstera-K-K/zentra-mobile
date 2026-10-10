@@ -7,7 +7,7 @@ import { StatusBar } from "expo-status-bar";
 
 import { NavigationThemes } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { useAppearanceStore, useAppStore } from "@/stores";
+import { useAppearanceStore, useAppStore, useRepositoryStore } from "@/stores";
 import "@/utils/background/location-task";
 import "@/utils/background/reconcile-task";
 
@@ -19,6 +19,7 @@ export default function RootLayout() {
   const bootstrapAppearance = useAppearanceStore((state) => state.bootstrap);
   const isAppHydrated = useAppStore((state) => state.isHydrated);
   const bootstrapApp = useAppStore((state) => state.bootstrap);
+  const bootstrapRepository = useRepositoryStore((state) => state.bootstrap);
 
   const [fontsLoaded] = useFonts({
     JetBrainsMonoRegular: require("@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf"),
@@ -28,7 +29,10 @@ export default function RootLayout() {
   useEffect(() => {
     void bootstrapAppearance();
     void bootstrapApp();
-  }, [bootstrapAppearance, bootstrapApp]);
+    // Started here so the database is opening while fonts and settings load.
+    // The splash does not wait for it.
+    void bootstrapRepository().catch(() => undefined);
+  }, [bootstrapAppearance, bootstrapApp, bootstrapRepository]);
 
   useEffect(() => {
     if (!fontsLoaded || !isAppearanceHydrated || !isAppHydrated) {

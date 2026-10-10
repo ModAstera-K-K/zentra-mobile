@@ -9,7 +9,7 @@ import { startActivityCacheSession } from "@/utils/activity-cache-session";
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 /** A session whose passes and settle waits are released by hand. */
-function createHarness() {
+function createHarness(handled?: string) {
   const passes: {
     signal: AbortSignal;
     progress: (history: ActivityHistory) => void;
@@ -19,6 +19,7 @@ function createHarness() {
   const waits: { ms: number; release: () => void }[] = [];
   const events: string[] = [];
   const session = startActivityCacheSession({
+    handled,
     load: (signal, onProgress) =>
       new Promise((resolve, reject) => {
         passes.push({
@@ -158,4 +159,29 @@ test("a failed pass is reported once and retried only when the data moves", asyn
   passes[1].finish();
   await tick();
   assert.equal(events.at(-2), "final@2:true");
+});
+
+test("a session started from a handled revision loads nothing until the revision moves", async () => {
+  const { session, passes, waits, events } = createHarness("7");
+  // Coming back to a screen whose data did not change.
+  session.noteRevision("7");
+  await tick();
+  assert.equal(passes.length, 0);
+  assert.deepEqual(events, []);
+
+  // Data changed while the screen was away: its first pass does not wait.
+  session.noteRevision("8");
+  await tick();
+  assert.equal(passes.length, 1);
+  assert.equal(waits.length, 0);
+  passes[0].finish();
+  await tick();
+  assert.deepEqual(events, ["loading", "final@8:true", "idle"]);
+
+  // Later changes settle first, as in any session.
+  session.noteRevision("9");
+  await tick();
+  assert.equal(passes.length, 1);
+  assert.equal(waits.length, 1);
+  session.stop();
 });

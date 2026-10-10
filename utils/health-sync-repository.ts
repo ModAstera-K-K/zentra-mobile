@@ -18,6 +18,22 @@ import {
 import type { ZentraEventRecord } from "@/types/zentra";
 import { upsertHealthEvent } from "@/utils/health-sync-sql";
 
+/**
+ * The import state of each record type, without the record counts. Four rows
+ * read by primary key: use this wherever the counts are not shown.
+ */
+export async function getHealthSyncStatus(): Promise<HealthSyncState[]> {
+  return enqueueDatabaseOperation(async () =>
+    (await getLocalDatabase()).getAllAsync<HealthSyncState>(
+      "SELECT * FROM health_sync_state ORDER BY record_type",
+    ),
+  );
+}
+/**
+ * The same rows with how many records each type has imported and the span
+ * they cover. It reads every imported record, so it is for the Health sources
+ * card only.
+ */
 export async function getHealthSyncStates(): Promise<HealthSyncState[]> {
   return enqueueDatabaseOperation(async () =>
     (await getLocalDatabase()).getAllAsync<HealthSyncState>(

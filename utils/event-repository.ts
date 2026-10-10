@@ -4,7 +4,9 @@ import { cancelActivityHistory } from "@/utils/activity-history-session";
 import { upsertActivityEvent } from "@/utils/activity-history-sql";
 import {
   cachedActiveMinutes,
+  isActiveSummaryAt,
   isActiveSummaryCurrent,
+  summaryRevisions,
 } from "@/utils/active-minutes-cache";
 import { startPerfTimer } from "@/utils/perf";
 import { runCooperatively } from "@/utils/cooperative-work";
@@ -33,6 +35,9 @@ import type {
 } from "@/types/zentra";
 import { getLocalDatabase } from "@/utils/local-database";
 import {
+  AGGREGATE_INPUT_TYPES,
+  AGGREGATE_PRESENCE_TYPES,
+  AGGREGATE_UNRELATED_TYPES,
   buildDailyAggregateRecord,
   buildTodaySnapshot,
   getLocalDatesForEvents,
@@ -288,6 +293,16 @@ async function getEventsBetween(
   return getEventsBetweenWithDatabase(database, startIso, endExclusiveIso);
 }
 
+// How far before a day its carried-in app-usage and step rows may start. The
+// index is on the start time only, so without a lower bound this read visits
+// every stored row of those types.
+const CARRIED_IN_LOOKBACK_DAYS = 2;
+
+/**
+ * A local day's own events plus the earlier records still running into it.
+ * App-usage and step rows are looked for over the lookback only; sleep and
+ * exercise rows are a few per day, so those are found however long they run.
+ */
 async function getAggregateEventsForDateWithDatabase(
   database: SQLiteDatabase,
   date: string,
@@ -298,25 +313,77 @@ async function getAggregateEventsForDateWithDatabase(
     startIso,
     endExclusiveIso,
   );
-  const overlappingAppUsageRows = await database.getAllAsync<EventRow>(
+  const lookbackIso = getRangeBounds(
+    shiftISODate(date, -CARRIED_IN_LOOKBACK_DAYS),
+    date,
+  ).startIso;
+  const carriedInRows = await database.getAllAsync<EventRow>(
     `SELECT * FROM events
-      WHERE data_type IN ('app_usage','sleep_inferred','exercise_session','steps')
-      AND timestamp_start < ?
+      WHERE data_type IN ('app_usage','steps')
+      AND timestamp_start >= ? AND timestamp_start < ?
       AND timestamp_end > ?
-      ORDER BY timestamp_start ASC`,
-    endExclusiveIso,
+    UNION ALL
+    SELECT * FROM events
+      WHERE data_type IN ('sleep_inferred','exercise_session')
+      AND timestamp_start < ?
+      AND timestamp_end > ?`,
+    lookbackIso,
+    startIso,
+    startIso,
+    startIso,
     startIso,
   );
 
-  const eventsById = new Map(dayEvents.map((event) => [event.id, event]));
+  if (!carriedInRows.length) return dayEvents;
+  // Every carried-in row starts before the day, so it sorts ahead of the
+  // day's own events, which are already in start order.
+  const carriedIn = carriedInRows
+    .map(mapEventRow)
+    .sort((left, right) =>
+      compareTimestamps(left.timestampStart, right.timestampStart),
+    );
+  return [...carriedIn, ...dayEvents];
+}
 
-  overlappingAppUsageRows.map(mapEventRow).forEach((event) => {
-    eventsById.set(event.id, event);
-  });
-
-  return Array.from(eventsById.values()).sort((left, right) =>
-    compareTimestamps(left.timestampStart, right.timestampStart),
+/**
+ * The local days whose aggregate a batch of newly stored events can change.
+ * Events of a type the aggregate never reads change none, and a type that
+ * only counts as present changes a day only when it is that day's first.
+ */
+async function aggregateDatesChangedBy(
+  database: SQLiteDatabase,
+  events: ZentraEventRecord[],
+): Promise<string[]> {
+  const dates = new Set(
+    getLocalDatesForEvents(
+      events.filter((event) => AGGREGATE_INPUT_TYPES.has(event.dataType)),
+    ),
   );
+
+  for (const type of AGGREGATE_PRESENCE_TYPES) {
+    const ofType = events.filter((event) => event.dataType === type);
+    for (const date of getLocalDatesForEvents(ofType)) {
+      if (dates.has(date)) continue;
+      const { startIso, endExclusiveIso } = getRangeBounds(date, date);
+      const inBatch = ofType.filter(
+        (event) =>
+          event.timestampStart >= startIso &&
+          event.timestampStart < endExclusiveIso,
+      ).length;
+      const stored = await database.getAllAsync(
+        `SELECT 1 FROM events
+          WHERE data_type = ? AND timestamp_start >= ? AND timestamp_start < ?
+          LIMIT ?`,
+        type,
+        startIso,
+        endExclusiveIso,
+        inBatch + 1,
+      );
+      if (stored.length <= inBatch) dates.add(date);
+    }
+  }
+
+  return [...dates];
 }
 
 export async function rebuildAggregateForDate(
@@ -431,13 +498,14 @@ export async function initializeEventRepository(): Promise<void> {
   });
 }
 
-export async function getStoredEventCount(): Promise<number> {
+/** Whether anything is stored. Stops at the first row, where a count reads them all. */
+export async function hasStoredEvents(): Promise<boolean> {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
-    const row = await database.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM events",
+    const row = await database.getFirstAsync<{ present: number }>(
+      "SELECT EXISTS (SELECT 1 FROM events) AS present",
     );
-    return row?.count ?? 0;
+    return row?.present === 1;
   });
 }
 
@@ -616,7 +684,6 @@ export async function appendEventsForCollector(
 
   await enqueueRetriedWrite(async () => {
     const database = await getLocalDatabase();
-    const affectedDates = getLocalDatesForEvents(events);
     assertActive?.();
     const timestamp = new Date().toISOString();
     const importedRecordCount =
@@ -696,7 +763,7 @@ export async function appendEventsForCollector(
       throw error;
     }
 
-    for (const date of affectedDates) {
+    for (const date of await aggregateDatesChangedBy(database, events)) {
       await rebuildAggregateForDate(database, date);
     }
   });
@@ -705,7 +772,7 @@ export async function appendEventsForCollector(
 export async function seedRepositoryEvents(
   events: ZentraEventRecord[],
 ): Promise<void> {
-  if (!events.length || (await getStoredEventCount()) > 0) {
+  if (!events.length || await hasStoredEvents()) {
     return;
   }
 
@@ -774,21 +841,91 @@ export async function getTodayLiveSnapshot(): Promise<TodayLiveSnapshot> {
   });
 }
 
+// Each collector key, found by stepping through the index one key at a time.
+// GROUP BY or DISTINCT would read an index entry for every diagnostics row.
+const COLLECTOR_KEYS_CTE = `WITH RECURSIVE keys(collector_key) AS (
+  SELECT MIN(collector_key) FROM collector_diagnostics
+  UNION ALL
+  SELECT (
+    SELECT MIN(collector_key) FROM collector_diagnostics
+    WHERE collector_key > keys.collector_key
+  ) FROM keys WHERE keys.collector_key IS NOT NULL
+)`;
+
+// Every stored sample adds a diagnostics row, and only the newest are read.
+const DIAGNOSTICS_KEPT_PER_COLLECTOR = 200;
+const DIAGNOSTICS_PRUNE_CHUNK_ROWS = 5_000;
+
+/**
+ * Drop each collector's diagnostics beyond its newest rows, in separately
+ * queued chunks. Its latest success is kept however old it is: that row is
+ * the collector's sync cursor.
+ */
+export async function pruneCollectorDiagnostics(
+  options: { budgetMs?: number } = {},
+): Promise<"partial" | "complete"> {
+  const startedAtMs = Date.now();
+  const keys = await enqueueDatabaseOperation(async () =>
+    (await getLocalDatabase()).getAllAsync<{ collector_key: string }>(
+      `${COLLECTOR_KEYS_CTE}
+        SELECT collector_key FROM keys WHERE collector_key IS NOT NULL`,
+    ),
+  );
+
+  for (const { collector_key: collectorKey } of keys) {
+    let deleted = DIAGNOSTICS_PRUNE_CHUNK_ROWS;
+    while (deleted === DIAGNOSTICS_PRUNE_CHUNK_ROWS) {
+      if (
+        options.budgetMs != null &&
+        Date.now() - startedAtMs >= options.budgetMs
+      )
+        return "partial";
+      deleted = await enqueueRetriedWrite(async () => {
+        const result = await (await getLocalDatabase()).runAsync(
+          `DELETE FROM collector_diagnostics WHERE rowid IN (
+            SELECT rowid FROM collector_diagnostics
+            WHERE collector_key = ?
+            AND recorded_at < (
+              SELECT recorded_at FROM collector_diagnostics
+              WHERE collector_key = ?
+              ORDER BY recorded_at DESC LIMIT 1 OFFSET ?
+            )
+            AND id IS NOT (
+              SELECT id FROM collector_diagnostics
+              WHERE collector_key = ? AND status = 'success'
+              ORDER BY recorded_at DESC LIMIT 1
+            )
+            LIMIT ?
+          )`,
+          collectorKey,
+          collectorKey,
+          DIAGNOSTICS_KEPT_PER_COLLECTOR - 1,
+          collectorKey,
+          DIAGNOSTICS_PRUNE_CHUNK_ROWS,
+        );
+        return result.changes;
+      });
+    }
+  }
+  return "complete";
+}
+
 export async function getLatestCollectorDiagnostics(): Promise<
   CollectorDiagnosticRecord[]
 > {
   return enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
     const rows = await database.getAllAsync<DiagnosticRow>(
-      `SELECT diagnostics.*
-        FROM collector_diagnostics diagnostics
-        INNER JOIN (
-          SELECT collector_key, MAX(recorded_at) AS max_recorded_at
-          FROM collector_diagnostics
-          GROUP BY collector_key
-        ) latest
-        ON diagnostics.collector_key = latest.collector_key
-        AND diagnostics.recorded_at = latest.max_recorded_at
+      `${COLLECTOR_KEYS_CTE}
+        SELECT diagnostics.*
+        FROM keys
+        JOIN collector_diagnostics diagnostics ON diagnostics.rowid = (
+          SELECT rowid FROM collector_diagnostics
+          WHERE collector_key = keys.collector_key
+          ORDER BY recorded_at DESC
+          LIMIT 1
+        )
+        WHERE keys.collector_key IS NOT NULL
         ORDER BY diagnostics.collector_key ASC`,
     );
 
@@ -837,7 +974,11 @@ export async function getDailyAggregatesForRange(
   start: string,
   end: string,
 ): Promise<DailyAggregateRecord[]> {
-  return enqueueDatabaseOperation(async () => {
+  const epoch = repositoryEpoch();
+  // Which days have no stored aggregate, or one built before a change it
+  // depends on. One read of the window's change rows answers that for every
+  // day; it used to be a statement per day.
+  const outdated = await enqueueDatabaseOperation(async () => {
     const database = await getLocalDatabase();
     const dates = await readDatesWithEvents(database, start, end);
     const cached = await database.getAllAsync<{
@@ -849,15 +990,32 @@ export async function getDailyAggregatesForRange(
       end,
     );
     const present = new Set(cached.map((row) => row.date));
-    for (const row of dates)
-      if (!present.has(row.date))
-        await rebuildAggregateForDate(database, row.date);
-    for (const row of cached)
-      if (
-        !(await isActiveSummaryCurrent(database, row.date, row.active_summary))
-      )
-        await rebuildAggregateForDate(database, row.date);
-    const rows = await database.getAllAsync<AggregateRow>(
+    const current = await summaryRevisions(
+      database,
+      cached.map((row) => row.date),
+    );
+    return [
+      ...dates.filter((row) => !present.has(row.date)).map((row) => row.date),
+      ...cached
+        .filter(
+          (row) => !isActiveSummaryAt(row.active_summary, current.get(row.date)),
+        )
+        .map((row) => row.date),
+    ];
+  });
+  // Each rebuild is its own queued operation. A change far in the past makes
+  // a month of days out of date, and rebuilding them in one operation kept
+  // every other read waiting for seconds.
+  for (const date of outdated)
+    await enqueueDatabaseOperation(async () => {
+      assertRepositoryEpoch(epoch);
+      await rebuildAggregateForDate(await getLocalDatabase(), date);
+    });
+  return enqueueDatabaseOperation(async () => {
+    assertRepositoryEpoch(epoch);
+    const rows = await (
+      await getLocalDatabase()
+    ).getAllAsync<AggregateRow>(
       `SELECT * FROM daily_aggregates
         WHERE date >= ? AND date <= ?
         ORDER BY date ASC`,
@@ -1150,6 +1308,31 @@ export async function getRepositoryRevision(
   return enqueueDatabaseOperation(async () =>
     readDataRevision(await getLocalDatabase(), start, end),
   );
+}
+
+/**
+ * The revision of what a range's stored-day reads return: its daily
+ * aggregates and its sleep and exercise records. Writes of the types none of
+ * those depend on do not move it, so a screen built from them is not reloaded
+ * for every light reading or network change.
+ */
+export async function getStoredDayRevision(
+  start: string,
+  end: string,
+): Promise<string> {
+  return enqueueDatabaseOperation(async () => {
+    const row = await (
+      await getLocalDatabase()
+    ).getFirstAsync<{ revision: number }>(
+      `SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes
+        WHERE start_date <= ? AND end_date >= ?
+        AND data_type NOT IN (${AGGREGATE_UNRELATED_TYPES.map(() => "?").join(",")})`,
+      end,
+      start,
+      ...AGGREGATE_UNRELATED_TYPES,
+    );
+    return String(row?.revision ?? 0);
+  });
 }
 
 export async function getRepositoryGeneration(): Promise<string> {

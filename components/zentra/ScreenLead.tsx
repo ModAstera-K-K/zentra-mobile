@@ -9,6 +9,8 @@ interface ScreenLeadProps {
   body: string;
   eyebrow: string;
   footer?: React.ReactNode;
+  /** Sits at the end of the eyebrow's line, so it never adds a row. */
+  status?: React.ReactNode;
   title: string;
   trailing?: React.ReactNode;
 }
@@ -17,6 +19,7 @@ export function ScreenLead({
   body,
   eyebrow,
   footer,
+  status,
   title,
   trailing,
 }: ScreenLeadProps) {
@@ -28,7 +31,10 @@ export function ScreenLead({
       <Card variant="open" style={styles.card}>
         <View style={styles.header}>
           <View style={styles.copy}>
-            <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>{eyebrow}</Text>
+            <View style={styles.eyebrowRow}>
+              <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>{eyebrow}</Text>
+              {status ?? null}
+            </View>
             <Text style={[styles.title, { color: palette.foreground }]}>{title}</Text>
             <Text style={[styles.body, { color: palette.textSecondary }]}>{body}</Text>
           </View>
@@ -57,7 +63,14 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingRight: Spacing.md,
   },
+  eyebrowRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    justifyContent: 'space-between',
+  },
   eyebrow: {
+    flexShrink: 1,
     fontFamily: Fonts.bodyMedium,
     fontSize: 20,
     letterSpacing: 0,

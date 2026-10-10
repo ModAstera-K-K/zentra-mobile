@@ -1,4 +1,5 @@
 import type { HealthSyncPage } from "@/types/health-sync";
+import { yieldToEventLoop } from "@/utils/cooperative-work";
 
 export interface HealthPageLoopDependencies {
   read: (cursor: string | null) => Promise<HealthSyncPage>;
@@ -17,6 +18,6 @@ export async function runHealthPageLoop(
     await deps.commit(page, index);
     cursor = page.reset ? null : page.cursor;
     if (!page.hasMore && !page.reset) break;
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await yieldToEventLoop();
   }
 }

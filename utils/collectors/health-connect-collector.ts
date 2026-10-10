@@ -1,6 +1,6 @@
 import { cancelHealthSync } from "@/utils/health-sync-session";
 import { syncHealthHistory } from "@/utils/health-sync-runner";
-import { getHealthSyncStates } from "@/utils/health-sync-repository";
+import { getHealthSyncStatus } from "@/utils/health-sync-repository";
 import { AppState, Platform } from "react-native";
 
 import {
@@ -43,7 +43,7 @@ export async function syncHealthConnectCollector(
   }
 
   await syncHealthHistory();
-  const states = await getHealthSyncStates();
+  const states = await getHealthSyncStatus();
   const ready = states.filter((state) => state.status === "ready");
   if (ready.length) {
     await deps.noteSyncWindowEnd(new Date().toISOString());
@@ -72,7 +72,7 @@ export async function startHealthConnectCollector(
 
   const timer = setInterval(() => {
     if (AppState.currentState !== "active") return;
-    void getHealthSyncStates()
+    void getHealthSyncStatus()
       .then((states) => {
         if (states.some((state) => state.status === "importing"))
           return syncHealthConnectCollector(deps);

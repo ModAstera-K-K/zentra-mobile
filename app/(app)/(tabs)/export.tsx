@@ -3,9 +3,7 @@ import { useTabPerformance } from "@/hooks/use-tab-performance";
 import { groupExportEvents } from "@/utils/export-data";
 import React from "react";
 import {
-  ActivityIndicator,
   Alert,
-  InteractionManager,
   StyleSheet,
   Text,
   TextInput,
@@ -18,6 +16,7 @@ import { ScreenLead } from "@/components/zentra/ScreenLead";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { InlineStatus } from "@/components/ui/InlineStatus";
 import { Chip } from "@/components/ui/Chip";
 import {
   getActionIcon,
@@ -66,6 +65,7 @@ import { formatBytes } from "@/utils/format";
 import { startPerfTimer } from "@/utils/perf";
 import { buildUnifiedTimelineAsync } from "@/utils/unified-timeline";
 import { useShallow } from "zustand/react/shallow";
+import { afterRender } from "@/utils/cooperative-work";
 
 const PRESETS: ExportPreset[] = ["today", "week", "month", "all", "custom"];
 const RESOLUTION_OPTIONS: {
@@ -155,6 +155,12 @@ export default function ExportScreen() {
     range.start <= range.end;
   const isPreparingBundleData =
     isLoadingLiveData || (exportMode === "unified" && isComputingTimeline);
+  // Whether the estimate has anything behind it yet.
+  const hasEstimateInputs =
+    dataMode === "demo" ||
+    (exportMode === "unified"
+      ? timelineBuckets.length > 0
+      : Object.keys(liveEvents).length > 0);
 
   React.useEffect(() => {
     if (!isFocused) {
@@ -284,7 +290,7 @@ export default function ExportScreen() {
       }
     }
 
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void loadLiveExportData();
     });
 
@@ -339,7 +345,7 @@ export default function ExportScreen() {
     setIsComputingTimeline(true);
 
     const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = afterRender(() => {
       void (async () => {
         const stopCompute = startPerfTimer("export.compute_unified_timeline", {
           eventCount: rawEventsForTimeline.length,
@@ -484,13 +490,6 @@ export default function ExportScreen() {
 
   return (
     <ScreenShell subtitle="Take your data with you" title="Export">
-      <ActiveMinutesRefreshStatus
-        enabled={
-          dataMode !== "demo" && repositoryState.isHydrated && hasValidRange
-        }
-        start={range.start}
-        end={range.end}
-      />
       <ScreenLead
         body={
           dataMode === "demo"
@@ -498,6 +497,15 @@ export default function ExportScreen() {
             : "Pick your date range, format, and signals. Zentra packages it up and keeps it here until you're ready to share."
         }
         eyebrow="Your bundle"
+        status={
+          <ActiveMinutesRefreshStatus
+            enabled={
+              dataMode !== "demo" && repositoryState.isHydrated && hasValidRange
+            }
+            end={range.end}
+            start={range.start}
+          />
+        }
         footer={
           <View style={styles.leadFooter}>
             <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
@@ -515,18 +523,6 @@ export default function ExportScreen() {
                   : `${selectedTypes.length} signal${selectedTypes.length === 1 ? "" : "s"} selected`}
               </Text>
             </View>
-            {isPreparingBundleData ? (
-              <View style={styles.leadMetaRow}>
-                <ActivityIndicator color={palette.textSecondary} size="small" />
-                <Text
-                  style={[styles.leadMeta, { color: palette.textSecondary }]}
-                >
-                  {isLoadingLiveData
-                    ? "Loading data..."
-                    : "Preparing timeline..."}
-                </Text>
-              </View>
-            ) : null}
           </View>
         }
         title={
@@ -740,14 +736,49 @@ export default function ExportScreen() {
                 size={IconSizes.inline}
               />
               <Text
-                style={[styles.summaryLabel, { color: palette.textSecondary }]}
+                style={[
+                  styles.summaryLabel,
+                  styles.summaryLabelText,
+                  { color: palette.textSecondary },
+                ]}
               >
                 Bundle estimate
               </Text>
+              {isPreparingBundleData ? (
+                <InlineStatus
+                  accessibilityLabel={
+                    isLoadingLiveData
+                      ? "Loading export data"
+                      : "Preparing export timeline"
+                  }
+                  busy
+                  label="Preparing"
+                />
+              ) : null}
             </View>
-            <Text style={[styles.summaryValue, { color: palette.primary }]}>
-              {formatBytes(bundleEstimate)}
-            </Text>
+            {/* The number keeps its line while it is worked out: a bar when
+                there is nothing to estimate from yet, the last figure dimmed
+                while it is redone. */}
+            <View style={styles.summaryValueLine}>
+              <Text
+                style={[
+                  styles.summaryValue,
+                  { color: palette.primary },
+                  isPreparingBundleData &&
+                    (hasEstimateInputs ? styles.dimmed : styles.hidden),
+                ]}
+              >
+                {formatBytes(bundleEstimate)}
+              </Text>
+              {isPreparingBundleData && !hasEstimateInputs ? (
+                <View
+                  style={[
+                    styles.summaryValueBar,
+                    { backgroundColor: palette.card },
+                  ]}
+                />
+              ) : null}
+            </View>
             <Text style={[styles.helper, { color: palette.textSecondary }]}>
               {dataMode === "demo"
                 ? "Sample data plus a manifest — same structure you'd get with real signals."
@@ -755,22 +786,6 @@ export default function ExportScreen() {
                   ? "Time-aligned timeline buckets and a manifest. Stays here until you share it."
                   : "Your captured signals and a manifest. Stays here until you share it."}
             </Text>
-            {isPreparingBundleData ? (
-              <View style={styles.bundleProgressRow}>
-                <ActivityIndicator
-                  color={palette.mutedForeground}
-                  size="small"
-                />
-                <Text
-                  style={[
-                    styles.bundleProgressText,
-                    { color: palette.textSecondary },
-                  ]}
-                >
-                  Preparing export data...
-                </Text>
-              </View>
-            ) : null}
           </Card>
 
           <Button
@@ -853,14 +868,14 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes["2xl"],
   },
-  bundleProgressRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: Spacing.sm,
+  summaryLabelText: { flex: 1 },
+  summaryValueLine: { justifyContent: "center" },
+  summaryValueBar: {
+    borderRadius: 6,
+    height: 22,
+    position: "absolute",
+    width: "38%",
   },
-  bundleProgressText: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.xs,
-    letterSpacing: 0,
-  },
+  dimmed: { opacity: 0.4 },
+  hidden: { opacity: 0 },
 });

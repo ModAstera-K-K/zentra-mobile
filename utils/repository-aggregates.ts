@@ -30,6 +30,44 @@ const COMPLETENESS_TYPES: ZentraEventRecord["dataType"][] = [
 ];
 
 /**
+ * Event types whose every record can change a day's aggregate. A record of
+ * any other type leaves it as it was, so storing one needs no rebuild.
+ */
+export const AGGREGATE_INPUT_TYPES: ReadonlySet<ZentraEventRecord["dataType"]> =
+  new Set([
+    "steps",
+    "activity",
+    "motion_context",
+    "exercise_session",
+    "location",
+    "app_usage",
+    "unlock_event",
+    "sleep_inferred",
+  ]);
+
+/**
+ * Types the aggregate only counts as present, for completeness: the day's
+ * first record changes it and later ones do not.
+ */
+export const AGGREGATE_PRESENCE_TYPES = COMPLETENESS_TYPES.filter(
+  (type) => !AGGREGATE_INPUT_TYPES.has(type),
+);
+
+/**
+ * Types a day's aggregate does not read at all. Listed rather than derived so
+ * a change type that is not an event type, such as the active-timing marker,
+ * still counts as related.
+ */
+export const AGGREGATE_UNRELATED_TYPES: readonly ZentraEventRecord["dataType"][] =
+  [
+    "ambient_light",
+    "connectivity_state",
+    "distance",
+    "heart_rate",
+    "screen_state",
+  ];
+
+/**
  * Sum step deltas from sensor step events.
  * Each sensor step event stores the running pedometer counter.
  * Convert consecutive readings to deltas and sum them for the true
