@@ -77,6 +77,8 @@ export function formatScreenDate(date: Date): string {
 }
 
 export function formatDateRangeLabel(start: string, end: string): string {
+  // A date still being typed is shown as typed: formatting it would throw.
+  if (!isValidISODate(start) || !isValidISODate(end)) return `${start} - ${end}`;
   const formatter = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',

@@ -138,6 +138,9 @@ test("no statement walks a growing table from end to end, beyond the listed ones
   await repository.getLatestCollectorDiagnosticForKey("deviceState");
   await repository.getCollectorDiagnosticHistoryForKey("deviceState");
   await repository.getRepositoryRevision(weekAgo, today);
+  await repository.getStoredDayRevision(weekAgo, today);
+  await repository.getChangedDatesSince("0", weekAgo, today);
+  await repository.getExportTypeCounts(weekAgo, today);
   await repository.getRepositoryGeneration();
   await repository.getEventsByIds([battery.id]);
   await reconcileRestEstimates(new Date());

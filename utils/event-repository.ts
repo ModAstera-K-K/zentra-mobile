@@ -44,7 +44,12 @@ import {
   getRangeBounds,
   readDatesWithEvents,
 } from "@/utils/repository-aggregates";
-import { compareTimestamps, shiftISODate, toISODate } from "@/utils/dates";
+import {
+  compareTimestamps,
+  enumerateISODateRange,
+  shiftISODate,
+  toISODate,
+} from "@/utils/dates";
 import { SLEEP_NIGHT_DAYS_AFTER } from "@/utils/sleep-wake-date";
 import { ACTIVITY_MAXIMA_EVENT_TYPES } from "@/utils/activity-intensity";
 
@@ -256,6 +261,7 @@ async function readEventRange(
   filter?: { where: string; params: string[] },
   // Only for a caller that already discards a result a write landed in.
   validate = true,
+  signal?: AbortSignal,
 ): Promise<ZentraEventRecord[]> {
   const { startIso, endExclusiveIso } = getRangeBounds(start, end);
   const stopRead = startPerfTimer("repository.range_read");
@@ -278,7 +284,17 @@ async function readEventRange(
       params: filter?.params,
     },
     mapEventRow,
-    validate ? { revision: () => getRepositoryRevision(start, end) } : {},
+    validate
+      ? {
+          signal,
+          revision: () => getRepositoryRevision(start, end),
+          changedSince: async (since) =>
+            (await getChangedDatesSince(since, start, end)).map((date) => {
+              const day = getRangeBounds(date, date);
+              return { start: day.startIso, endExclusive: day.endExclusiveIso };
+            }),
+        }
+      : { signal },
   );
   stopRead({ rows: events.length });
   assertRepositoryEpoch(epoch);
@@ -1159,9 +1175,85 @@ export async function recomputeDailyAggregatesForRange(
 export async function getEventsForRange(
   start: string,
   end: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<ZentraEventRecord[]> {
-  return readEventRange(start, end);
+  return readEventRange(start, end, undefined, true, options.signal);
 }
+
+/**
+ * The local days in [start, end] that a write has touched since the revision
+ * `since`. A record that changed day, or runs across several, marks them all.
+ */
+export async function getChangedDatesSince(
+  since: string,
+  start: string,
+  end: string,
+): Promise<string[]> {
+  const spans = await enqueueDatabaseOperation(async () =>
+    (await getLocalDatabase()).getAllAsync<{
+      start_date: string;
+      end_date: string;
+    }>(
+      "SELECT DISTINCT start_date,end_date FROM event_changes WHERE revision > ? AND start_date <= ? AND end_date >= ?",
+      Number(since),
+      end,
+      start,
+    ),
+  );
+  const dates = new Set<string>();
+  for (const span of spans)
+    for (const date of enumerateISODateRange(
+      span.start_date > start ? span.start_date : start,
+      span.end_date < end ? span.end_date : end,
+    ))
+      dates.add(date);
+  return [...dates].sort();
+}
+
+export interface ExportTypeCount {
+  dataType: ZentraEventRecord["dataType"];
+  records: number;
+  /** Roughly what the records take as compact JSON. */
+  bytes: number;
+}
+
+/**
+ * How many records of each type an export of [start, end] would hold, without
+ * reading them. Platform step totals and usage coverage rows are left out, as
+ * they are from the export itself.
+ */
+export async function getExportTypeCounts(
+  start: string,
+  end: string,
+): Promise<ExportTypeCount[]> {
+  const { startIso, endExclusiveIso } = getRangeBounds(start, end);
+  const rows = await enqueueDatabaseOperation(async () =>
+    (await getLocalDatabase()).getAllAsync<{
+      data_type: ZentraEventRecord["dataType"];
+      records: number;
+      bytes: number;
+    }>(
+      `SELECT data_type, COUNT(*) AS records,
+          SUM(${EXPORT_RECORD_FIXED_BYTES} + LENGTH(id) + LENGTH(metadata)
+            + LENGTH(COALESCE(value_text,'')) + LENGTH(COALESCE(value_json,''))) AS bytes
+        FROM events
+        WHERE timestamp_start >= ? AND timestamp_start < ?
+        AND json_extract(metadata,'$.platform_aggregate') IS NOT 1
+        AND json_extract(metadata,'$.coverage_window') IS NOT 1
+        GROUP BY data_type`,
+      startIso,
+      endExclusiveIso,
+    ),
+  );
+  return rows.map((row) => ({
+    dataType: row.data_type,
+    records: row.records,
+    bytes: row.bytes,
+  }));
+}
+
+// Keys, timestamps and the short fields of one record as compact JSON.
+const EXPORT_RECORD_FIXED_BYTES = 260;
 
 /**
  * Events that touch a local day, including records from the day before that

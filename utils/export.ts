@@ -1,11 +1,5 @@
-import { compareTimestamps } from "@/utils/dates";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
-import JSZip from "jszip";
-
 import type {
   DailyAggregateRecord,
-  DateRangeSelection,
   ExportFormat,
   ExportMode,
   UnifiedTimelineBucket,
@@ -13,51 +7,50 @@ import type {
   ZentraEventRecord,
 } from "@/types/zentra";
 
+// What goes into an export archive, as text. Building and writing the archive
+// is in export-job.ts; nothing here touches the device.
+
 function serializeCsvRow(values: Array<number | string>): string {
   return values
     .map((value) => `"${String(value).replace(/"/g, '""')}"`)
     .join(",");
 }
 
-function buildEventsCsv(records: ZentraEventRecord[]): string {
-  const header = serializeCsvRow([
-    "id",
-    "timestamp_start",
-    "timestamp_end",
-    "data_type",
-    "source",
-    "value_numeric",
-    "value_text",
-    "value_json",
-    "unit",
-    "confidence",
-    "metadata",
-    "schema_version",
-    "created_at",
+export const EVENTS_CSV_HEADER = serializeCsvRow([
+  "id",
+  "timestamp_start",
+  "timestamp_end",
+  "data_type",
+  "source",
+  "value_numeric",
+  "value_text",
+  "value_json",
+  "unit",
+  "confidence",
+  "metadata",
+  "schema_version",
+  "created_at",
+]);
+
+export function eventCsvRow(record: ZentraEventRecord): string {
+  return serializeCsvRow([
+    record.id,
+    record.timestampStart,
+    record.timestampEnd,
+    record.dataType,
+    record.source,
+    record.valueNumeric ?? "",
+    record.valueText ?? "",
+    record.valueJson ?? "",
+    record.unit,
+    record.confidence,
+    JSON.stringify(record.metadata),
+    record.schemaVersion,
+    record.createdAt,
   ]);
-
-  const rows = records.map((record) =>
-    serializeCsvRow([
-      record.id,
-      record.timestampStart,
-      record.timestampEnd,
-      record.dataType,
-      record.source,
-      record.valueNumeric ?? "",
-      record.valueText ?? "",
-      record.valueJson ?? "",
-      record.unit,
-      record.confidence,
-      JSON.stringify(record.metadata),
-      record.schemaVersion,
-      record.createdAt,
-    ]),
-  );
-
-  return [header, ...rows].join("\n");
 }
 
-function buildDailyAggregatesCsv(records: DailyAggregateRecord[]): string {
+export function buildDailyAggregatesCsv(records: DailyAggregateRecord[]): string {
   const header = serializeCsvRow([
     "date",
     "steps_total",
@@ -95,143 +88,6 @@ function buildDailyAggregatesCsv(records: DailyAggregateRecord[]): string {
   return [header, ...rows].join("\n");
 }
 
-function getCollectorEventsCount(
-  events: Record<string, ZentraEventRecord[]>,
-): Record<string, { version: string; events: number }> {
-  return Object.entries(events).reduce<
-    Record<string, { version: string; events: number }>
-  >((result, [key, value]) => {
-    result[key] = { version: "1.0", events: value.length };
-    return result;
-  }, {});
-}
-
-function getIncludedTypes(
-  events: Record<string, ZentraEventRecord[]>,
-): string[] {
-  return Object.keys(events);
-}
-
-function getExportFileName(
-  format: ExportFormat,
-  range: DateRangeSelection,
-): string {
-  return `Zentra_export_${range.start}_to_${range.end}_${format}.zip`;
-}
-
-function buildManifest(
-  range: DateRangeSelection,
-  events: Record<string, ZentraEventRecord[]>,
-  dailyAggregates: DailyAggregateRecord[],
-): Record<string, unknown> {
-  return {
-    schema_version: 1,
-    app_version: "1.0.0",
-    export_generated_at: new Date().toISOString(),
-    date_range: {
-      start: range.start,
-      end: range.end,
-    },
-    data_types_included: getIncludedTypes(events),
-    collectors: getCollectorEventsCount(events),
-    files: {
-      daily_aggregates_csv: dailyAggregates.length > 0,
-      format: Object.keys(events).length ? "present" : "empty",
-    },
-    device: {
-      os_version: "Android (prototype shell)",
-      model_hash: "prototype-shell",
-    },
-  };
-}
-
-function flattenEvents(
-  events: Record<string, ZentraEventRecord[]>,
-): ZentraEventRecord[] {
-  return Object.values(events)
-    .flat()
-    .slice()
-    .sort((left, right) =>
-      compareTimestamps(left.timestampStart, right.timestampStart),
-    );
-}
-
-export async function buildAndShareExportBundle(
-  format: ExportFormat,
-  range: DateRangeSelection,
-  events: Record<string, ZentraEventRecord[]>,
-  dailyAggregates: DailyAggregateRecord[] = [],
-): Promise<{ fileName: string; estimatedBytes: number }> {
-  const zip = new JSZip();
-  const manifest = buildManifest(range, events, dailyAggregates);
-
-  zip.file("manifest.json", JSON.stringify(manifest, null, 2));
-  if (dailyAggregates.length) {
-    zip.file("daily_aggregates.csv", buildDailyAggregatesCsv(dailyAggregates));
-  }
-
-  if (format === "json") {
-    zip.file("events.json", JSON.stringify(flattenEvents(events), null, 2));
-  } else {
-    Object.entries(events).forEach(([key, records]) => {
-      zip.file(`events_${key}.csv`, buildEventsCsv(records));
-    });
-  }
-
-  const base64 = await zip.generateAsync({
-    type: "base64",
-    compression: "DEFLATE",
-  });
-
-  if (!FileSystem.cacheDirectory) {
-    throw new Error("Cache directory is unavailable.");
-  }
-
-  const fileName = getExportFileName(format, range);
-  const outputPath = `${FileSystem.cacheDirectory}${fileName}`;
-
-  await FileSystem.writeAsStringAsync(outputPath, base64, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(outputPath, {
-      mimeType: "application/zip",
-      dialogTitle: "Share Zentra export",
-      UTI: "public.zip-archive",
-    });
-  }
-
-  return {
-    fileName,
-    estimatedBytes: Math.round((base64.length * 3) / 4),
-  };
-}
-
-export function estimateExportBundleBytes(
-  format: ExportFormat,
-  range: DateRangeSelection,
-  events: Record<string, ZentraEventRecord[]>,
-  dailyAggregates: DailyAggregateRecord[] = [],
-): number {
-  const manifestBytes = JSON.stringify(
-    buildManifest(range, events, dailyAggregates),
-  ).length;
-  const aggregateBytes = dailyAggregates.reduce(
-    (total, record) => total + JSON.stringify(record).length,
-    0,
-  );
-  const eventBytes = flattenEvents(events).reduce(
-    (total, record) => total + JSON.stringify(record).length,
-    0,
-  );
-  const multiplier = format === "json" ? 1.15 : 0.9;
-
-  return Math.round((manifestBytes + eventBytes + aggregateBytes) * multiplier);
-}
-
-// Unified timeline export helpers
-
 const TIMELINE_CSV_COLUMNS = [
   "timestamp_start",
   "timestamp_end",
@@ -256,62 +112,89 @@ const TIMELINE_CSV_COLUMNS = [
   "label",
 ] as const;
 
-function buildTimelineCsv(buckets: UnifiedTimelineBucket[]): string {
-  const header = serializeCsvRow([...TIMELINE_CSV_COLUMNS]);
-  const rows = buckets.map((bucket) =>
-    serializeCsvRow([
-      bucket.timestampStart,
-      bucket.timestampEnd,
-      bucket.resolution,
-      bucket.steps,
-      bucket.movementScore,
-      bucket.screenScore,
-      bucket.restScore,
-      bucket.screenTimeSeconds,
-      bucket.unlockCount,
-      bucket.sleepMinutes,
-      bucket.exerciseSeconds,
-      bucket.activityEvents,
-      bucket.locationSamples,
-      bucket.ambientLightAverageLux ?? "",
-      bucket.heartRateAverageBpm ?? "",
-      bucket.batteryLevel ?? "",
-      bucket.chargingStateLabel ?? "",
-      bucket.dominantKind,
-      bucket.dataCompleteness,
-      bucket.hasAnyData ? 1 : 0,
-      bucket.label,
-    ]),
-  );
-  return [header, ...rows].join("\n");
+export const TIMELINE_CSV_HEADER = serializeCsvRow([...TIMELINE_CSV_COLUMNS]);
+
+export function timelineCsvRow(bucket: UnifiedTimelineBucket): string {
+  return serializeCsvRow([
+    bucket.timestampStart,
+    bucket.timestampEnd,
+    bucket.resolution,
+    bucket.steps,
+    bucket.movementScore,
+    bucket.screenScore,
+    bucket.restScore,
+    bucket.screenTimeSeconds,
+    bucket.unlockCount,
+    bucket.sleepMinutes,
+    bucket.exerciseSeconds,
+    bucket.activityEvents,
+    bucket.locationSamples,
+    bucket.ambientLightAverageLux ?? "",
+    bucket.heartRateAverageBpm ?? "",
+    bucket.batteryLevel ?? "",
+    bucket.chargingStateLabel ?? "",
+    bucket.dominantKind,
+    bucket.dataCompleteness,
+    bucket.hasAnyData ? 1 : 0,
+    bucket.label,
+  ]);
 }
 
-function buildUnifiedManifest(
-  range: DateRangeSelection,
-  resolution: UnifiedTimelineResolution,
-  buckets: UnifiedTimelineBucket[],
-  events: Record<string, ZentraEventRecord[]>,
-  dailyAggregates: DailyAggregateRecord[],
+
+export interface ExportDescription {
+  mode: ExportMode;
+  format: ExportFormat;
+  range: { start: string; end: string };
+  resolution: UnifiedTimelineResolution;
+}
+
+export function exportFileName(description: ExportDescription): string {
+  const { mode, format, range, resolution } = description;
+  return mode === "unified"
+    ? `Zentra_unified_${resolution}_${range.start}_to_${range.end}_${format}.zip`
+    : `Zentra_export_${range.start}_to_${range.end}_${format}.zip`;
+}
+
+export function buildExportManifest(
+  description: ExportDescription,
+  contents: {
+    /** Records of each included type, in the order the types first appear. */
+    typeCounts: [type: string, records: number][];
+    hasAggregates: boolean;
+    timeline?: { bucketCount: number; bucketsWithData: number };
+    generatedAt: Date;
+  },
 ): Record<string, unknown> {
+  const { mode, range, resolution } = description;
+  const types = contents.typeCounts.map(([type]) => type);
   return {
     schema_version: 1,
     app_version: "1.0.0",
-    export_generated_at: new Date().toISOString(),
-    export_mode: "unified",
+    export_generated_at: contents.generatedAt.toISOString(),
+    ...(mode === "unified" ? { export_mode: "unified" } : {}),
     date_range: {
       start: range.start,
       end: range.end,
     },
-    timeline: {
-      resolution,
-      bucket_count: buckets.length,
-      buckets_with_data: buckets.filter((b) => b.hasAnyData).length,
-    },
-    data_types_included: getIncludedTypes(events),
-    collectors: getCollectorEventsCount(events),
+    ...(mode === "unified" && contents.timeline
+      ? {
+          timeline: {
+            resolution,
+            bucket_count: contents.timeline.bucketCount,
+            buckets_with_data: contents.timeline.bucketsWithData,
+          },
+        }
+      : {}),
+    data_types_included: types,
+    collectors: Object.fromEntries(
+      contents.typeCounts.map(([type, records]) => [
+        type,
+        { version: "1.0", events: records },
+      ]),
+    ),
     files: {
-      daily_aggregates_csv: dailyAggregates.length > 0,
-      format: "present",
+      daily_aggregates_csv: contents.hasAggregates,
+      format: mode === "unified" || types.length ? "present" : "empty",
     },
     device: {
       os_version: "Android (prototype shell)",
@@ -320,79 +203,38 @@ function buildUnifiedManifest(
   };
 }
 
-export async function buildAndShareUnifiedExportBundle(
-  format: ExportFormat,
-  range: DateRangeSelection,
+const BUCKETS_PER_DAY: Record<UnifiedTimelineResolution, number> = {
+  minute: 1440,
+  "15min": 96,
+  hour: 24,
+};
+// One timeline bucket and one daily aggregate as written, measured on
+// ordinary days.
+const BUCKET_BYTES: Record<ExportFormat, number> = { json: 620, csv: 150 };
+const AGGREGATE_BYTES = 110;
+
+export function timelineBucketCount(
+  days: number,
   resolution: UnifiedTimelineResolution,
-  buckets: UnifiedTimelineBucket[],
-  events: Record<string, ZentraEventRecord[]>,
-  dailyAggregates: DailyAggregateRecord[] = [],
-): Promise<{ fileName: string; estimatedBytes: number }> {
-  const zip = new JSZip();
-  const manifest = buildUnifiedManifest(
-    range,
-    resolution,
-    buckets,
-    events,
-    dailyAggregates,
-  );
-
-  zip.file("manifest.json", JSON.stringify(manifest, null, 2));
-
-  if (dailyAggregates.length) {
-    zip.file("daily_aggregates.csv", buildDailyAggregatesCsv(dailyAggregates));
-  }
-
-  if (format === "json") {
-    zip.file("timeline.json", JSON.stringify(buckets, null, 2));
-  } else {
-    zip.file("timeline.csv", buildTimelineCsv(buckets));
-  }
-
-  const base64 = await zip.generateAsync({
-    type: "base64",
-    compression: "DEFLATE",
-  });
-
-  if (!FileSystem.cacheDirectory) {
-    throw new Error("Cache directory is unavailable.");
-  }
-
-  const fileName = `Zentra_unified_${resolution}_${range.start}_to_${range.end}_${format}.zip`;
-  const outputPath = `${FileSystem.cacheDirectory}${fileName}`;
-
-  await FileSystem.writeAsStringAsync(outputPath, base64, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(outputPath, {
-      mimeType: "application/zip",
-      dialogTitle: "Share Zentra export",
-      UTI: "public.zip-archive",
-    });
-  }
-
-  return {
-    fileName,
-    estimatedBytes: Math.round((base64.length * 3) / 4),
-  };
+): number {
+  return days * BUCKETS_PER_DAY[resolution];
 }
 
-export function estimateUnifiedExportBundleBytes(
-  format: ExportFormat,
-  buckets: UnifiedTimelineBucket[],
-  dailyAggregates: DailyAggregateRecord[] = [],
+/**
+ * About how large the files in the archive will be before compression, from
+ * record counts alone: nothing is read to make the estimate.
+ */
+export function estimateExportBytes(
+  description: ExportDescription & { days: number },
+  recordBytes: number,
 ): number {
-  const bucketBytes = buckets.reduce(
-    (total, bucket) => total + JSON.stringify(bucket).length,
-    0,
-  );
-  const aggregateBytes = dailyAggregates.reduce(
-    (total, record) => total + JSON.stringify(record).length,
-    0,
-  );
-  const multiplier = format === "json" ? 1.15 : 0.9;
-
-  return Math.round((bucketBytes + aggregateBytes + 500) * multiplier);
+  const { mode, format, days, resolution } = description;
+  const aggregates = days * AGGREGATE_BYTES;
+  if (mode === "unified")
+    return (
+      timelineBucketCount(days, resolution) * BUCKET_BYTES[format] +
+      aggregates +
+      500
+    );
+  return Math.round(recordBytes * (format === "json" ? 1 : 0.8)) + aggregates + 500;
 }
