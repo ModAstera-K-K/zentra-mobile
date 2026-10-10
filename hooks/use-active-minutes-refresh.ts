@@ -1,19 +1,16 @@
-import {
-  activeRangeRevision,
-  calibrationDates,
-} from "@/utils/active-refresh-state";
 import { useEffect, useState, useRef } from "react";
 import { afterRender } from "@/utils/cooperative-work";
 import { useIsFocused } from "@react-navigation/native";
 import { useRepositoryStore, useAppStore } from "@/stores";
-import { refreshActiveDay } from "@/utils/active-background";
 import {
-  enqueueDatabaseOperation,
-  rebuildAggregateForDate,
-} from "@/utils/event-repository";
-import { getLocalDatabase } from "@/utils/local-database";
+  createActiveRefreshMemory,
+  refreshActiveMinutes,
+} from "@/utils/active-minutes-refresh";
 import { parseISODate, shiftISODate } from "@/utils/dates";
-import { RELEASE_FLAGS } from "@/constants/release-flags";
+
+// A range is chosen by tapping through the chips; wait for the taps to stop
+// before starting on one.
+const RANGE_CHANGE_DELAY_MS = 150;
 
 export function useActiveMinutesRefresh(
   enabled: boolean,
@@ -31,65 +28,51 @@ export function useActiveMinutesRefresh(
   const end = range?.end ?? today;
   const rangeMode = !!range;
   const timezone = parseISODate(today).getTimezoneOffset();
-  const lastComplete = useRef<string | null>(null);
-  const lastHistory = useRef<string | null>(null);
+  const memory = useRef(createActiveRefreshMemory());
   useEffect(() => {
     if (!enabled || !focused) return;
     const controller = new AbortController();
-    const task = afterRender(() => {
-      void (async () => {
-        const signature = `${health}:${timezone}:${await activeRangeRevision(start, end)}`;
-        if (controller.signal.aborted) return;
-        if (lastComplete.current === signature) {
-          setState({ updating: false, error: null });
-          return;
-        }
-        setState({ updating: true, error: null });
-        await refreshActiveDay(end, controller.signal, health);
-        if (controller.signal.aborted) return;
-        await useRepositoryStore.getState().refreshTodayData(true);
-        const historySignature = `${health}:${timezone}:${await activeRangeRevision(start, shiftISODate(end, -1))}`;
-        if (
-          (rangeMode || RELEASE_FLAGS.walkingEquivalent) &&
-          lastHistory.current !== historySignature
-        ) {
-          const candidates = rangeMode
-            ? null
-            : await calibrationDates(start, shiftISODate(end, -1));
-          for (
-            let day = shiftISODate(end, -1);
-            day >= start;
-            day = shiftISODate(day, -1)
-          ) {
-            if (controller.signal.aborted) return;
-            if (candidates && !candidates.has(day)) continue;
-            await refreshActiveDay(day, controller.signal, health);
-          }
-          if (controller.signal.aborted) return;
-          await enqueueDatabaseOperation(async () => {
+    let task: { cancel: () => void } | null = null;
+    const begin = () => {
+      task = afterRender(() => {
+        void refreshActiveMinutes({
+          start,
+          end,
+          rangeMode,
+          health,
+          timezone,
+          signal: controller.signal,
+          memory: memory.current,
+          onUpdating: () => setState({ updating: true, error: null }),
+          refreshToday: () =>
+            useRepositoryStore.getState().refreshTodayData(true),
+        })
+          .then(() => {
             if (!controller.signal.aborted)
-              await rebuildAggregateForDate(await getLocalDatabase(), end);
-          });
-          if (!controller.signal.aborted)
-            await useRepositoryStore.getState().refreshTodayData(true);
-        }
-        if (!controller.signal.aborted) {
-          lastHistory.current = `${health}:${timezone}:${await activeRangeRevision(start, shiftISODate(end, -1))}`;
-          lastComplete.current = `${health}:${timezone}:${await activeRangeRevision(start, end)}`;
-          setState({ updating: false, error: null });
-        }
-      })().catch((error) => {
-        if (!controller.signal.aborted)
-          setState({
-            updating: false,
-            error:
-              error instanceof Error ? error.message : "Activity update failed",
+              setState((current) =>
+                current.updating || current.error
+                  ? { updating: false, error: null }
+                  : current,
+              );
+          })
+          .catch((error) => {
+            if (!controller.signal.aborted)
+              setState({
+                updating: false,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Activity update failed",
+              });
           });
       });
-    });
+    };
+    const timer = rangeMode ? setTimeout(begin, RANGE_CHANGE_DELAY_MS) : null;
+    if (!timer) begin();
     return () => {
       controller.abort();
-      task.cancel();
+      if (timer) clearTimeout(timer);
+      task?.cancel();
     };
   }, [
     enabled,
