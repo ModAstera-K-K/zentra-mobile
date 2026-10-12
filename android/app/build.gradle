@@ -69,6 +69,28 @@ react {
 def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBuilds') ?: false).toBoolean()
 
 /**
+ * Pass -Pzentra.requireReleaseSigning=true to sign release builds with the release keystore.
+ * Without it release builds use the debug key, so local phone installs need no credentials.
+ * See docs/android-release.md.
+ */
+def requireReleaseSigning = (findProperty('zentra.requireReleaseSigning') ?: false).toBoolean()
+
+if (requireReleaseSigning) {
+    def missingSigningVars = [
+        'ANDROID_KEYSTORE_PATH',
+        'ANDROID_KEYSTORE_PASSWORD',
+        'ANDROID_KEY_ALIAS',
+        'ANDROID_KEY_PASSWORD',
+    ].findAll { !System.getenv(it) }
+    if (missingSigningVars) {
+        throw new GradleException("zentra.requireReleaseSigning is set but these variables are missing: ${missingSigningVars.join(', ')}. See docs/android-release.md.")
+    }
+    if (!file(System.getenv('ANDROID_KEYSTORE_PATH')).isFile()) {
+        throw new GradleException("zentra.requireReleaseSigning is set but ANDROID_KEYSTORE_PATH is not a file: ${System.getenv('ANDROID_KEYSTORE_PATH')}. Use an absolute path.")
+    }
+}
+
+/**
  * The preferred build flavor of JavaScriptCore (JSC)
  *
  * For example, to use the international variant, you can use:
@@ -105,15 +127,22 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (requireReleaseSigning) {
+            release {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Debug-signed unless zentra.requireReleaseSigning is set (see above).
+            signingConfig requireReleaseSigning ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

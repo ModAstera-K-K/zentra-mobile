@@ -7,6 +7,10 @@ import {
   getProjectRoot,
   printAndroidEnvSummary,
 } from "./android-env.mjs";
+import {
+  findApksigner,
+  readApkSignerDigests,
+} from "./android-signature-helpers.mjs";
 
 const APP_ID = "com.modastera.zentra";
 const RELEASE_SIGNING_ENV_VARS = [
@@ -100,6 +104,23 @@ function printSignatureMismatchHelp() {
   console.error(
     "Uninstalling the existing app removes its on-device data unless you have already exported it.",
   );
+}
+
+function printApkSigner(apkPath, androidSdkRoot, env) {
+  const apksignerPath = findApksigner(androidSdkRoot);
+
+  if (!apksignerPath) {
+    return;
+  }
+
+  try {
+    const digests = readApkSignerDigests(apksignerPath, apkPath, env);
+    console.log(
+      `Signer certificate SHA-256: ${digests.join(", ") || "none"}`,
+    );
+  } catch (error) {
+    console.warn(error instanceof Error ? error.message : String(error));
+  }
 }
 
 function validateReleaseSigningEnv() {
@@ -217,6 +238,7 @@ function main() {
 
   if (fs.existsSync(apkPath)) {
     console.log(`Installed release APK from ${apkPath}`);
+    printApkSigner(apkPath, androidSdkRoot, releaseEnv);
   }
 
   if (adbPath) {
