@@ -27,6 +27,7 @@ import {
 } from "@/utils/collectors/registry";
 import type { CollectorHandle } from "@/utils/collectors/types";
 import { runImportantCollectorReconcile } from "@/utils/background/reconcile";
+import { collectorRunAfter } from "@/utils/collector-start-gate";
 import { syncBackgroundReconcileTaskRegistration } from "@/utils/background/reconcile-task";
 import {
   startBackgroundCollectionServiceAsync,
@@ -92,7 +93,9 @@ export function useSignalBootstrap(): void {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const bootstrapTaskQueueRef = useRef<Promise<void>>(Promise.resolve());
   const bootstrapTaskFailedRef = useRef(false);
-  const [collectorsMayStart, setCollectorsMayStart] = useState(false);
+  // 0 while collectors are held back; each higher value is a (re)start.
+  const [collectorRun, setCollectorRun] = useState(0);
+  const startedBeforeRepositoryRef = useRef(false);
   const reconcileInFlightRef = useRef<Promise<void> | null>(null);
   const lastResumeReconcileAtRef = useRef(0);
   const hasResumeReconcileCollectors = hasEnabledCollectorCapability(
@@ -123,23 +126,45 @@ export function useSignalBootstrap(): void {
 
   // Collectors write as they start. Holding them until the stored data has
   // loaded keeps those first writes out of the way of the first screen. The
-  // timer makes sure a slow or failed load cannot hold collection up.
+  // timer makes sure a slow or failed load cannot hold collection up. If it
+  // let them through while the database could not be opened and a start
+  // failed, the load succeeding later (Today's "Try again") starts them again.
   useEffect(() => {
-    if (!isHydrated || collectorsMayStart) {
+    if (!isHydrated) {
       return;
     }
 
     if (repositoryHydrated) {
-      setCollectorsMayStart(true);
+      const next = collectorRunAfter("repositoryLoaded", {
+        run: collectorRun,
+        startedBeforeLoad: startedBeforeRepositoryRef.current,
+        startFailed: bootstrapTaskFailedRef.current,
+      });
+      startedBeforeRepositoryRef.current = false;
+      if (next !== collectorRun) {
+        // The restart is the retry, so the launch reconcile need not be one.
+        if (collectorRun) bootstrapTaskFailedRef.current = false;
+        setCollectorRun(next);
+      }
       return;
     }
 
-    const timer = setTimeout(
-      () => setCollectorsMayStart(true),
-      COLLECTOR_START_FALLBACK_MS,
-    );
+    if (collectorRun) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      startedBeforeRepositoryRef.current = true;
+      setCollectorRun((run) =>
+        collectorRunAfter("waitedLongEnough", {
+          run,
+          startedBeforeLoad: false,
+          startFailed: false,
+        }),
+      );
+    }, COLLECTOR_START_FALLBACK_MS);
     return () => clearTimeout(timer);
-  }, [collectorsMayStart, isHydrated, repositoryHydrated]);
+  }, [collectorRun, isHydrated, repositoryHydrated]);
 
   useEffect(() => {
     void bootstrap();
@@ -218,7 +243,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.steps.enabled) {
+    if (!collectorRun || !collectors.steps.enabled) {
       return;
     }
 
@@ -255,7 +280,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.steps.enabled,
-    collectorsMayStart,
+    collectorRun,
     setStepCount,
     setStepPermissionStatus,
     setStepSupport,
@@ -264,7 +289,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.deviceState.enabled) {
+    if (!collectorRun || !collectors.deviceState.enabled) {
       return;
     }
 
@@ -300,7 +325,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.deviceState.enabled,
-    collectorsMayStart,
+    collectorRun,
     setBatterySnapshot,
     setBatterySupport,
     refreshTodayData,
@@ -308,7 +333,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.connectivity.enabled) {
+    if (!collectorRun || !collectors.connectivity.enabled) {
       return;
     }
 
@@ -339,7 +364,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.connectivity.enabled,
-    collectorsMayStart,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
@@ -396,7 +421,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.activity.enabled) {
+    if (!collectorRun || !collectors.activity.enabled) {
       return;
     }
 
@@ -429,13 +454,13 @@ export function useSignalBootstrap(): void {
   }, [
     collectors.activity.enabled,
     drainBufferedActivityTransitions,
-    collectorsMayStart,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.appUsage.enabled) {
+    if (!collectorRun || !collectors.appUsage.enabled) {
       return;
     }
 
@@ -466,13 +491,13 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.appUsage.enabled,
-    collectorsMayStart,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.healthConnect.enabled) {
+    if (!collectorRun || !collectors.healthConnect.enabled) {
       return;
     }
 
@@ -505,13 +530,13 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.healthConnect.enabled,
-    collectorsMayStart,
+    collectorRun,
     refreshAll,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.sleep.enabled) {
+    if (!collectorRun || !collectors.sleep.enabled) {
       return;
     }
 
@@ -545,14 +570,14 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.sleep.enabled,
-    collectorsMayStart,
+    collectorRun,
     refreshSleep,
     refreshTodayData,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.ambientLight.enabled) {
+    if (!collectorRun || !collectors.ambientLight.enabled) {
       return;
     }
 
@@ -585,7 +610,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.ambientLight.enabled,
-    collectorsMayStart,
+    collectorRun,
     refreshTodayData,
     setAmbientLightLux,
     setAmbientLightSupport,
@@ -593,7 +618,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!collectorsMayStart || !collectors.motionContext.enabled) {
+    if (!collectorRun || !collectors.motionContext.enabled) {
       return;
     }
 
@@ -624,7 +649,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.motionContext.enabled,
-    collectorsMayStart,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
@@ -632,7 +657,7 @@ export function useSignalBootstrap(): void {
   const launchSettledRef = useRef(false);
 
   useEffect(() => {
-    if (!isHydrated || !repositoryHydrated || !collectorsMayStart) {
+    if (!isHydrated || !repositoryHydrated || !collectorRun) {
       return;
     }
 
@@ -695,7 +720,7 @@ export function useSignalBootstrap(): void {
       subscription.remove();
     };
   }, [
-    collectorsMayStart,
+    collectorRun,
     drainBufferedActivityTransitions,
     hasResumeReconcileCollectors,
     isHydrated,
