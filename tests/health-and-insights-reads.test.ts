@@ -235,3 +235,44 @@ test("insights are rebuilt only when something they read has changed", async (co
     .run();
   assert.ok((await count(() => loadPersonalInsights(TODAY, "fifth"))).statements > 2);
 });
+
+test("stored insight days show the import's current time and keep to the id limit", async () => {
+  const adapter = await openTestRepository();
+  const of = (insights: Awaited<ReturnType<typeof loadPersonalInsights>>, metric: string) =>
+    insights.find((insight) => insight.metric === metric)!.observations;
+  await loadPersonalInsights(TODAY, "before");
+
+  // A later import page moves the steps import's time. The stored days are
+  // not rebuilt for it, and still report it.
+  const later = "2026-09-30T19:45:00.000Z";
+  adapter.db.prepare("UPDATE health_sync_state SET updated_at = ? WHERE record_type = 'steps'").run(later);
+  // One day as it was stored before the id limit: every id, and no count.
+  const day = shiftISODate(TODAY, -2);
+  const row = adapter.db
+    .prepare("SELECT cache_key, payload FROM derived_cache WHERE cache_key LIKE ?")
+    .get(`observations-v1:${day}:%`)!;
+  const legacy = (JSON.parse(String(row.payload)) as { metric: string; recordIds: string[]; recordCount?: number }[]).map(
+    (observation) => {
+      if (observation.metric !== "usage") return observation;
+      const { recordCount, ...rest } = observation;
+      return { ...rest, recordIds: Array.from({ length: recordCount ?? 0 }, (_, index) => `usage-${index}`) };
+    },
+  );
+  adapter.db.prepare("UPDATE derived_cache SET payload = ? WHERE cache_key = ?").run(JSON.stringify(legacy), String(row.cache_key));
+
+  const from = statementLog.length;
+  const insights = await loadPersonalInsights(TODAY, "after");
+  assert.equal(
+    statementLog.slice(from).some((statement) => statement.sql.startsWith("INSERT OR REPLACE INTO derived_cache")),
+    false,
+    "no stored day was rebuilt",
+  );
+  assert.deepEqual([...new Set(of(insights, "steps").map((observation) => observation.updatedAt))], [later]);
+  assert.ok(
+    of(insights, "usage").every((observation) => observation.updatedAt !== later),
+    "a metric with no import keeps its own time",
+  );
+  const usage = of(insights, "usage").find((observation) => observation.date === day)!;
+  assert.equal(usage.recordIds.length, 50);
+  assert.equal(usage.recordCount, 144);
+});

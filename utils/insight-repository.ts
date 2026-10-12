@@ -39,6 +39,32 @@ export function loadPersonalInsights(
   jobs.set(key, job);
   return job;
 }
+// The import state each metric's "updated" time comes from, as
+// `buildMetricObservation` picks it. App usage has none.
+const HEALTH_RECORD_TYPE: Record<MetricObservation["metric"], string | null> = {
+  steps: "steps",
+  sleep: "sleep",
+  exercise: "exercise_session",
+  usage: null,
+};
+
+/**
+ * An observation with no more record ids than are kept: a day of app usage is
+ * hundreds, and the evidence view shows 50. Applied to days stored before the
+ * limit as they are read, as well as to new ones.
+ */
+function withinStoredIds(observation: MetricObservation): MetricObservation {
+  if (observation.recordIds.length <= STORED_RECORD_IDS)
+    return observation.recordCount === undefined
+      ? { ...observation, recordCount: observation.recordIds.length }
+      : observation;
+  return {
+    ...observation,
+    recordCount: observation.recordCount ?? observation.recordIds.length,
+    recordIds: observation.recordIds.slice(0, STORED_RECORD_IDS),
+  };
+}
+
 function healthStateKey(states: HealthSyncState[]): string {
   return JSON.stringify(
     states.map((s) => [
@@ -95,19 +121,19 @@ async function loadObservations(
       ),
     );
     if (cached)
-      observations.push(...(JSON.parse(cached.payload) as MetricObservation[]));
+      observations.push(
+        ...(JSON.parse(cached.payload) as MetricObservation[]).map(
+          (observation) => withinStoredIds(observation),
+        ),
+      );
     else {
       const events = await getEventsForRange(prior, day);
-      const next = INSIGHT_METRICS.map((metric) => {
-        const observation = buildMetricObservation(metric, day, events, states);
-        return {
-          ...observation,
-          // A day of app usage is hundreds of ids; keep what can be shown.
-          recordCount: observation.recordIds.length,
-          recordIds: observation.recordIds.slice(0, STORED_RECORD_IDS),
-          revision,
-        };
-      });
+      const next = INSIGHT_METRICS.map((metric) => ({
+        ...withinStoredIds(
+          buildMetricObservation(metric, day, events, states),
+        ),
+        revision,
+      }));
       observations.push(...next);
       await enqueueDatabaseOperation(async () => {
         assertRepositoryEpoch(epoch);
@@ -126,6 +152,15 @@ async function loadObservations(
     }
   }
   assertRepositoryEpoch(epoch);
+  // A stored day keeps the import's "updated" time from when it was built,
+  // and is not rebuilt for a newer one: that time moves with every imported
+  // page. It is taken from the import state as it is now instead.
+  for (const observation of observations) {
+    const updatedAt = states.find(
+      (state) => state.record_type === HEALTH_RECORD_TYPE[observation.metric],
+    )?.updated_at;
+    if (updatedAt) observation.updatedAt = updatedAt;
+  }
   // Days that have left the window are never read again.
   await enqueueDatabaseOperation(async () => {
     assertRepositoryEpoch(epoch);

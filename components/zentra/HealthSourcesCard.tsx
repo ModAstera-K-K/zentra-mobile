@@ -27,11 +27,17 @@ export function HealthSourcesCard() {
   const [states, setStates] = React.useState<HealthSyncState[]>([]);
   const [busy, setBusy] = React.useState(false),
     [message, setMessage] = React.useState("");
+  // Kept apart from `message`, which a manual import sets: a later poll that
+  // succeeds clears this and leaves that alone.
+  const [pollFailed, setPollFailed] = React.useState(false);
   React.useEffect(() => {
     if (!focused || mode === "demo") return;
     return startHealthSourcesPolling({
-      onError: () => setMessage("Source status unavailable. Retry below."),
-      onStates: setStates,
+      onError: () => setPollFailed(true),
+      onStates: (next) => {
+        setPollFailed(false);
+        setStates(next);
+      },
       readCounts: getHealthSyncStates,
       readStatus: getHealthSyncStatus,
     });
@@ -133,12 +139,12 @@ export function HealthSourcesCard() {
           </Text>
         </Pressable>
       )}
-      {!!message && (
+      {(!!message || pollFailed) && (
         <Text
           accessibilityLiveRegion="polite"
           style={{ color: palette.textSecondary }}
         >
-          {message}
+          {message || "Source status unavailable. Retry below."}
         </Text>
       )}
       <Text style={{ color: palette.textSecondary }}>
