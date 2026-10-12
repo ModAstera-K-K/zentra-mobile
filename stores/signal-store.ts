@@ -76,8 +76,12 @@ async function persistSignalState(state: SignalState): Promise<void> {
 }
 
 // The saved copy only seeds the next launch, and readings arrive far faster
-// than that is worth writing. One write follows a burst of changes, or the
-// app leaving the foreground, where a pending timer may never fire.
+// than that is worth writing. A change is saved five seconds after it, with
+// whatever else changed meanwhile, so readings that never pause cost one write
+// every five seconds and the saved copy is never more than that far behind.
+// The timer is deliberately not pushed back by each change: a walk can keep
+// readings changing for an hour. Leaving the foreground saves at once, since a
+// pending timer may never fire there.
 const PERSIST_DELAY_MS = 5_000;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
