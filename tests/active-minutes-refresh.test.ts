@@ -114,3 +114,73 @@ test("an active-minutes refresh repeats only the days whose records changed", as
   });
   assert.deepEqual(fresh, createActiveRefreshMemory());
 });
+
+test("records that arrive during a refresh are not counted as done", async () => {
+  await openTestRepository();
+  const lateDay = back(3);
+  const request = (memory: ReturnType<typeof createActiveRefreshMemory>, onDay: (day: string, days: string[]) => Promise<void>) => {
+    const days: string[] = [];
+    return {
+      days,
+      run: () =>
+        refreshActiveMinutes({
+          start: back(6),
+          end: END,
+          rangeMode: true,
+          health: false,
+          timezone: 0,
+          signal: new AbortController().signal,
+          memory,
+          onUpdating: () => undefined,
+          refreshToday: async () => undefined,
+          refreshDay: async (day) => {
+            days.push(day);
+            await onDay(day, days);
+          },
+        }),
+    };
+  };
+  const arrive = (id: string) =>
+    appendEventsForCollector(
+      "steps",
+      [storedEvent(id, "steps", noonOn(lateDay), { valueNumeric: 1_200 })],
+      "Stored",
+    );
+
+  // The walk goes from yesterday backwards. Steps for three days ago arrive
+  // after that day was done: the request goes round again and redoes it.
+  const memory = createActiveRefreshMemory();
+  let arrived = false;
+  const once = request(memory, async (day) => {
+    if (day === back(5) && !arrived) {
+      arrived = true;
+      await arrive("late-steps-1");
+    }
+  });
+  await once.run();
+  assert.deepEqual(
+    once.days.filter((day) => day === lateDay).length,
+    2,
+    "the day the records arrived for was done again",
+  );
+  assert.notEqual(memory.complete, null);
+  // Nothing further to do: the second pass saw no more arrivals.
+  const after = request(memory, async () => undefined);
+  await after.run();
+  assert.deepEqual(after.days, []);
+
+  // Records that keep arriving: after two passes nothing is remembered, so
+  // the next request starts over instead of trusting a pass they overlapped.
+  const busy = createActiveRefreshMemory();
+  let count = 0;
+  const never = request(busy, async (day) => {
+    if (day === back(5)) await arrive(`late-steps-busy-${count++}`);
+  });
+  await never.run();
+  assert.equal(count, 2);
+  assert.deepEqual(busy, createActiveRefreshMemory());
+  const retry = request(busy, async () => undefined);
+  await retry.run();
+  assert.deepEqual(retry.days, [END, ...Array.from({ length: 6 }, (_, index) => back(index + 1))]);
+  assert.notEqual(busy.complete, null);
+});

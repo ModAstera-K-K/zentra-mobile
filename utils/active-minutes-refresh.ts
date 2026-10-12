@@ -1,6 +1,7 @@
 import { RELEASE_FLAGS } from "@/constants/release-flags";
 import { refreshActiveDay } from "@/utils/active-background";
 import {
+  activeEvidenceRevision,
   activeRangeRevision,
   calibrationDates,
 } from "@/utils/active-refresh-state";
@@ -48,14 +49,28 @@ export interface ActiveRefreshRequest {
   refreshDay?: typeof refreshActiveDay;
 }
 
+// Passes a request makes while records keep arriving under it.
+const MAX_PASSES = 2;
+
 /**
  * Bring active minutes up to date for `start` to `end`. A request repeats work
  * only for what changed: the last day when its own records moved, earlier days
  * when theirs did, and for a range that grew, just the days it added.
+ *
+ * What a pass did is only remembered if no records arrived while it ran: a
+ * day it had already finished may predate them. It then goes round once more,
+ * and if records are still arriving it remembers nothing, so the next request
+ * does the work again.
  */
 export async function refreshActiveMinutes(
   request: ActiveRefreshRequest,
 ): Promise<void> {
+  for (let pass = 0; pass < MAX_PASSES; pass++)
+    if (await refreshPass(request)) return;
+}
+
+/** One pass. False when records arrived during it, so nothing was remembered. */
+async function refreshPass(request: ActiveRefreshRequest): Promise<boolean> {
   const { end, rangeMode, health, timezone, signal, memory } = request;
   const refreshDay = request.refreshDay ?? refreshActiveDay;
   const key = `${health}:${timezone}:${rangeMode}`;
@@ -65,8 +80,11 @@ export async function refreshActiveMinutes(
   const completeSignature = async () =>
     `${key}:${await activeRangeRevision(start, end)}`;
 
-  if (memory.complete === (await completeSignature())) return;
-  if (signal.aborted) return;
+  if (memory.complete === (await completeSignature())) return true;
+  if (signal.aborted) return true;
+  // The walk writes timing profiles, which move the full revision. The
+  // records' own revision moves only if something else wrote meanwhile.
+  const evidence = await activeEvidenceRevision(start, end);
 
   const endIsCurrent =
     memory.end?.key === key &&
@@ -80,7 +98,7 @@ export async function refreshActiveMinutes(
       (await activeRangeRevision(memory.history.start, lastHistoryDay))
       ? memory.history
       : null;
-  if (signal.aborted) return;
+  if (signal.aborted) return true;
   // A range that grew walks the days it added; one that shrank walks none.
   const walkFrom = walked ? shiftISODate(walked.start, -1) : lastHistoryDay;
   const walks =
@@ -89,7 +107,7 @@ export async function refreshActiveMinutes(
   if (!endIsCurrent || walks) request.onUpdating();
   if (!endIsCurrent) {
     await refreshDay(end, signal, health);
-    if (signal.aborted) return;
+    if (signal.aborted) return true;
     await request.refreshToday();
   }
   if (walks) {
@@ -98,31 +116,38 @@ export async function refreshActiveMinutes(
       : await calibrationDates(start, walkFrom);
     let refreshed = 0;
     for (let day = walkFrom; day >= start; day = shiftISODate(day, -1)) {
-      if (signal.aborted) return;
+      if (signal.aborted) return true;
       if (candidates && !candidates.has(day)) continue;
       await refreshDay(day, signal, health);
       refreshed++;
     }
-    if (signal.aborted) return;
+    if (signal.aborted) return true;
     // The last day's walking calibration reads the days before it. Rebuild
     // it, and re-read today only if that changed what is stored.
     if (refreshed && (await rebuildChanged(end, signal)) && !signal.aborted)
       await request.refreshToday();
   }
-  if (signal.aborted) return;
+  if (signal.aborted) return true;
   const historyStart = walked && walked.start < start ? walked.start : start;
-  memory.end = {
-    key,
-    date: end,
-    signature: await activeRangeRevision(end, end),
+  const done: Pick<ActiveRefreshMemory, "complete" | "end" | "history"> = {
+    end: {
+      key,
+      date: end,
+      signature: await activeRangeRevision(end, end),
+    },
+    history: {
+      key,
+      start: historyStart,
+      end,
+      signature: await activeRangeRevision(historyStart, lastHistoryDay),
+    },
+    complete: await completeSignature(),
   };
-  memory.history = {
-    key,
-    start: historyStart,
-    end,
-    signature: await activeRangeRevision(historyStart, lastHistoryDay),
-  };
-  memory.complete = await completeSignature();
+  // Checked last, after the signatures were taken: records that arrived any
+  // earlier may be in those signatures without being in the work.
+  if ((await activeEvidenceRevision(start, end)) !== evidence) return false;
+  Object.assign(memory, done);
+  return true;
 }
 
 /** Rebuild a day's aggregate and say whether its stored values changed. */

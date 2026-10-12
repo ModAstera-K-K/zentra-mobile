@@ -18,6 +18,26 @@ export async function activeRangeRevision(
   });
 }
 
+/**
+ * The same range's revision over the records alone, without the timing
+ * profiles a refresh writes itself. It moves only when something else wrote.
+ */
+export async function activeEvidenceRevision(
+  start: string,
+  end: string,
+): Promise<string> {
+  return enqueueDatabaseOperation(async () => {
+    const row = await (
+      await getLocalDatabase()
+    ).getFirstAsync<{ revision: number }>(
+      "SELECT COALESCE(MAX(revision),0) AS revision FROM event_changes WHERE data_type IN ('steps','activity','exercise_session','motion_context') AND start_date <= ? AND end_date >= ?",
+      end,
+      shiftISODate(start, -1),
+    );
+    return String(row?.revision ?? 0);
+  });
+}
+
 /** Only days with walking evidence can contribute a calibration bout. */
 export async function calibrationDates(
   start: string,
