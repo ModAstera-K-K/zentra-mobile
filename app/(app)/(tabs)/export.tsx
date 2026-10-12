@@ -55,6 +55,7 @@ import { buildExportEvents, createDemoCollectors } from "@/utils/mock-data";
 import { estimateExportBytes, timelineBucketCount } from "@/utils/export";
 import { openExportFile, shareExportFile } from "@/utils/export-file-sink";
 import {
+  ExportDataChangingError,
   exportToFile,
   type ExportProgress,
   type ExportRequest,
@@ -375,9 +376,15 @@ export default function ExportScreen() {
         "Your bundle is ready",
         `${result.fileName} is packaged up — ${formatBytes(result.bytes)}, ${result.records.toLocaleString()} records. Share it whenever you like.`,
       );
-    } catch {
+    } catch (error) {
       // A cancelled export says nothing: the button already did.
-      if (!controller.signal.aborted)
+      if (controller.signal.aborted) return;
+      if (error instanceof ExportDataChangingError)
+        Alert.alert(
+          "Your data is still changing",
+          "Records were being added faster than Zentra could export them, as during a health import. Nothing was saved; try again in a moment.",
+        );
+      else
         Alert.alert(
           "Something went wrong",
           "Zentra couldn't create the bundle. Nothing was saved; give it another try.",

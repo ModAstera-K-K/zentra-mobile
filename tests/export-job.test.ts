@@ -10,6 +10,7 @@ import {
 } from "@/utils/event-repository";
 import {
   buildExportArchive,
+  ExportDataChangingError,
   exportToFile,
   type ExportFile,
   type ExportProgress,
@@ -251,6 +252,46 @@ test("a cancelled or failed export leaves no file; a finished one is kept once",
     );
     assert.equal(files.at(-1)?.state, "discarded", cancelAt);
   }
+
+  // Records that never stop arriving: the export gives up rather than package
+  // days read at different moments, and says why.
+  let writes = 0;
+  const churning: ExportSource = {
+    ...repositoryExportSource,
+    revision: async (start, end) => {
+      await appendEventsForCollector(
+        "steps",
+        [storedEvent(`churn-${writes++}`, "steps", midnight(END) + HOUR, { valueNumeric: writes })],
+        "Stored",
+      );
+      return repositoryExportSource.revision(start, end);
+    },
+  };
+  await assert.rejects(
+    exportToFile(request(), churning, openFile, { signal: new AbortController().signal }),
+    ExportDataChangingError,
+  );
+  assert.equal(files.at(-1)?.state, "discarded");
+
+  // A write that lands while the aggregates are read is caught too.
+  let aggregateReads = 0;
+  const lateWrite: ExportSource = {
+    ...repositoryExportSource,
+    aggregates: async (start, end) => {
+      if (aggregateReads++ === 0)
+        await appendEventsForCollector(
+          "steps",
+          [storedEvent("during-aggregates", "steps", midnight(END) + 2 * HOUR, { valueNumeric: 77 })],
+          "Stored",
+        );
+      return repositoryExportSource.aggregates(start, end);
+    },
+  };
+  const settled = await build(request(), lateWrite);
+  assert.equal(aggregateReads, 2, "the aggregates were read again at the settled revision");
+  assert.ok(
+    (JSON.parse(await settled.text("events.json")) as ZentraEventRecord[]).some((event) => event.id === "during-aggregates"),
+  );
 
   const failing: ExportSource = { ...repositoryExportSource, aggregates: async () => Promise.reject(new Error("disk I/O error")) };
   await assert.rejects(exportToFile(request(), failing, openFile, { signal: new AbortController().signal }), /disk I\/O error/);

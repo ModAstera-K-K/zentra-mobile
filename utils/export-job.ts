@@ -76,6 +76,14 @@ const READING_SHARE = 0.8;
 const REPAIR_ROUNDS = 3;
 const SERIALIZE_SLICE = 500;
 
+/** The records kept changing for as long as the export tried to read them. */
+export class ExportDataChangingError extends Error {
+  constructor() {
+    super("The records were still changing while they were being exported.");
+    this.name = "ExportDataChangingError";
+  }
+}
+
 /** One local day of the export, already turned into bytes. */
 interface DayPart {
   /** Records of each exported type, for the manifest. */
@@ -195,10 +203,21 @@ export async function buildExportArchive(
   }
   // Days written to while the job read them are read again. A changed day
   // changes what runs into the next, so the timeline redoes all that follow.
-  for (let round = 0; round < REPAIR_ROUNDS; round++) {
+  // The archive is only built from a read that nothing wrote under: once the
+  // records and the daily aggregates have both been read at one revision.
+  let aggregates: DailyAggregateRecord[] | null = null;
+  for (let round = 0; aggregates === null; round++) {
     assertActive();
     const now = await source.revision(range.start, range.end);
-    if (now === since) break;
+    if (now === since) {
+      const read = await source.aggregates(range.start, range.end);
+      if ((await source.revision(range.start, range.end)) === since)
+        aggregates = read;
+      continue;
+    }
+    // Writes that never pause, such as a long import: say so rather than
+    // package days read at different moments.
+    if (round >= REPAIR_ROUNDS) throw new ExportDataChangingError();
     const changed = (await source.changedDates(since, range.start, range.end))
       .map((date) => days.indexOf(date))
       .filter((index) => index >= 0);
@@ -214,7 +233,6 @@ export async function buildExportArchive(
     }
   }
   assertActive();
-  const aggregates = await source.aggregates(range.start, range.end);
 
   const typeCounts = new Map<string, number>();
   for (const part of parts)
