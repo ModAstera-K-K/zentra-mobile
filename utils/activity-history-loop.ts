@@ -4,6 +4,7 @@ import type {
   ActivityHistoryWindow,
 } from "@/types/activity-history";
 import { advanceActivityHistory } from "@/utils/activity-history-windows";
+import { yieldToEventLoop } from "@/utils/cooperative-work";
 
 interface ActivityHistoryLoop {
   assertActive: () => void;
@@ -42,7 +43,7 @@ export async function runActivityHistoryLoop(
     imported += page.transitions.length;
     if (i === 0 || !page.hasMore) await deps.progress?.();
     // Native reads are bounded; JS/repository consumers can run between pages.
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await yieldToEventLoop();
   }
   return imported;
 }

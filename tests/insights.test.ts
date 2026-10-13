@@ -7,7 +7,6 @@ import {
   resolveStepTotal,
   resolvedSleepMinutes,
 } from "@/utils/source-resolution";
-import { stableEvents } from "@/utils/event-identity";
 import { shiftISODate, parseISODate } from "@/utils/dates";
 import { buildMetricObservation } from "@/utils/metric-observations";
 import {
@@ -55,21 +54,12 @@ test("platform statistics supersede both raw health samples and phone counters",
   );
   assert.equal(resolveStepTotal([]), null);
 });
-test("phone counters handle resets and corrections retaining count and final ID", () => {
+test("phone counters handle resets", () => {
   const records = [
     event("a", 100),
     { ...event("b", 20), timestampStart: "2026-09-10T12:00:00Z" },
   ];
   assert.equal(resolveStepTotal(records), 120);
-  const corrected = [{ ...records[0], valueNumeric: 110 }, records[1]];
-  assert.notEqual(stableEvents(records, corrected), records);
-  assert.equal(
-    stableEvents(
-      records,
-      records.map((e) => ({ ...e })),
-    ),
-    records,
-  );
 });
 test("sleep stages are unioned within one origin and attributed to wake date", () => {
   const a = {

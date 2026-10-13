@@ -114,6 +114,58 @@ export async function summaryRevision(
   );
   return `${row?.revision ?? 0}:${parseISODate(date).getTimezoneOffset()}:v3`;
 }
+/**
+ * `summaryRevision` for many days from one read of the window's change rows,
+ * instead of one statement a day. Each day's revision is the newest change
+ * that touches the 33 days its summary depends on.
+ */
+export async function summaryRevisions(
+  db: SQLiteDatabase,
+  dates: string[],
+): Promise<Map<string, string>> {
+  const revisions = new Map<string, string>();
+  if (!dates.length) return revisions;
+  const sorted = [...dates].sort();
+  const changes = await db.getAllAsync<{
+    start_date: string;
+    end_date: string;
+    revision: number;
+  }>(
+    "SELECT start_date,end_date,MAX(revision) AS revision FROM event_changes WHERE data_type IN ('steps','activity','motion_context','exercise_session','active_timing') AND start_date <= ? AND end_date >= ? GROUP BY start_date,end_date",
+    shiftISODate(sorted[sorted.length - 1], 1),
+    shiftISODate(sorted[0], -31),
+  );
+  for (const date of sorted) {
+    const from = shiftISODate(date, -31),
+      until = shiftISODate(date, 1);
+    let revision = 0;
+    for (const change of changes)
+      if (
+        change.start_date <= until &&
+        change.end_date >= from &&
+        change.revision > revision
+      )
+        revision = change.revision;
+    revisions.set(
+      date,
+      `${revision}:${parseISODate(date).getTimezoneOffset()}:v3`,
+    );
+  }
+  return revisions;
+}
+/** Whether a stored summary was built at `revision` (from `summaryRevision`). */
+export function isActiveSummaryAt(
+  payload: string | null | undefined,
+  revision: string | undefined,
+): boolean {
+  if (!payload || !revision) return false;
+  try {
+    const summary = JSON.parse(payload) as ActiveMinutesSummary;
+    return summary.calculationVersion === 3 && summary.revision === revision;
+  } catch {
+    return false;
+  }
+}
 export async function isActiveSummaryCurrent(
   db: SQLiteDatabase,
   date: string,

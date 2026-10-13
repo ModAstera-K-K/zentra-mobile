@@ -3,7 +3,6 @@ import type { ActivityHistoryState } from "@/types/activity-history";
 import { getActivityHistoryState } from "@/utils/activity-history-repository";
 import { syncActivityHistory } from "@/utils/activity-history-runner";
 import { useAppStore } from "@/stores/app-store";
-import { stableEvents } from "@/utils/event-identity";
 import { getRepositoryRevision } from "@/utils/event-repository";
 import { Platform } from "react-native";
 import { create } from "zustand";
@@ -29,6 +28,7 @@ import {
 import {
   loadPersistedRepositoryMeta,
   savePersistedRepositoryMeta,
+  type PersistedRepositoryMeta,
 } from "@/utils/app-storage";
 import { createActivityEvent } from "@/utils/live-event-builders";
 import {
@@ -56,8 +56,13 @@ const EMPTY_TODAY_SNAPSHOT: TodayLiveSnapshot = {
 
 const MIN_TODAY_REFRESH_INTERVAL_MS = 1_500;
 
+let bootstrapInFlight: Promise<void> | null = null;
 let lastTodayRefreshCompletedAtMs = 0;
 let refreshTodayDataInFlight: Promise<void> | null = null;
+// The revision of today's own records when refreshTodayData last read them.
+// While it holds, the events in the store are the events in the database.
+let publishedToday: { epoch: number; date: string; revision: string } | null =
+  null;
 
 /**
  * For refreshes that read and then publish. A wipe that overtakes one rejects
@@ -101,6 +106,8 @@ interface RepositoryStoreState {
   backgroundTaskRegistrationMessage: string | null;
   backgroundTaskRegistrationStatus: string | null;
   bufferedActivityQueueDepth: number;
+  /** Why the last bootstrap failed; null while one is running or once one succeeds. */
+  bootstrapError: string | null;
   isHydrated: boolean;
   lastBufferedActivityCursor: number | null;
   lastBackgroundReconcileAt: string | null;
@@ -121,6 +128,11 @@ interface RepositoryStoreState {
   lastReconcileTrigger: ReconcileTrigger | null;
   lastUpdatedAt: string | null;
   todayDataUpdatedAt: string | null;
+  /**
+   * The local day the today* fields describe. It moves only together with
+   * them, so a screen never pairs a new date with the previous day's data.
+   */
+  todayDate: string;
   /** Repository epoch; changes when local data is wiped. */
   dataEpoch: number;
   diagnosticsUpdatedAt: string | null;
@@ -132,6 +144,8 @@ interface RepositoryStoreState {
   diagnostics: CollectorDiagnosticRecord[];
   diagnosticsHistory: CollectorDiagnosticRecord[];
   bootstrap: () => Promise<void>;
+  /** The reads behind bootstrap; call bootstrap, which runs one at a time. */
+  loadStoredState: () => Promise<void>;
   refreshAll: () => Promise<void>;
   refreshTodayData: (force?: boolean) => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
@@ -156,7 +170,7 @@ interface RepositoryStoreState {
 async function persistRepositoryMeta(
   state: RepositoryStoreState,
 ): Promise<void> {
-  await savePersistedRepositoryMeta({
+  const meta: PersistedRepositoryMeta = {
     backgroundCollectionServiceCheckedAt:
       state.backgroundCollectionServiceCheckedAt,
     backgroundCollectionServiceState: state.backgroundCollectionServiceState,
@@ -182,7 +196,19 @@ async function persistRepositoryMeta(
     lastReconcileRunAt: state.lastReconcileRunAt,
     lastReconcileStartedAt: state.lastReconcileStartedAt,
     lastReconcileTrigger: state.lastReconcileTrigger,
-  });
+  };
+  if (state.isHydrated) {
+    await savePersistedRepositoryMeta(meta);
+    return;
+  }
+  // Before bootstrap the store still holds its empty defaults, so saving it
+  // whole would erase what earlier runs recorded. Only what this run has set
+  // is laid over the saved record.
+  const saved = await loadPersistedRepositoryMeta();
+  const setThisRun = Object.fromEntries(
+    Object.entries(meta).filter(([, value]) => value !== null && value !== 0),
+  );
+  await savePersistedRepositoryMeta({ ...meta, ...saved, ...setThisRun });
 }
 
 export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
@@ -193,6 +219,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   backgroundTaskRegistrationStatus: null,
   activityHistory: null,
   bufferedActivityQueueDepth: 0,
+  bootstrapError: null,
   isHydrated: false,
   lastBufferedActivityCursor: null,
   lastBackgroundReconcileAt: null,
@@ -213,6 +240,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   lastReconcileTrigger: null,
   lastUpdatedAt: null,
   todayDataUpdatedAt: null,
+  todayDate: toISODate(new Date()),
   dataEpoch: repositoryEpoch(),
   diagnosticsUpdatedAt: null,
   sleepUpdatedAt: null,
@@ -223,28 +251,46 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
   diagnostics: [],
   diagnosticsHistory: [],
 
-  bootstrap: unlessWiped(async (isCurrent) => {
-    if (get().isHydrated) {
-      return;
-    }
+  bootstrap: () => {
+    if (get().isHydrated) return Promise.resolve();
+    bootstrapInFlight ??= (async () => {
+      set({ bootstrapError: null });
+      try {
+        await get().loadStoredState();
+      } catch (error) {
+        set({
+          bootstrapError:
+            error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      } finally {
+        bootstrapInFlight = null;
+      }
+    })();
+    return bootstrapInFlight;
+  },
 
+  loadStoredState: unlessWiped(async (isCurrent) => {
     await initializeEventRepository();
-    const persistedMeta = await loadPersistedRepositoryMeta();
-    const activityHistory =
-      Platform.OS === "ios" ? await getActivityHistoryState() : null;
-    const bufferedActivityQueueDepth =
-      await getBufferedActivityTransitionCountAsync();
-    const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
+    // The database reads are queued together, straight after the open, so a
+    // collector's first write cannot slot in between them. Storage and the
+    // native count do not use the database and are read alongside.
     const [
+      persistedMeta,
+      activityHistory,
+      bufferedActivityQueueDepth,
+      dataRevision,
       diagnostics,
-      diagnosticsHistory,
       todayAggregate,
       latestSleepEvent,
       todayEvents,
     ] = await Promise.all([
+      loadPersistedRepositoryMeta(),
+      Platform.OS === "ios" ? getActivityHistoryState() : null,
+      getBufferedActivityTransitionCountAsync(),
+      getRepositoryRevision(),
       getLatestCollectorDiagnostics(),
-      getCollectorDiagnosticsHistory(),
       getDailyAggregateForDate(todayDate),
       getLatestEventByType("sleep_inferred"),
       getEventsForRange(todayDate, todayDate),
@@ -297,6 +343,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastReconcileTrigger: persistedMeta?.lastReconcileTrigger ?? null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: dataRevision,
+      todayDate,
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot,
@@ -304,7 +351,6 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       todayEvents,
       latestSleepEvent,
       diagnostics,
-      diagnosticsHistory,
     });
   }),
 
@@ -316,19 +362,13 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       await get().refreshBackgroundCollectionServiceState();
     const dataRevision = await getRepositoryRevision();
     const todayDate = toISODate(new Date());
-    const [
-      diagnostics,
-      diagnosticsHistory,
-      todayAggregate,
-      latestSleepEvent,
-      todayEvents,
-    ] = await Promise.all([
-      getLatestCollectorDiagnostics(),
-      getCollectorDiagnosticsHistory(),
-      getDailyAggregateForDate(todayDate),
-      getLatestEventByType("sleep_inferred"),
-      getEventsForRange(todayDate, todayDate),
-    ]);
+    const [diagnostics, todayAggregate, latestSleepEvent, todayEvents] =
+      await Promise.all([
+        getLatestCollectorDiagnostics(),
+        getDailyAggregateForDate(todayDate),
+        getLatestEventByType("sleep_inferred"),
+        getEventsForRange(todayDate, todayDate),
+      ]);
     // Same local-day window as the events above: no second full-day read.
     const todaySnapshot = buildTodaySnapshot(todayEvents);
 
@@ -342,6 +382,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       bufferedActivityQueueDepth,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: dataRevision,
+      todayDate,
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot,
@@ -349,7 +390,6 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       todayEvents,
       latestSleepEvent,
       diagnostics,
-      diagnosticsHistory,
     });
   }),
 
@@ -363,6 +403,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
 
     if (
       !force &&
+      // A new local day is published at once, even right after a refresh.
+      get().todayDate === toISODate(new Date()) &&
       Date.now() - lastTodayRefreshCompletedAtMs < MIN_TODAY_REFRESH_INTERVAL_MS
     ) {
       return;
@@ -374,26 +416,46 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       if (
         !force &&
         get().todayDataUpdatedAt === dataRevision &&
-        get().todayAggregate?.date === todayDate
+        get().todayDate === todayDate
       )
         return;
+
+      // The revision moved, but a write to another day leaves today's records
+      // as they are: the same array then stays in the store, and nothing that
+      // derives from it runs again.
+      const epoch = repositoryEpoch();
+      const todayRevision = await getRepositoryRevision(todayDate, todayDate);
+      const eventsUnchanged =
+        publishedToday?.epoch === epoch &&
+        publishedToday.date === todayDate &&
+        publishedToday.revision === todayRevision;
+      if (!force && eventsUnchanged) {
+        if (isCurrent()) set({ todayDataUpdatedAt: dataRevision });
+        return;
+      }
+
       const [todayAggregate, todayEvents] = await Promise.all([
         getDailyAggregateForDate(todayDate),
-        getEventsForRange(todayDate, todayDate),
+        eventsUnchanged
+          ? get().todayEvents
+          : getEventsForRange(todayDate, todayDate),
       ]);
-      const todaySnapshot = buildTodaySnapshot(todayEvents);
+      const todaySnapshot = eventsUnchanged
+        ? get().todaySnapshot
+        : buildTodaySnapshot(todayEvents);
 
       const updatedAt = new Date().toISOString();
-      const stableTodayEvents = stableEvents(get().todayEvents, todayEvents);
 
       if (!isCurrent()) return;
       set({
         lastUpdatedAt: updatedAt,
         todayDataUpdatedAt: dataRevision,
+        todayDate,
         todaySnapshot,
         todayAggregate,
-        todayEvents: stableTodayEvents,
+        todayEvents,
       });
+      publishedToday = { epoch, date: todayDate, revision: todayRevision };
 
       lastTodayRefreshCompletedAtMs = Date.now();
     })();
@@ -457,7 +519,8 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       latestSleepEvent,
-      todayAggregate,
+      // After midnight the today fields move together, in refreshTodayData.
+      ...(todayDate === get().todayDate ? { todayAggregate } : {}),
     });
   },
 
@@ -655,6 +718,7 @@ export const useRepositoryStore = create<RepositoryStoreState>((set, get) => ({
       lastReconcileTrigger: null,
       lastUpdatedAt: updatedAt,
       todayDataUpdatedAt: await getRepositoryRevision(),
+      todayDate: toISODate(new Date()),
       diagnosticsUpdatedAt: updatedAt,
       sleepUpdatedAt: updatedAt,
       todaySnapshot: EMPTY_TODAY_SNAPSHOT,

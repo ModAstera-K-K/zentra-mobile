@@ -134,6 +134,23 @@ npm run ios
 
 ### Run device builds
 
+For a local Android Release build installed on your connected phone:
+
+```bash
+npm run android:install
+```
+
+Enable USB debugging and accept the phone's authorization prompt first. The script
+finds Java 17 and the Android SDK, builds with local performance logging, installs
+the APK, and opens Zentra without Metro. It uses the current Gradle signing
+configuration (currently the local debug key), so no publishing credentials are
+needed. An existing app must use the same key to update; the script never uninstalls
+it or wipes its data. Run `npm run android:install -- --check` to verify setup only,
+or `npm run android:install -- --device SERIAL` when multiple devices are connected.
+Set `EXPO_PUBLIC_LOCAL_PERF=0` to disable local timing logs.
+
+The existing development and distribution-signing workflows remain available:
+
 ```bash
 npm run build-android-dev-device
 npm run build-android-release-device

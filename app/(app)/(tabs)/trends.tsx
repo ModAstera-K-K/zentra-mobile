@@ -17,6 +17,7 @@ import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { TrendChartCard } from "@/components/zentra/TrendChartCard";
 import { TrendSurfaceCard } from "@/components/zentra/TrendSurfaceCard";
 import { Chip } from "@/components/ui/Chip";
+import type { InlineStatusProps } from "@/components/ui/InlineStatus";
 import { Colors, Fonts, FontSizes, Layout, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAppStore, useRepositoryStore } from "@/stores";
@@ -52,7 +53,7 @@ import {
   getDailyAggregatesForRange,
   getEventsCarriedIntoDay,
   getEventsOfTypeForRange,
-  getRepositoryRevision,
+  getStoredDayRevision,
 } from "@/utils/event-repository";
 import {
   GROUP_LABELS,
@@ -77,6 +78,7 @@ import {
   noteLoadResult,
   type LoadFailures,
 } from "@/utils/load-failures";
+import { keepUnchanged } from "@/utils/keep-unchanged";
 import { startPerfTimer } from "@/utils/perf";
 import { useShallow } from "zustand/react/shallow";
 
@@ -116,6 +118,9 @@ const RANGE_OPTIONS: { label: string; value: TrendRange }[] = [
 ];
 
 export default function TrendsScreen() {
+  // React Compiler has never compiled this screen. Opting in is its own change,
+  // to be measured on a device.
+  "use no memo";
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const isFocused = useIsFocused();
@@ -150,6 +155,7 @@ export default function TrendsScreen() {
       dataEpoch: state.dataEpoch,
       isHydrated: state.isHydrated,
       todayDataUpdatedAt: state.todayDataUpdatedAt,
+      todayDate: state.todayDate,
       todayEvents: state.todayEvents,
     })),
   );
@@ -159,8 +165,11 @@ export default function TrendsScreen() {
     [collectors],
   );
 
+  // The store's day, so ranges and today's records move to a new day together.
+  const today = repository.todayDate;
+
   const rangeSelection: { start: string; end: string } =
-    range === "custom" ? customRange : getDateRangeForTrendRange(range);
+    range === "custom" ? customRange : getDateRangeForTrendRange(range, today);
 
   // Check if user entered a range that is valid
   const validCustom =
@@ -173,21 +182,14 @@ export default function TrendsScreen() {
     range === "custom" && validCustom
       ? customRange.start
       : range === "custom"
-        ? shiftISODate(toISODate(new Date()), -13)
+        ? shiftISODate(today, -13)
         : rangeSelection.start;
   const rangeEnd =
     range === "custom" && validCustom
       ? customRange.end
       : range === "custom"
-        ? toISODate(new Date())
+        ? today
         : rangeSelection.end;
-
-  // Re-derived when the repository refreshes so the date advances at midnight.
-  const today = React.useMemo(
-    () => toISODate(new Date()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [repository.todayDataUpdatedAt],
-  );
 
   // What is loaded for the selected range. New data inside it does not change
   // the scope; it only moves a revision, which queues another pass.
@@ -243,6 +245,15 @@ export default function TrendsScreen() {
     history: string;
     records: string;
   } | null>(null);
+  // The revisions the loaded range already reflects. A session started for the
+  // same range begins from them, so returning to the tab with nothing changed
+  // runs no load.
+  const handledRef = React.useRef<{
+    scopeKey: string;
+    history?: string;
+    records?: string;
+  } | null>(null);
+  const [loadRetry, setLoadRetry] = React.useState(0);
   const loadTimerRef = React.useRef<ReturnType<typeof startPerfTimer> | null>(
     null,
   );
@@ -264,10 +275,20 @@ export default function TrendsScreen() {
       rangeStart: start,
       screen: "trends",
     });
+    const handled =
+      handledRef.current?.scopeKey === scopeKey ? handledRef.current : null;
+    const noteHandled = (load: "history" | "records", revision: string) => {
+      handledRef.current = {
+        ...(handledRef.current?.scopeKey === scopeKey ? handledRef.current : {}),
+        scopeKey,
+        [load]: revision,
+      };
+    };
     // Neither session is cancelled by a write: each pass only redoes what
     // changed, and a write mid-pass queues one more once writes pause.
     const sessions = {
       history: startActivityCacheSession({
+        handled: handled?.history,
         load: (signal, onProgress) =>
           loadActivityHistory(
             loadStart,
@@ -278,12 +299,13 @@ export default function TrendsScreen() {
             // Each report re-renders the charts: once a second is plenty.
             { trends: true, visibleProgressIntervalMs: 1000 },
           ),
-        onHistory: (next, _revision, final) => {
+        onHistory: (next, revision, final) => {
           setLoadedHistory({ scopeKey, history: next });
-          if (final)
-            setLoadFailures((current) =>
-              noteLoadResult(current, scopeKey, "history", false),
-            );
+          if (!final) return;
+          noteHandled("history", revision);
+          setLoadFailures((current) =>
+            noteLoadResult(current, scopeKey, "history", false),
+          );
         },
         onLoading: setIsLoadingHistory,
         // Keep the last successful range visible; the next change retries.
@@ -293,6 +315,7 @@ export default function TrendsScreen() {
           ),
       }),
       records: startActivityCacheSession<TrendRangeRecords>({
+        handled: handled?.records,
         load: async () => {
           const [aggregates, sleepEvents, exerciseEvents, carriedIntoToday] =
             await Promise.all([
@@ -303,8 +326,9 @@ export default function TrendsScreen() {
             ]);
           return { aggregates, sleepEvents, exerciseEvents, carriedIntoToday };
         },
-        onHistory: (next) => {
+        onHistory: (next, revision) => {
           setLoadedRecords({ scopeKey, records: next });
+          noteHandled("records", revision);
           setLoadFailures((current) =>
             noteLoadResult(current, scopeKey, "records", false),
           );
@@ -328,7 +352,7 @@ export default function TrendsScreen() {
       if (sessionsRef.current === sessions) sessionsRef.current = null;
       setIsLoadingHistory(false);
     };
-  }, [isFocused, repository.isHydrated, scope]);
+  }, [isFocused, loadRetry, repository.isHydrated, scope]);
 
   React.useEffect(() => {
     if (!scope || !repository.isHydrated || !isFocused) return;
@@ -337,8 +361,10 @@ export default function TrendsScreen() {
     void Promise.all([
       // Moves when a stored day in the range goes stale.
       getActivityHistoryRevision(loadStart, historyEnd),
-      // Moves on any write in the range, including today's.
-      getRepositoryRevision(loadStart, end),
+      // Moves on a write the range's aggregates, sleep or exercise records
+      // can depend on, including today's. Light, network and heart-rate
+      // readings change none of them.
+      getStoredDayRevision(loadStart, end),
     ])
       .then(([historyRevision, recordsRevision]) => {
         if (isCancelled) return;
@@ -354,7 +380,13 @@ export default function TrendsScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [isFocused, repository.isHydrated, repository.todayDataUpdatedAt, scope]);
+  }, [
+    isFocused,
+    loadRetry,
+    repository.isHydrated,
+    repository.todayDataUpdatedAt,
+    scope,
+  ]);
 
   // Today is not a stored day yet: summarize it from the records the
   // repository already holds, plus whatever ran in from last night.
@@ -393,6 +425,7 @@ export default function TrendsScreen() {
     scope,
   ]);
 
+  const lastAssembledRef = React.useRef<LiveTrends | null>(null);
   const assembled = React.useMemo<LiveTrends | null>(() => {
     if (!scope || !history || !records) return null;
     if (scope.includesToday && !currentToday) return null;
@@ -410,7 +443,8 @@ export default function TrendsScreen() {
       sleepEvents: records.sleepEvents,
       exerciseEvents: records.exerciseEvents,
     };
-    return {
+    const previous = lastAssembledRef.current;
+    const next = {
       series: buildLiveTrendSeries(
         records.aggregates,
         { start: scope.rangeStart, end: scope.rangeEnd },
@@ -424,6 +458,17 @@ export default function TrendsScreen() {
       ),
       surfaces: buildLiveTrendSurfaces(inputs),
     };
+    // A rebuild usually changes a point or two, or nothing. Charts whose
+    // series came out the same keep the object they had, so they are not
+    // drawn again and keep the point the user selected.
+    const series = keepUnchanged(previous?.series, next.series, (entry) => entry.key);
+    const surfaces = keepUnchanged(previous?.surfaces, next.surfaces, (entry) => entry.key);
+    const kept =
+      previous && series === previous.series && surfaces === previous.surfaces
+        ? previous
+        : { series, surfaces };
+    lastAssembledRef.current = kept;
+    return kept;
   }, [currentToday, history, records, scope]);
 
   // The previous range stays on screen until the selected one has its first
@@ -447,6 +492,42 @@ export default function TrendsScreen() {
     history && isLoadingHistory && history.visibleRemaining > 2
       ? history.visibleRemaining
       : 0;
+  // The charts on screen belong to the range selected before this one.
+  const showsPreviousRange = !isDemoMode && !assembled && !!live;
+  const loadFailed = !isDemoMode && hasLoadFailure(loadFailures, scope?.key);
+  const retryLoad = React.useCallback(() => {
+    handledRef.current = null;
+    setLoadFailures(null);
+    setLoadRetry((count) => count + 1);
+  }, []);
+  // What the end of the date line says. It is one line that is always there,
+  // so none of these moves the charts.
+  const rangeStatus = React.useMemo<InlineStatusProps | null>(
+    () =>
+      loadFailed
+        ? {
+            accessibilityLabel: showsPreviousRange
+              ? "This range could not be loaded. Showing the previous range."
+              : "This range could not be loaded. Showing the last result.",
+            action: { label: "Retry", onPress: retryLoad },
+            label: "Couldn't load",
+          }
+        : showsPreviousRange
+          ? {
+              accessibilityLabel:
+                "Loading this range. Showing the previous range.",
+              busy: true,
+              label: "Loading range",
+            }
+          : pendingDays > 0
+            ? {
+                accessibilityLabel: `Loading ${pendingDays} more day${pendingDays === 1 ? "" : "s"} of this range`,
+                busy: true,
+                label: `${pendingDays} more day${pendingDays === 1 ? "" : "s"} loading`,
+              }
+            : null,
+    [loadFailed, pendingDays, retryLoad, showsPreviousRange],
+  );
 
   React.useEffect(() => {
     if (!assembled || !loadTimerRef.current) return;
@@ -475,7 +556,6 @@ export default function TrendsScreen() {
   const hasCollectors = Object.values(collectors).some(
     (collector) => collector.enabled,
   );
-  const hasLiveTrendData = series.length > 0 || surfaces.length > 0;
   const groups = React.useMemo(() => {
     const seriesGroups = groupTrendSeries(series);
     const coveredKeys = new Set(seriesGroups.map((g) => g.key));
@@ -629,23 +709,29 @@ export default function TrendsScreen() {
         );
       }
 
+      // Charts left over from the previous range are dimmed until the
+      // selected one has loaded; they keep their place.
+      const block = showsPreviousRange
+        ? [styles.sectionBlock, styles.previousRange]
+        : styles.sectionBlock;
       if (item.type === "surface") {
         return (
-          <View style={styles.sectionBlock}>
+          <View style={block}>
             <TrendSurfaceCard surface={item.surface} />
           </View>
         );
       }
 
       return (
-        <View style={styles.sectionBlock}>
+        <View style={block}>
           <TrendChartCard series={item.series} />
         </View>
       );
     },
-    [palette, hiddenSeriesKeys],
+    [palette, hiddenSeriesKeys, showsPreviousRange],
   );
 
+  const refreshesActiveMinutes = !isDemoMode && repository.isHydrated;
   const listHeader = React.useMemo(
     () => (
       <>
@@ -661,17 +747,22 @@ export default function TrendsScreen() {
           ))}
         </View>
 
-        <Text style={[styles.helper, { color: palette.mutedForeground }]}>
-          {formatDateRangeLabel(rangeStart, rangeEnd)}
-        </Text>
-        {pendingDays > 0 ? (
+        {/* One line that is always there: the range, then whatever is
+            still loading for it. */}
+        <View style={styles.rangeLine}>
           <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.helper, { color: palette.mutedForeground }]}
+            numberOfLines={1}
+            style={[styles.rangeLabel, { color: palette.mutedForeground }]}
           >
-            {`Loading ${pendingDays} more day${pendingDays === 1 ? "" : "s"} of this range...`}
+            {formatDateRangeLabel(rangeStart, rangeEnd)}
           </Text>
-        ) : null}
+          <ActiveMinutesRefreshStatus
+            before={rangeStatus}
+            enabled={refreshesActiveMinutes}
+            end={rangeEnd}
+            start={rangeStart}
+          />
+        </View>
 
         {range === "custom" ? (
           <DateRangePickerRow
@@ -682,7 +773,26 @@ export default function TrendsScreen() {
         ) : null}
       </>
     ),
-    [range, palette, rangeStart, rangeEnd, customRange, pendingDays],
+    [
+      range,
+      palette,
+      rangeStart,
+      rangeEnd,
+      customRange,
+      rangeStatus,
+      refreshesActiveMinutes,
+    ],
+  );
+
+  const listEmpty = React.useMemo(
+    () => (
+      <EmptyState
+        body={emptyBody}
+        iconName="analytics-outline"
+        title={emptyTitle}
+      />
+    ),
+    [emptyBody, emptyTitle],
   );
 
   return (
@@ -691,33 +801,20 @@ export default function TrendsScreen() {
       subtitle="How your days connect"
       title="Trends"
     >
-      <ActiveMinutesRefreshStatus
-        enabled={!isDemoMode && repository.isHydrated}
-        start={rangeStart}
-        end={rangeEnd}
+      {/* The list is always there, so the header keeps its place whether or
+          not there is anything to chart yet. */}
+      <FlatList
+        contentContainerStyle={{
+          paddingBottom: isAndroid ? 0 : Layout.tabBarHeight + Spacing["4xl"],
+        }}
+        data={flatItems}
+        keyExtractor={(item) => item.key}
+        ListEmptyComponent={listEmpty}
+        ListHeaderComponent={listHeader}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        style={styles.list}
       />
-      {isDemoMode || hasLiveTrendData ? (
-        <FlatList
-          contentContainerStyle={{
-            paddingBottom: isAndroid ? 0 : Layout.tabBarHeight + Spacing["4xl"],
-          }}
-          data={flatItems}
-          keyExtractor={(item) => item.key}
-          ListHeaderComponent={listHeader}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          style={styles.list}
-        />
-      ) : (
-        <>
-          {listHeader}
-          <EmptyState
-            body={emptyBody}
-            iconName="analytics-outline"
-            title={emptyTitle}
-          />
-        </>
-      )}
     </ScreenShell>
   );
 }
@@ -735,11 +832,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     marginBottom: Spacing.md,
   },
-  helper: {
+  rangeLine: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.sm,
+    justifyContent: "space-between",
+    marginBottom: Spacing.sm,
+    minHeight: 20,
+  },
+  rangeLabel: {
+    flexShrink: 1,
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     lineHeight: 20,
-    marginBottom: Spacing.sm,
   },
   rangeRow: {
     flexDirection: "row",
@@ -749,6 +854,9 @@ const styles = StyleSheet.create({
   },
   sectionBlock: {
     marginBottom: Layout.sectionGap,
+  },
+  previousRange: {
+    opacity: 0.45,
   },
   seriesToggleRow: {
     flexDirection: "row",

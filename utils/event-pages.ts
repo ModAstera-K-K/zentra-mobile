@@ -24,7 +24,21 @@ interface EventPageOptions {
   signal?: AbortSignal;
   /** Changes whenever a stored row in the range is written or removed. */
   revision?: () => Promise<string>;
+  /**
+   * The parts of the range written to since `revision` returned `since`, as
+   * [start, endExclusive) bounds. With it, a read that a write landed in
+   * re-reads only those parts.
+   */
+  changedSince?: (since: string) => Promise<EventPageSpan[]>;
 }
+
+export interface EventPageSpan {
+  start: string;
+  endExclusive: string;
+}
+
+// Rounds of re-reading changed parts before giving up on following the writes.
+const REPAIR_ROUNDS = 3;
 
 export const EVENT_PAGE_SIZE = 500;
 // SQLite reads a LIMIT this large as no limit: the whole range in one page.
@@ -39,9 +53,11 @@ const UNPAGED = Number.MAX_SAFE_INTEGER;
  * Pages are separate reads, so a write can land between them: a record that
  * moves behind the cursor is missed, and one already read keeps its old copy
  * when it moves back or is deleted. With `revision`, a read of more than one
- * page whose range changed underneath it is discarded and repeated as a single
- * statement, which no write can split. Without it, the only repair is that a
- * record seen again on a later page keeps its latest copy.
+ * page whose range changed underneath it is repaired: with `changedSince`, the
+ * changed parts alone are read again, each as a single statement that no write
+ * can split; otherwise, or if writes keep landing, the whole range is read
+ * again as one statement. Without `revision`, the only repair is that a record
+ * seen again on a later page keeps its latest copy.
  */
 export async function readEventPages<
   Row extends PagedEventRow,
@@ -52,13 +68,44 @@ export async function readEventPages<
   decode: (row: Row) => T,
   options: EventPageOptions = {},
 ): Promise<T[]> {
-  const { revision } = options;
+  const { revision, changedSince } = options;
   const before = revision ? await revision() : null;
   const read = await readPages(query, range, decode, options);
   // One page is one statement, so only a longer read can straddle a write.
-  if (!revision || read.pages === 1 || before === (await revision()))
-    return read.events;
+  if (!revision || before === null || read.pages === 1) return read.events;
   const whole = { ...options, pageSize: UNPAGED };
+  let events = read.events;
+  let since = before;
+  for (let round = 0; round < REPAIR_ROUNDS; round++) {
+    const now = await revision();
+    if (now === since) return events;
+    if (!changedSince) break;
+    for (const span of await changedSince(since)) {
+      const start = span.start > range.start ? span.start : range.start;
+      const endExclusive =
+        span.endExclusive < range.endExclusive
+          ? span.endExclusive
+          : range.endExclusive;
+      if (start >= endExclusive) continue;
+      const fresh = await readPages(
+        query,
+        { ...range, start, endExclusive },
+        decode,
+        whole,
+      );
+      events = events
+        .filter(
+          (event) =>
+            event.timestampStart < start ||
+            event.timestampStart >= endExclusive,
+        )
+        .concat(fresh.events);
+    }
+    events.sort((left, right) =>
+      compareTimestamps(left.timestampStart, right.timestampStart),
+    );
+    since = now;
+  }
   return (await readPages(query, range, decode, whole)).events;
 }
 
@@ -79,6 +126,7 @@ async function readPages<
   let pages = 0;
 
   for (;;) {
+    if (options.signal?.aborted) throw new Error("Work cancelled");
     // The cursor replaces the lower bound so every page is an index range seek.
     const page: Row[] = await query(
       `SELECT rowid AS page_rowid, * FROM events

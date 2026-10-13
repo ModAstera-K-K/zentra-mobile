@@ -1,9 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState, Platform, type AppStateStatus } from "react-native";
 
 import { useAppStore, useRepositoryStore, useSignalStore } from "@/stores";
 import {
-  getStoredEventCount,
+  compactEventChanges,
+  hasStoredEvents,
+  pruneCollectorDiagnostics,
   pruneLocationEventsBefore,
   seedRepositoryEvents,
 } from "@/utils/event-repository";
@@ -25,11 +27,14 @@ import {
 } from "@/utils/collectors/registry";
 import type { CollectorHandle } from "@/utils/collectors/types";
 import { runImportantCollectorReconcile } from "@/utils/background/reconcile";
+import { collectorRunAfter } from "@/utils/collector-start-gate";
 import { syncBackgroundReconcileTaskRegistration } from "@/utils/background/reconcile-task";
 import {
   startBackgroundCollectionServiceAsync,
   stopBackgroundCollectionServiceAsync,
 } from "@/utils/native/zentra-native-signals";
+
+const COLLECTOR_START_FALLBACK_MS = 2_000;
 
 export function useSignalBootstrap(): void {
   const collectors = useAppStore((state) => state.collectors);
@@ -87,6 +92,10 @@ export function useSignalBootstrap(): void {
   const refreshSleep = useRepositoryStore((state) => state.refreshSleep);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const bootstrapTaskQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const bootstrapTaskFailedRef = useRef(false);
+  // 0 while collectors are held back; each higher value is a (re)start.
+  const [collectorRun, setCollectorRun] = useState(0);
+  const startedBeforeRepositoryRef = useRef(false);
   const reconcileInFlightRef = useRef<Promise<void> | null>(null);
   const lastResumeReconcileAtRef = useRef(0);
   const hasResumeReconcileCollectors = hasEnabledCollectorCapability(
@@ -108,17 +117,62 @@ export function useSignalBootstrap(): void {
     const nextTask = bootstrapTaskQueueRef.current.then(task, task);
     bootstrapTaskQueueRef.current = nextTask.then(
       () => undefined,
-      () => undefined,
+      () => {
+        bootstrapTaskFailedRef.current = true;
+      },
     );
     return nextTask;
   }
+
+  // Collectors write as they start. Holding them until the stored data has
+  // loaded keeps those first writes out of the way of the first screen. The
+  // timer makes sure a slow or failed load cannot hold collection up. If it
+  // let them through while the database could not be opened and a start
+  // failed, the load succeeding later (Today's "Try again") starts them again.
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    if (repositoryHydrated) {
+      const next = collectorRunAfter("repositoryLoaded", {
+        run: collectorRun,
+        startedBeforeLoad: startedBeforeRepositoryRef.current,
+        startFailed: bootstrapTaskFailedRef.current,
+      });
+      startedBeforeRepositoryRef.current = false;
+      if (next !== collectorRun) {
+        // The restart is the retry, so the launch reconcile need not be one.
+        if (collectorRun) bootstrapTaskFailedRef.current = false;
+        setCollectorRun(next);
+      }
+      return;
+    }
+
+    if (collectorRun) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      startedBeforeRepositoryRef.current = true;
+      setCollectorRun((run) =>
+        collectorRunAfter("waitedLongEnough", {
+          run,
+          startedBeforeLoad: false,
+          startFailed: false,
+        }),
+      );
+    }, COLLECTOR_START_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [collectorRun, isHydrated, repositoryHydrated]);
 
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
 
   useEffect(() => {
-    void bootstrapRepository();
+    // A failure is kept in the store, where Today offers a retry.
+    void bootstrapRepository().catch(() => undefined);
   }, [bootstrapRepository]);
 
   useEffect(() => {
@@ -129,7 +183,7 @@ export function useSignalBootstrap(): void {
     let isCancelled = false;
 
     async function seedRepository(): Promise<void> {
-      if ((await getStoredEventCount()) > 0 || isCancelled) {
+      if ((await hasStoredEvents()) || isCancelled) {
         hasSeededRef.current = true;
         return;
       }
@@ -189,7 +243,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.steps.enabled) {
+    if (!collectorRun || !collectors.steps.enabled) {
       return;
     }
 
@@ -226,7 +280,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.steps.enabled,
-    isHydrated,
+    collectorRun,
     setStepCount,
     setStepPermissionStatus,
     setStepSupport,
@@ -235,7 +289,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.deviceState.enabled) {
+    if (!collectorRun || !collectors.deviceState.enabled) {
       return;
     }
 
@@ -271,7 +325,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.deviceState.enabled,
-    isHydrated,
+    collectorRun,
     setBatterySnapshot,
     setBatterySupport,
     refreshTodayData,
@@ -279,7 +333,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.connectivity.enabled) {
+    if (!collectorRun || !collectors.connectivity.enabled) {
       return;
     }
 
@@ -310,7 +364,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.connectivity.enabled,
-    isHydrated,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
@@ -367,7 +421,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.activity.enabled) {
+    if (!collectorRun || !collectors.activity.enabled) {
       return;
     }
 
@@ -400,13 +454,13 @@ export function useSignalBootstrap(): void {
   }, [
     collectors.activity.enabled,
     drainBufferedActivityTransitions,
-    isHydrated,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.appUsage.enabled) {
+    if (!collectorRun || !collectors.appUsage.enabled) {
       return;
     }
 
@@ -437,13 +491,13 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.appUsage.enabled,
-    isHydrated,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.healthConnect.enabled) {
+    if (!collectorRun || !collectors.healthConnect.enabled) {
       return;
     }
 
@@ -476,13 +530,13 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.healthConnect.enabled,
-    isHydrated,
+    collectorRun,
     refreshAll,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.sleep.enabled) {
+    if (!collectorRun || !collectors.sleep.enabled) {
       return;
     }
 
@@ -516,14 +570,14 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.sleep.enabled,
-    isHydrated,
+    collectorRun,
     refreshSleep,
     refreshTodayData,
     collectorRetryToken,
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.ambientLight.enabled) {
+    if (!collectorRun || !collectors.ambientLight.enabled) {
       return;
     }
 
@@ -556,7 +610,7 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.ambientLight.enabled,
-    isHydrated,
+    collectorRun,
     refreshTodayData,
     setAmbientLightLux,
     setAmbientLightSupport,
@@ -564,7 +618,7 @@ export function useSignalBootstrap(): void {
   ]);
 
   useEffect(() => {
-    if (!isHydrated || !collectors.motionContext.enabled) {
+    if (!collectorRun || !collectors.motionContext.enabled) {
       return;
     }
 
@@ -595,13 +649,15 @@ export function useSignalBootstrap(): void {
     };
   }, [
     collectors.motionContext.enabled,
-    isHydrated,
+    collectorRun,
     refreshTodayData,
     collectorRetryToken,
   ]);
 
+  const launchSettledRef = useRef(false);
+
   useEffect(() => {
-    if (!isHydrated || !repositoryHydrated) {
+    if (!isHydrated || !repositoryHydrated || !collectorRun) {
       return;
     }
 
@@ -630,7 +686,23 @@ export function useSignalBootstrap(): void {
       }
     }
 
-    void runResumeReconcile().catch(() => undefined);
+    // At launch each collector has just synced as it started, so a reconcile
+    // would repeat that work. Only its housekeeping is left to do, unless a
+    // start failed, in which case the reconcile is the retry.
+    if (!launchSettledRef.current) {
+      launchSettledRef.current = true;
+      lastResumeReconcileAtRef.current = Date.now();
+      void enqueueBootstrapTask(async () => {
+        if (bootstrapTaskFailedRef.current) {
+          bootstrapTaskFailedRef.current = false;
+          // Already inside the queue: run it here, not through the queued path.
+          await runImportantCollectorReconcile({ trigger: "foregroundResume" });
+          return;
+        }
+        await compactEventChanges().catch(() => undefined);
+        await pruneCollectorDiagnostics().catch(() => undefined);
+      }).catch(() => undefined);
+    }
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       const previousState = appStateRef.current;
@@ -648,6 +720,7 @@ export function useSignalBootstrap(): void {
       subscription.remove();
     };
   }, [
+    collectorRun,
     drainBufferedActivityTransitions,
     hasResumeReconcileCollectors,
     isHydrated,

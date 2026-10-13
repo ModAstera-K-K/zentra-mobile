@@ -1,11 +1,8 @@
 import { ActiveMinutesRefreshStatus } from "@/components/zentra/ActiveMinutesRefreshStatus";
 import { useTabPerformance } from "@/hooks/use-tab-performance";
-import { groupExportEvents } from "@/utils/export-data";
 import React from "react";
 import {
-  ActivityIndicator,
   Alert,
-  InteractionManager,
   StyleSheet,
   Text,
   TextInput,
@@ -18,6 +15,7 @@ import { ScreenLead } from "@/components/zentra/ScreenLead";
 import { ScreenShell } from "@/components/zentra/ScreenShell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { InlineStatus } from "@/components/ui/InlineStatus";
 import { Chip } from "@/components/ui/Chip";
 import {
   getActionIcon,
@@ -40,32 +38,36 @@ import type {
   ExportFormat,
   ExportMode,
   ExportPreset,
-  UnifiedTimelineBucket,
   UnifiedTimelineResolution,
 } from "@/types/zentra";
 import {
+  enumerateISODateRange,
   getExportRangeForPreset,
   formatDateRangeLabel,
   isValidISODate,
-  parseISODate,
-  shiftISODate,
 } from "@/utils/dates";
 import {
+  getExportTypeCounts,
   getRepositoryRevision,
-  getDailyAggregatesForRange,
-  getEventsForRange,
+  type ExportTypeCount,
 } from "@/utils/event-repository";
 import { buildExportEvents, createDemoCollectors } from "@/utils/mock-data";
+import { estimateExportBytes, timelineBucketCount } from "@/utils/export";
+import { openExportFile, shareExportFile } from "@/utils/export-file-sink";
 import {
-  buildAndShareExportBundle,
-  buildAndShareUnifiedExportBundle,
-  estimateExportBundleBytes,
-  estimateUnifiedExportBundleBytes,
-} from "@/utils/export";
+  ExportDataChangingError,
+  exportToFile,
+  type ExportProgress,
+  type ExportRequest,
+} from "@/utils/export-job";
+import {
+  memoryExportSource,
+  repositoryExportSource,
+} from "@/utils/export-source";
 import { formatBytes } from "@/utils/format";
 import { startPerfTimer } from "@/utils/perf";
-import { buildUnifiedTimelineAsync } from "@/utils/unified-timeline";
 import { useShallow } from "zustand/react/shallow";
+import { afterRender } from "@/utils/cooperative-work";
 
 const PRESETS: ExportPreset[] = ["today", "week", "month", "all", "custom"];
 const RESOLUTION_OPTIONS: {
@@ -84,6 +86,9 @@ const SECTION_ICONS = {
   format: "document-text-outline",
   signals: "apps-outline",
 } as const;
+// The job reports every day read and every slice written; the screen is
+// redrawn for it this often at most.
+const PROGRESS_INTERVAL_MS = 120;
 
 export default function ExportScreen() {
   const colorScheme = useColorScheme();
@@ -96,7 +101,7 @@ export default function ExportScreen() {
   const repositoryState = useRepositoryStore(
     useShallow((state) => ({
       isHydrated: state.isHydrated,
-      todayDataUpdatedAt: state.todayDataUpdatedAt,
+      todayDate: state.todayDate,
     })),
   );
   const [preset, setPreset] = React.useState<ExportPreset>("week");
@@ -104,22 +109,22 @@ export default function ExportScreen() {
   const [exportMode, setExportMode] = React.useState<ExportMode>("unified");
   const [resolution, setResolution] =
     React.useState<UnifiedTimelineResolution>("15min");
-  const [isExporting, setIsExporting] = React.useState(false);
-  const [isLoadingLiveData, setIsLoadingLiveData] = React.useState(false);
-  const [isComputingTimeline, setIsComputingTimeline] = React.useState(false);
   const [selectedTypes, setSelectedTypes] = React.useState<string[]>([]);
-  const [liveEvents, setLiveEvents] = React.useState<
-    Record<string, import("@/types/zentra").ZentraEventRecord[]>
-  >({});
-  const [liveAggregates, setLiveAggregates] = React.useState<
-    import("@/types/zentra").DailyAggregateRecord[]
-  >([]);
-  const [liveRawEvents, setLiveRawEvents] = React.useState<
-    import("@/types/zentra").ZentraEventRecord[]
-  >([]);
-  const [timelineBuckets, setTimelineBuckets] = React.useState<
-    UnifiedTimelineBucket[]
-  >([]);
+  // What the range holds, by record type. The records themselves are read
+  // only when an export starts.
+  const [loadedCounts, setLoadedCounts] = React.useState<{
+    start: string;
+    end: string;
+    revision: string;
+    counts: ExportTypeCount[];
+  } | null>(null);
+  const [isLoadingCounts, setIsLoadingCounts] = React.useState(false);
+  // The export in progress. It belongs to the screen, not to its focus, so it
+  // carries on while another tab is open.
+  const [job, setJob] = React.useState<{
+    controller: AbortController;
+    progress: ExportProgress | null;
+  } | null>(null);
   const [customRange, setCustomRange] = React.useState(() =>
     getExportRangeForPreset("custom"),
   );
@@ -132,29 +137,54 @@ export default function ExportScreen() {
       ) => void)
     | null
   >(null);
-  const lastLoadedRangeRef = React.useRef<{
-    start: string;
-    end: string;
-    dataVersion: string | null;
-    rangeRevision: string;
-  } | null>(null);
-  const range =
-    preset === "custom" ? customRange : getExportRangeForPreset(preset);
+  const today = repositoryState.todayDate;
+  const range = React.useMemo(
+    () => (preset === "custom" ? customRange : getExportRangeForPreset(preset)),
+    // `today` moves the presets to the new day at midnight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [customRange, preset, today],
+  );
   const demoCollectors = React.useMemo(
     () => createDemoCollectors(collectors),
     [collectors],
   );
-  const allEvents =
-    dataMode === "demo" ? buildExportEvents(demoCollectors, true) : liveEvents;
-  const availableTypes =
-    dataMode === "demo" ? Object.keys(allEvents) : Object.keys(liveEvents);
-  const availableTypesKey = availableTypes.join("|");
+  const demoEvents = React.useMemo(
+    () => (dataMode === "demo" ? buildExportEvents(demoCollectors, true) : null),
+    [dataMode, demoCollectors],
+  );
+  const demoCounts = React.useMemo<ExportTypeCount[] | null>(
+    () =>
+      demoEvents &&
+      Object.entries(demoEvents).map(([type, records]) => ({
+        dataType: type as ExportTypeCount["dataType"],
+        records: records.length,
+        bytes: records.reduce(
+          (total, record) => total + JSON.stringify(record).length,
+          0,
+        ),
+      })),
+    [demoEvents],
+  );
   const hasValidRange =
     isValidISODate(range.start) &&
     isValidISODate(range.end) &&
     range.start <= range.end;
-  const isPreparingBundleData =
-    isLoadingLiveData || (exportMode === "unified" && isComputingTimeline);
+  const rangeCounts =
+    loadedCounts?.start === range.start && loadedCounts.end === range.end
+      ? loadedCounts.counts
+      : null;
+  const counts = demoCounts ?? rangeCounts;
+  // Until the first count returns there is nothing to say the range is empty.
+  const isCounting = dataMode !== "demo" && counts === null && hasValidRange;
+  const availableTypes = React.useMemo(
+    () => (counts ?? []).map((count) => count.dataType as string),
+    [counts],
+  );
+  const availableTypesKey = availableTypes.join("|");
+  const rangeDays = hasValidRange
+    ? enumerateISODateRange(range.start, range.end).length
+    : 0;
+  const isExporting = job !== null;
 
   React.useEffect(() => {
     if (!isFocused) {
@@ -179,13 +209,11 @@ export default function ExportScreen() {
       return;
     }
 
-    if (isLoadingLiveData || !focusReadyStopRef.current) {
+    if (isLoadingCounts || !focusReadyStopRef.current) {
       return;
     }
 
     focusReadyStopRef.current({
-      aggregateCount: liveAggregates.length,
-      rawEventCount: liveRawEvents.length,
       selectedTypeCount: selectedTypes.length,
       typeCount: availableTypes.length,
     });
@@ -194,13 +222,16 @@ export default function ExportScreen() {
     availableTypes.length,
     dataMode,
     isFocused,
-    isLoadingLiveData,
-    liveAggregates.length,
-    liveRawEvents.length,
+    isLoadingCounts,
     repositoryState.isHydrated,
     selectedTypes.length,
   ]);
 
+  // Counts are read when the tab is opened or the range changes, and again on
+  // a later visit only if the range was written to in between. A write while
+  // the tab is open does not reload them: the export reads the records fresh.
+  const loadedCountsRef = React.useRef(loadedCounts);
+  loadedCountsRef.current = loadedCounts;
   React.useEffect(() => {
     if (
       dataMode === "demo" ||
@@ -211,88 +242,48 @@ export default function ExportScreen() {
       return;
     }
 
-    // Skip reload if range and data version are unchanged (e.g. simple re-focus)
-    const prev = lastLoadedRangeRef.current;
-    if (
-      prev &&
-      prev.start === range.start &&
-      prev.end === range.end &&
-      prev.dataVersion === repositoryState.todayDataUpdatedAt
-    ) {
-      return;
-    }
-
     let isCancelled = false;
-
-    async function loadLiveExportData(): Promise<void> {
-      setIsLoadingLiveData(true);
-      const stopLoad = startPerfTimer("export.load_live_range", {
-        rangeEnd: range.end,
-        rangeStart: range.start,
-        screen: "export",
-      });
-
-      try {
-        const rangeRevision = await getRepositoryRevision(
-          range.start,
-          range.end,
-        );
-        if (isCancelled) return;
+    const { start, end } = range;
+    const task = afterRender(() => {
+      void (async () => {
+        const revision = await getRepositoryRevision(start, end);
+        const known = loadedCountsRef.current;
         if (
-          prev?.start === range.start &&
-          prev.end === range.end &&
-          prev.rangeRevision === rangeRevision
-        ) {
-          lastLoadedRangeRef.current = {
-            ...prev,
-            dataVersion: repositoryState.todayDataUpdatedAt,
-          };
+          isCancelled ||
+          (known?.start === start &&
+            known.end === end &&
+            known.revision === revision)
+        )
           return;
-        }
-        const [aggregates, rawEvents] = await Promise.all([
-          getDailyAggregatesForRange(range.start, range.end),
-          getEventsForRange(range.start, range.end),
-        ]);
-
-        stopLoad({
-          aggregateCount: aggregates.length,
-          eventTypeCount: new Set(rawEvents.map((event) => event.dataType))
-            .size,
-          isCancelled,
-          rawEventCount: rawEvents.length,
+        setIsLoadingCounts(true);
+        const stopLoad = startPerfTimer("export.load_counts", {
+          rangeEnd: end,
+          rangeStart: start,
+          screen: "export",
         });
-
-        if (isCancelled) {
-          return;
+        try {
+          const next = await getExportTypeCounts(start, end);
+          stopLoad({ isCancelled, typeCount: next.length });
+          if (!isCancelled)
+            setLoadedCounts({ start, end, revision, counts: next });
+        } catch {
+          stopLoad({ isCancelled, result: "error" });
+          // An empty count shows the range as empty; the next visit retries.
+          if (!isCancelled)
+            setLoadedCounts({ start, end, revision: "", counts: [] });
+        } finally {
+          if (!isCancelled) setIsLoadingCounts(false);
         }
-
-        setLiveEvents(groupExportEvents(rawEvents));
-        setLiveAggregates(aggregates);
-        setLiveRawEvents(rawEvents);
-        lastLoadedRangeRef.current = {
-          start: range.start,
-          end: range.end,
-          dataVersion: repositoryState.todayDataUpdatedAt,
-          rangeRevision,
-        };
-      } catch {
-        stopLoad({ isCancelled, result: "error" });
-      } finally {
-        if (!isCancelled) {
-          setIsLoadingLiveData(false);
-        }
-      }
-    }
-
-    const interaction = InteractionManager.runAfterInteractions(() => {
-      void loadLiveExportData();
+      })();
     });
 
     return () => {
       isCancelled = true;
-      interaction.cancel();
-      setIsLoadingLiveData(false);
+      task.cancel();
+      setIsLoadingCounts(false);
     };
+    // The range is compared by its dates: the object is new on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     dataMode,
     hasValidRange,
@@ -300,7 +291,6 @@ export default function ExportScreen() {
     range.end,
     range.start,
     repositoryState.isHydrated,
-    repositoryState.todayDataUpdatedAt,
   ]);
 
   React.useEffect(() => {
@@ -315,113 +305,20 @@ export default function ExportScreen() {
     );
   }
 
-  const demoRawEvents = React.useMemo(() => {
-    if (dataMode !== "demo") return [];
-    return Object.values(buildExportEvents(demoCollectors, true)).flat();
-  }, [dataMode, demoCollectors]);
-
-  const rawEventsForTimeline =
-    dataMode === "demo" ? demoRawEvents : liveRawEvents;
-
-  React.useEffect(() => {
-    if (
-      !isFocused ||
-      exportMode !== "unified" ||
-      !hasValidRange ||
-      !rawEventsForTimeline.length
-    ) {
-      setTimelineBuckets([]);
-      setIsComputingTimeline(false);
-      return;
-    }
-
-    let isCancelled = false;
-    setIsComputingTimeline(true);
-
-    const controller = new AbortController();
-    const interaction = InteractionManager.runAfterInteractions(() => {
-      void (async () => {
-        const stopCompute = startPerfTimer("export.compute_unified_timeline", {
-          eventCount: rawEventsForTimeline.length,
-          rangeEnd: range.end,
-          rangeStart: range.start,
-          resolution,
-          screen: "export",
-        });
-
-        try {
-          const nextTimelineBuckets = await buildUnifiedTimelineAsync(
-            rawEventsForTimeline,
-            {
-              resolution,
-              startTimestamp: parseISODate(range.start).toISOString(),
-              endTimestamp: parseISODate(
-                shiftISODate(range.end, 1),
-              ).toISOString(),
-            },
-            controller.signal,
-          );
-
-          if (!isCancelled) {
-            setTimelineBuckets(nextTimelineBuckets);
-          }
-
-          stopCompute({
-            bucketCount: nextTimelineBuckets.length,
-            cancelled: isCancelled,
-          });
-        } catch {
-          stopCompute({ cancelled: isCancelled, result: "error" });
-        } finally {
-          if (!isCancelled) {
-            setIsComputingTimeline(false);
-          }
-        }
-      })();
-    });
-
-    return () => {
-      isCancelled = true;
-      controller.abort();
-      interaction.cancel();
-      setIsComputingTimeline(false);
+  const selectedRecords = React.useMemo(() => {
+    const included = (counts ?? []).filter(
+      (count) =>
+        exportMode === "unified" || selectedTypes.includes(count.dataType),
+    );
+    return {
+      records: included.reduce((total, count) => total + count.records, 0),
+      bytes: included.reduce((total, count) => total + count.bytes, 0),
     };
-  }, [
-    exportMode,
-    isFocused,
-    hasValidRange,
-    range.end,
-    range.start,
-    rawEventsForTimeline,
-    resolution,
-  ]);
-
-  const bundleEstimate = React.useMemo(() => {
-    const selectedEvents = Object.fromEntries(
-      Object.entries(allEvents).filter(([key]) => selectedTypes.includes(key)),
-    );
-    if (exportMode === "unified") {
-      return estimateUnifiedExportBundleBytes(
-        format,
-        timelineBuckets,
-        liveAggregates,
-      );
-    }
-    return estimateExportBundleBytes(
-      format,
-      range,
-      selectedEvents,
-      liveAggregates,
-    );
-  }, [
-    exportMode,
-    format,
-    timelineBuckets,
-    allEvents,
-    selectedTypes,
-    range,
-    liveAggregates,
-  ]);
+  }, [counts, exportMode, selectedTypes]);
+  const bundleEstimate = estimateExportBytes(
+    { mode: exportMode, format, range, resolution, days: rangeDays },
+    selectedRecords.bytes,
+  );
 
   async function handleExport(): Promise<void> {
     if (exportMode === "raw" && !selectedTypes.length) {
@@ -435,62 +332,70 @@ export default function ExportScreen() {
       Alert.alert("Check your dates", "Use YYYY-MM-DD format for both dates.");
       return;
     }
-    if (isPreparingBundleData) {
-      Alert.alert(
-        "Still preparing",
-        "Zentra is still loading and aligning this range. Try export again in a moment.",
-      );
-      return;
-    }
 
-    setIsExporting(true);
-
+    const controller = new AbortController();
+    setJob({ controller, progress: null });
+    const request: ExportRequest = {
+      mode: exportMode,
+      format,
+      range: { start: range.start, end: range.end },
+      resolution,
+      // Every type is included unless some were switched off.
+      selectedTypes:
+        exportMode === "raw" && selectedTypes.length < availableTypes.length
+          ? selectedTypes
+          : null,
+    };
+    let lastShown = 0;
     try {
-      const selectedEvents = Object.fromEntries(
-        Object.entries(allEvents).filter(([key]) =>
-          selectedTypes.includes(key),
-        ),
-      );
-      const result =
-        exportMode === "unified"
-          ? await buildAndShareUnifiedExportBundle(
-              format,
-              range,
-              resolution,
-              timelineBuckets,
-              selectedEvents,
-              liveAggregates,
-            )
-          : await buildAndShareExportBundle(
-              format,
-              range,
-              selectedEvents,
-              liveAggregates,
+      const result = await exportToFile(
+        request,
+        demoEvents
+          ? memoryExportSource(Object.values(demoEvents).flat())
+          : repositoryExportSource,
+        openExportFile,
+        {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            const now = Date.now();
+            if (progress.fraction < 1 && now - lastShown < PROGRESS_INTERVAL_MS)
+              return;
+            lastShown = now;
+            setJob((current) =>
+              current?.controller === controller
+                ? { controller, progress }
+                : current,
             );
+          },
+        },
+      );
+      setJob(null);
+      await shareExportFile(result.uri);
       await noteExport(new Date().toISOString());
       Alert.alert(
         "Your bundle is ready",
-        `${result.fileName} is packaged up — about ${formatBytes(result.estimatedBytes)}. Share it whenever you like.`,
+        `${result.fileName} is packaged up — ${formatBytes(result.bytes)}, ${result.records.toLocaleString()} records. Share it whenever you like.`,
       );
-    } catch {
-      Alert.alert(
-        "Something went wrong",
-        "Zentra couldn't create the bundle in this preview build. Give it another try.",
-      );
+    } catch (error) {
+      // A cancelled export says nothing: the button already did.
+      if (controller.signal.aborted) return;
+      if (error instanceof ExportDataChangingError)
+        Alert.alert(
+          "Your data is still changing",
+          "Records were being added faster than Zentra could export them, as during a health import. Nothing was saved; try again in a moment.",
+        );
+      else
+        Alert.alert(
+          "Something went wrong",
+          "Zentra couldn't create the bundle. Nothing was saved; give it another try.",
+        );
     } finally {
-      setIsExporting(false);
+      setJob((current) => (current?.controller === controller ? null : current));
     }
   }
 
   return (
     <ScreenShell subtitle="Take your data with you" title="Export">
-      <ActiveMinutesRefreshStatus
-        enabled={
-          dataMode !== "demo" && repositoryState.isHydrated && hasValidRange
-        }
-        start={range.start}
-        end={range.end}
-      />
       <ScreenLead
         body={
           dataMode === "demo"
@@ -498,6 +403,15 @@ export default function ExportScreen() {
             : "Pick your date range, format, and signals. Zentra packages it up and keeps it here until you're ready to share."
         }
         eyebrow="Your bundle"
+        status={
+          <ActiveMinutesRefreshStatus
+            enabled={
+              dataMode !== "demo" && repositoryState.isHydrated && hasValidRange
+            }
+            end={range.end}
+            start={range.start}
+          />
+        }
         footer={
           <View style={styles.leadFooter}>
             <Text style={[styles.leadMeta, { color: palette.textSecondary }]}>
@@ -515,98 +429,87 @@ export default function ExportScreen() {
                   : `${selectedTypes.length} signal${selectedTypes.length === 1 ? "" : "s"} selected`}
               </Text>
             </View>
-            {isPreparingBundleData ? (
-              <View style={styles.leadMetaRow}>
-                <ActivityIndicator color={palette.textSecondary} size="small" />
-                <Text
-                  style={[styles.leadMeta, { color: palette.textSecondary }]}
-                >
-                  {isLoadingLiveData
-                    ? "Loading data..."
-                    : "Preparing timeline..."}
-                </Text>
-              </View>
-            ) : null}
           </View>
         }
         title={
-          availableTypes.length
+          isCounting || availableTypes.length
             ? "Everything stays on your device until you decide to share it."
             : "Exports will show up once Zentra has something to bundle."
         }
       />
 
-      {!availableTypes.length ? (
+      {/* The range can always be changed, including away from an empty one. */}
+      <Card style={styles.section}>
+        <View style={styles.labelRow}>
+          <Ionicons
+            color={palette.textSecondary}
+            name={SECTION_ICONS.dateRange}
+            size={IconSizes.inline}
+          />
+          <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
+            Date range
+          </Text>
+        </View>
+        <View style={styles.chipRow}>
+          {PRESETS.map((value) => (
+            <Chip
+              key={value}
+              active={value === preset}
+              label={value}
+              onPress={() => setPreset(value)}
+            />
+          ))}
+        </View>
+        <Text style={[styles.helper, { color: palette.mutedForeground }]}>
+          {formatDateRangeLabel(range.start, range.end)}
+        </Text>
+        {preset === "custom" ? (
+          <View style={styles.customRangeRow}>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={(value) =>
+                setCustomRange((current) => ({ ...current, start: value }))
+              }
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={palette.mutedForeground}
+              style={[
+                styles.dateInput,
+                { borderColor: palette.border, color: palette.foreground },
+              ]}
+              value={customRange.start}
+            />
+            <Text
+              style={[styles.helper, { color: palette.mutedForeground }]}
+            >
+              to
+            </Text>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={(value) =>
+                setCustomRange((current) => ({ ...current, end: value }))
+              }
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={palette.mutedForeground}
+              style={[
+                styles.dateInput,
+                { borderColor: palette.border, color: palette.foreground },
+              ]}
+              value={customRange.end}
+            />
+          </View>
+        ) : null}
+      </Card>
+
+      {!isCounting && !availableTypes.length ? (
         <EmptyState
-          body="Once Zentra has captured some signals, they'll appear here ready to bundle. Signals your device doesn't support simply won't show up."
+          body="Once Zentra has captured some signals in this range, they'll appear here ready to bundle. Signals your device doesn't support simply won't show up."
           iconName="archive-outline"
           title="Nothing to bundle yet"
         />
       ) : (
         <>
-          <Card style={styles.section}>
-            <View style={styles.labelRow}>
-              <Ionicons
-                color={palette.textSecondary}
-                name={SECTION_ICONS.dateRange}
-                size={IconSizes.inline}
-              />
-              <Text style={[styles.eyebrow, { color: palette.textSecondary }]}>
-                Date range
-              </Text>
-            </View>
-            <View style={styles.chipRow}>
-              {PRESETS.map((value) => (
-                <Chip
-                  key={value}
-                  active={value === preset}
-                  label={value}
-                  onPress={() => setPreset(value)}
-                />
-              ))}
-            </View>
-            <Text style={[styles.helper, { color: palette.mutedForeground }]}>
-              {formatDateRangeLabel(range.start, range.end)}
-            </Text>
-            {preset === "custom" ? (
-              <View style={styles.customRangeRow}>
-                <TextInput
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onChangeText={(value) =>
-                    setCustomRange((current) => ({ ...current, start: value }))
-                  }
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={palette.mutedForeground}
-                  style={[
-                    styles.dateInput,
-                    { borderColor: palette.border, color: palette.foreground },
-                  ]}
-                  value={customRange.start}
-                />
-                <Text
-                  style={[styles.helper, { color: palette.mutedForeground }]}
-                >
-                  to
-                </Text>
-                <TextInput
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onChangeText={(value) =>
-                    setCustomRange((current) => ({ ...current, end: value }))
-                  }
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={palette.mutedForeground}
-                  style={[
-                    styles.dateInput,
-                    { borderColor: palette.border, color: palette.foreground },
-                  ]}
-                  value={customRange.end}
-                />
-              </View>
-            ) : null}
-          </Card>
-
           <Card style={styles.section}>
             <View style={styles.labelRow}>
               <Ionicons
@@ -664,11 +567,9 @@ export default function ExportScreen() {
                 ))}
               </View>
               <Text style={[styles.helper, { color: palette.mutedForeground }]}>
-                {isComputingTimeline
-                  ? "Preparing timeline..."
-                  : timelineBuckets.length
-                    ? `${timelineBuckets.length} buckets · ${timelineBuckets.filter((b) => b.hasAnyData).length} with data`
-                    : "Buckets will be computed from your selected range."}
+                {rangeDays
+                  ? `${timelineBucketCount(rangeDays, resolution).toLocaleString()} buckets, built when you export`
+                  : "Buckets are built from your selected range."}
               </Text>
             </Card>
           ) : null}
@@ -715,11 +616,11 @@ export default function ExportScreen() {
                 </Text>
               </View>
               <View style={styles.chipRow}>
-                {availableTypes.map((type) => (
+                {(counts ?? []).map(({ dataType: type, records }) => (
                   <Chip
                     key={type}
                     active={selectedTypes.includes(type)}
-                    label={type.replace("_", " ")}
+                    label={`${type.replace("_", " ")} · ${records.toLocaleString()}`}
                     leadingIconName={
                       isEventDataType(type)
                         ? getEventTypeIcon(type)
@@ -732,6 +633,8 @@ export default function ExportScreen() {
             </Card>
           ) : null}
 
+          {/* One card in one place: the estimate, then the export's progress
+              while it runs. */}
           <Card elevated style={styles.section}>
             <View style={styles.labelRow}>
               <Ionicons
@@ -740,50 +643,108 @@ export default function ExportScreen() {
                 size={IconSizes.inline}
               />
               <Text
-                style={[styles.summaryLabel, { color: palette.textSecondary }]}
+                style={[
+                  styles.summaryLabel,
+                  styles.summaryLabelText,
+                  { color: palette.textSecondary },
+                ]}
               >
-                Bundle estimate
+                {isExporting ? "Building your bundle" : "Bundle estimate"}
               </Text>
-            </View>
-            <Text style={[styles.summaryValue, { color: palette.primary }]}>
-              {formatBytes(bundleEstimate)}
-            </Text>
-            <Text style={[styles.helper, { color: palette.textSecondary }]}>
-              {dataMode === "demo"
-                ? "Sample data plus a manifest — same structure you'd get with real signals."
-                : exportMode === "unified"
-                  ? "Time-aligned timeline buckets and a manifest. Stays here until you share it."
-                  : "Your captured signals and a manifest. Stays here until you share it."}
-            </Text>
-            {isPreparingBundleData ? (
-              <View style={styles.bundleProgressRow}>
-                <ActivityIndicator
-                  color={palette.mutedForeground}
-                  size="small"
+              {isCounting || isLoadingCounts ? (
+                <InlineStatus
+                  accessibilityLabel="Counting the records in this range"
+                  busy
+                  label="Counting"
                 />
+              ) : null}
+            </View>
+            {job ? (
+              <View
+                accessibilityLiveRegion="polite"
+                accessibilityRole="progressbar"
+                accessibilityValue={{
+                  max: 100,
+                  min: 0,
+                  now: Math.round((job.progress?.fraction ?? 0) * 100),
+                }}
+                style={styles.progress}
+              >
                 <Text
-                  style={[
-                    styles.bundleProgressText,
-                    { color: palette.textSecondary },
-                  ]}
+                  style={[styles.summaryValue, { color: palette.primary }]}
                 >
-                  Preparing export data...
+                  {`${Math.round((job.progress?.fraction ?? 0) * 100)}%`}
+                </Text>
+                <View
+                  style={[styles.progressTrack, { backgroundColor: palette.card }]}
+                >
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        backgroundColor: palette.primary,
+                        width: `${Math.round((job.progress?.fraction ?? 0) * 100)}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.helper, { color: palette.textSecondary }]}>
+                  {!job.progress
+                    ? "Starting…"
+                    : job.progress.phase === "reading"
+                      ? `Reading records · day ${job.progress.day} of ${job.progress.days} · ${job.progress.records.toLocaleString()} so far`
+                      : `Writing the archive · ${job.progress.records.toLocaleString()} records`}
+                </Text>
+                <Text style={[styles.helper, { color: palette.textSecondary }]}>
+                  You can switch tabs while this runs.
                 </Text>
               </View>
-            ) : null}
+            ) : (
+              <>
+                {/* The number keeps its line while the range is counted. */}
+                <View style={styles.summaryValueLine}>
+                  <Text
+                    style={[
+                      styles.summaryValue,
+                      { color: palette.primary },
+                      isCounting && styles.hidden,
+                    ]}
+                  >
+                    {`About ${formatBytes(bundleEstimate)}`}
+                  </Text>
+                  {isCounting ? (
+                    <View
+                      style={[
+                        styles.summaryValueBar,
+                        { backgroundColor: palette.card },
+                      ]}
+                    />
+                  ) : null}
+                </View>
+                <Text style={[styles.helper, { color: palette.textSecondary }]}>
+                  {dataMode === "demo"
+                    ? "Sample data plus a manifest — same structure you'd get with real signals."
+                    : exportMode === "unified"
+                      ? `Timeline buckets built from ${selectedRecords.records.toLocaleString()} records, and a manifest, before compression. Stays here until you share it.`
+                      : `${selectedRecords.records.toLocaleString()} records and a manifest, before compression. Stays here until you share it.`}
+                </Text>
+              </>
+            )}
           </Card>
 
-          <Button
-            disabled={isExporting || isPreparingBundleData}
-            leadingIconName={getActionIcon("export")}
-            onPress={() => void handleExport()}
-          >
-            {isExporting
-              ? "Exporting bundle..."
-              : isPreparingBundleData
-                ? "Preparing bundle..."
-                : "Export bundle"}
-          </Button>
+          {job ? (
+            <Button onPress={() => job.controller.abort()} variant="outline">
+              Cancel
+            </Button>
+          ) : (
+            <Button
+              disabled={isCounting}
+              leadingIconName={getActionIcon("export")}
+              onPress={() => void handleExport()}
+            >
+              Export bundle
+            </Button>
+          )}
         </>
       )}
     </ScreenShell>
@@ -853,14 +814,16 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bodyMedium,
     fontSize: FontSizes["2xl"],
   },
-  bundleProgressRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: Spacing.sm,
+  summaryLabelText: { flex: 1 },
+  summaryValueLine: { justifyContent: "center" },
+  summaryValueBar: {
+    borderRadius: 6,
+    height: 22,
+    position: "absolute",
+    width: "38%",
   },
-  bundleProgressText: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.xs,
-    letterSpacing: 0,
-  },
+  hidden: { opacity: 0 },
+  progress: { gap: Spacing.sm },
+  progressTrack: { borderRadius: 999, height: 8, overflow: "hidden" },
+  progressFill: { borderRadius: 999, height: 8 },
 });

@@ -3,8 +3,10 @@ import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useAppStore, useRepositoryStore } from "@/stores";
 import { HEALTH_RECORD_TYPES, type HealthSyncState } from "@/types/health-sync";
+import { startHealthSourcesPolling } from "@/utils/health-sources-poller";
 import {
   getHealthSyncStates,
+  getHealthSyncStatus,
   resetHealthHistory,
 } from "@/utils/health-sync-repository";
 import {
@@ -25,24 +27,20 @@ export function HealthSourcesCard() {
   const [states, setStates] = React.useState<HealthSyncState[]>([]);
   const [busy, setBusy] = React.useState(false),
     [message, setMessage] = React.useState("");
+  // Kept apart from `message`, which a manual import sets: a later poll that
+  // succeeds clears this and leaves that alone.
+  const [pollFailed, setPollFailed] = React.useState(false);
   React.useEffect(() => {
     if (!focused || mode === "demo") return;
-    let cancelled = false;
-    const read = () => {
-      void getHealthSyncStates()
-        .then((value) => {
-          if (!cancelled) setStates(value);
-        })
-        .catch(() => {
-          if (!cancelled) setMessage("Source status unavailable. Retry below.");
-        });
-    };
-    read();
-    const timer = setInterval(read, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    return startHealthSourcesPolling({
+      onError: () => setPollFailed(true),
+      onStates: (next) => {
+        setPollFailed(false);
+        setStates(next);
+      },
+      readCounts: getHealthSyncStates,
+      readStatus: getHealthSyncStatus,
+    });
   }, [focused, mode]);
   async function run(extend: boolean) {
     setBusy(true);
@@ -141,12 +139,12 @@ export function HealthSourcesCard() {
           </Text>
         </Pressable>
       )}
-      {!!message && (
+      {(!!message || pollFailed) && (
         <Text
           accessibilityLiveRegion="polite"
           style={{ color: palette.textSecondary }}
         >
-          {message}
+          {message || "Source status unavailable. Retry below."}
         </Text>
       )}
       <Text style={{ color: palette.textSecondary }}>

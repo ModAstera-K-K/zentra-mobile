@@ -8,7 +8,9 @@ import {
 } from "react-native";
 
 import { EmptyState } from "@/components/zentra/EmptyState";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import type { InlineStatusProps } from "@/components/ui/InlineStatus";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import {
   Colors,
@@ -24,9 +26,17 @@ interface ActivityPatternCardProps {
   cells: ActivityPatternCell[];
   normalizationLabel?: string;
   onSelectCell: (cell: ActivityPatternCell) => void;
+  /** Shown in the heading in place of "4 weeks". */
+  status?: InlineStatusProps | null;
+  /** Draw the grid's outline with nothing in it while the pattern loads. */
+  pending?: boolean;
+  /** Shown inside that outline when the pattern could not be loaded. */
+  failure?: { message: string; onRetry: () => void } | null;
 }
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// Four weeks, the size of the grid once it has loaded.
+const OUTLINE_CELLS = Array.from({ length: 28 }, (_, index) => index);
 
 const PatternCell = React.memo(function PatternCell({
   cell,
@@ -104,6 +114,9 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
   cells,
   normalizationLabel,
   onSelectCell,
+  status,
+  pending = false,
+  failure,
 }: ActivityPatternCardProps) {
   const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
@@ -111,8 +124,12 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
   const [measuredWidth, setMeasuredWidth] = React.useState(0);
   const availableWidth = measuredWidth || width - Spacing.lg * 2;
   const cellSize = Math.max(24, Math.floor((availableWidth - 6 * 6) / 7));
+  // The outline has the loaded grid's size, so nothing below it moves when
+  // the pattern arrives.
+  const outline = pending || !!failure;
 
-  if (!cells.length) {
+  // Nothing is known about the pattern yet, so the empty states do not apply.
+  if (!outline && !cells.length) {
     return (
       <EmptyState
         body="Keep your collectors on for a bit longer. The activity pattern needs stored signals before it can take shape."
@@ -122,7 +139,7 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
     );
   }
 
-  if (!cells.some((cell) => cell.hasAnyData)) {
+  if (!outline && !cells.some((cell) => cell.hasAnyData)) {
     return (
       <EmptyState
         body="Keep collecting for a few days and the rolling 4-week grid will start to form."
@@ -134,7 +151,7 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
 
   return (
     <Card variant="open">
-      <SectionHeading title="Activity pattern" meta="4 weeks" />
+      <SectionHeading title="Activity pattern" meta="4 weeks" status={status} />
 
       <View style={styles.weekdayRow}>
         {WEEKDAY_LABELS.map((day) => (
@@ -151,17 +168,43 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
       </View>
 
       <View style={styles.monthGrid} onLayout={event => setMeasuredWidth(event.nativeEvent.layout.width)}>
-        {cells.map((cell) => (
-          <PatternCell
-            key={cell.id}
-            cell={cell}
-            onSelectCell={onSelectCell}
-            size={cellSize}
-          />
-        ))}
+        {outline
+          ? OUTLINE_CELLS.map((cell) => (
+              <View
+                key={cell}
+                style={[
+                  styles.patternCell,
+                  styles.outlineCell,
+                  {
+                    backgroundColor: palette.elevated,
+                    height: cellSize,
+                    opacity: failure ? 0.4 : 1,
+                    width: cellSize,
+                  },
+                ]}
+              />
+            ))
+          : cells.map((cell) => (
+              <PatternCell
+                key={cell.id}
+                cell={cell}
+                onSelectCell={onSelectCell}
+                size={cellSize}
+              />
+            ))}
+        {failure ? (
+          <View accessibilityLiveRegion="polite" style={styles.failure}>
+            <Text style={[styles.failureText, { color: palette.foreground }]}>
+              {failure.message}
+            </Text>
+            <Button onPress={failure.onRetry} variant="outline">
+              Try again
+            </Button>
+          </View>
+        ) : null}
       </View>
 
-      <View style={styles.key}>
+      <View style={[styles.key, outline && styles.waiting]}>
         <Text style={[styles.keyText, { color: palette.textSecondary }]}>Low</Text>
         {[0, 33, 67, 100].map(intensity => <View key={intensity} style={[styles.keySwatch, { backgroundColor: patternIntensityColor(colorScheme, intensity, palette) }]} />)}
         <Text style={[styles.keyText, { color: palette.textSecondary }]}>High</Text>
@@ -169,7 +212,7 @@ export const ActivityPatternCard = React.memo(function ActivityPatternCard({
         <Text style={[styles.keyText, { color: palette.textSecondary }]}>No records</Text>
       </View>
 
-      <Text style={[styles.footer, { color: palette.textSecondary }]}>
+      <Text style={[styles.footer, { color: palette.textSecondary }, outline && styles.waiting]}>
         {normalizationLabel
           ? `Intensity is normalized against your ${normalizationLabel}. Tap any square to inspect the selected day.`
           : "Tap any square to inspect the selected day."}
@@ -182,6 +225,21 @@ const styles = StyleSheet.create({
   key: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4, marginTop: Spacing.md },
   keyText: { fontFamily: Fonts.body, fontSize: 11 },
   keySwatch: { width: 12, height: 12, borderRadius: 3 },
+  waiting: { opacity: 0.4 },
+  outlineCell: { borderWidth: 0 },
+  failure: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    gap: Spacing.md,
+    justifyContent: "center",
+    paddingHorizontal: Spacing.lg,
+  },
+  failureText: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    lineHeight: 20,
+    textAlign: "center",
+  },
 
 
   footer: {

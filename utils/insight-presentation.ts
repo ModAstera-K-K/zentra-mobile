@@ -61,7 +61,7 @@ export function insightDetail(insight: PersonalInsight): TodayDetailPayload {
       .filter((o) => o.value !== null)
       .map((o) => ({
         label: o.date,
-        value: `${Math.round(o.value!)} ${o.unit}. ${o.quality}. ${o.coverage}. Updated ${o.updatedAt ?? "unknown"}. Records: ${o.recordIds.slice(0, 3).join(", ")}${o.recordIds.length > 3 ? ` (+${o.recordIds.length - 3} more)` : ""}`,
+        value: `${Math.round(o.value!)} ${o.unit}. ${o.quality}. ${o.coverage}. Updated ${o.updatedAt ?? "unknown"}. Records: ${o.recordIds.slice(0, 3).join(", ")}${(o.recordCount ?? o.recordIds.length) > 3 ? ` (+${(o.recordCount ?? o.recordIds.length) - 3} more)` : ""}`,
       })),
   };
 }

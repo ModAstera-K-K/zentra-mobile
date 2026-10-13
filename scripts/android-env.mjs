@@ -48,7 +48,11 @@ function resolveJavaHome() {
     return currentJavaHome;
   }
 
-  return null;
+  // Homebrew JDKs may not be registered with /usr/libexec/java_home.
+  return [
+    '/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home',
+    '/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home',
+  ].find((candidate) => fileExists(path.join(candidate, 'bin', 'java'))) ?? null;
 }
 
 function resolveAndroidSdkRoot() {

@@ -4,6 +4,7 @@ import { useAppStore, useRepositoryStore } from "@/stores";
 import {
   compactEventChanges,
   getLatestCollectorDiagnosticForKey,
+  pruneCollectorDiagnostics,
 } from "@/utils/event-repository";
 import { syncAppUsageCollector } from "@/utils/collectors/app-usage-collector";
 import { syncHealthConnectCollector } from "@/utils/collectors/health-connect-collector";
@@ -123,6 +124,13 @@ export async function runImportantCollectorReconcile(
     // change table is what makes the stored-day checks slow.
     if (!budgetExceeded(startedAtMs, options.budgetMs))
       await compactEventChanges({
+        budgetMs:
+          options.budgetMs == null
+            ? undefined
+            : options.budgetMs - (Date.now() - startedAtMs),
+      }).catch(() => undefined);
+    if (!budgetExceeded(startedAtMs, options.budgetMs))
+      await pruneCollectorDiagnostics({
         budgetMs:
           options.budgetMs == null
             ? undefined

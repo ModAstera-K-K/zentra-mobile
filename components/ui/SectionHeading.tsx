@@ -1,20 +1,27 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
+import { InlineStatus, type InlineStatusProps } from "@/components/ui/InlineStatus";
 import { Colors, Fonts, Spacing } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export const SectionHeading = React.memo(function SectionHeading({
-  title, subtitle, meta,
-}: { title: string; subtitle?: string; meta?: string }) {
+  title, subtitle, meta, status,
+}: {
+  title: string;
+  subtitle?: string;
+  meta?: string;
+  /** Shown in place of `meta` while the section loads, updates or has failed. */
+  status?: InlineStatusProps | null;
+}) {
   const palette = Colors[useColorScheme()];
   return (
     <View style={styles.heading}>
       <View style={styles.row}>
         <Text accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>{title}</Text>
-        {meta ? <Text style={[styles.meta, { color: palette.textSecondary }]}>{meta}</Text> : null}
+        {status ? <InlineStatus {...status} /> : meta ? <Text style={[styles.meta, { color: palette.textSecondary }]}>{meta}</Text> : null}
       </View>
-      {subtitle ? <Text style={[styles.subtitle, { color: palette.textSecondary }]}>{subtitle}</Text> : null}
+      {subtitle ? <Text numberOfLines={1} style={[styles.subtitle, { color: palette.textSecondary }]}>{subtitle}</Text> : null}
     </View>
   );
 });
